@@ -1,0 +1,20 @@
+services:
+
+  postgres:
+    image: postgres:17
+    container_name: fixflow-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: fixflow
+      POSTGRES_USER: fixflow
+      POSTGRES_PASSWORD: fixflow
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - fixflow_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  fixflow_postgres_data:
