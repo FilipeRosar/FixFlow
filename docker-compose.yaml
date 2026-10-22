@@ -1,0 +1,39 @@
+services:
+
+  postgres:
+    image: postgres:17
+    container_name: fixflow-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: fixflow
+      POSTGRES_USER: fixflow
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-fixflow}
+    ports:
+      - "5432:5432"
+    volumes:
+      - fixflow_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fixflow -d fixflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  app:
+    build:
+      context: ./backend/fixflow
+      dockerfile: Dockerfile
+    container_name: fixflow-app
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fixflow
+      SPRING_DATASOURCE_USERNAME: fixflow
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-fixflow}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+
+volumes:
+  fixflow_postgres_data:
