@@ -1,10 +1,8 @@
 services:
-
   postgres:
     image: postgres:17
     container_name: fixflow-postgres
     restart: unless-stopped
-
     environment:
       POSTGRES_DB: fixflow
       POSTGRES_USER: fixflow
@@ -18,6 +16,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
   app:
     build:
       context: ./backend/fixflow
@@ -26,14 +25,16 @@ services:
     restart: unless-stopped
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fixflow
-      SPRING_DATASOURCE_USERNAME: fixflow
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-fixflow}
+      SPRING_DATASOURCE_USERNAME: ${DB_RUNTIME_USERNAME:-fixflow_runtime}
+      SPRING_DATASOURCE_PASSWORD: ${DB_RUNTIME_PASSWORD}
+      SPRING_FLYWAY_URL: jdbc:postgresql://postgres:5432/fixflow
+      SPRING_FLYWAY_USER: ${DB_MIGRATOR_USERNAME:-fixflow_migrator}
+      SPRING_FLYWAY_PASSWORD: ${DB_MIGRATOR_PASSWORD}
     ports:
       - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
-
 
 volumes:
   fixflow_postgres_data:
