@@ -1,4 +1,4 @@
-package br.com.fixflow.shared.infrastructure.tenent;
+package br.com.fixflow.shared.infrastructure.tenant;
 
 import java.util.UUID;
 
@@ -12,16 +12,16 @@ public final class TenantScope {
         if (runnable == null) {
             throw new IllegalArgumentException("A tarefa não pode ser nula");
         }
-        UUID previousTenant = TenentContext.getTenantId().orElse(null);
+        UUID previousTenant = TenantContext.getTenantId().orElse(null);
 
         try {
-            TenentContext.setTenantId(tenantId);
+            TenantContext.setTenantId(tenantId);
             runnable.run();
         } finally {
             if (previousTenant == null) {
-                TenentContext.clearTenantId();
+                TenantContext.clearTenantId();
             } else  {
-                TenentContext.setTenantId(previousTenant);
+                TenantContext.setTenantId(previousTenant);
             }
         }
     }
