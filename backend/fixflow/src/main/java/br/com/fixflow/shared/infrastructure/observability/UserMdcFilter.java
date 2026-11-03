@@ -11,7 +11,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
-/** Runs inside the security chain, after HTTP Basic authentication. */
+/** Runs inside the security chain, after bearer authentication (and legacy Basic in integration tests). */
 public class UserMdcFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,

@@ -23,9 +23,10 @@ O backend está em desenvolvimento, com foco na fundação técnica. Este reposi
 | Auditoria base | `AuditService`, gravação na transação de negócio e tabela `audit_log` append-only para a role de execução |
 | Persistência e qualidade | Migrations Flyway, testes de integração e regras de arquitetura com ArchUnit |
 | Integração contínua | GitHub Actions com build, testes, lint e gate de segurança High/Critical |
+| Autenticação | JWT RS256, refresh rotativo, detecção de reuso e bloqueio após cinco falhas |
 | API | OpenAPI, Swagger UI e tratamento global de erros |
 
-O [documento técnico](docs/documento-tecnico-fixflow.md) reúne requisitos, fluxos, modelo de dados, ADRs e backlog. Ele descreve a arquitetura alvo; para executar esta versão, use as versões e rotas abaixo. A autenticação atual usa **HTTP Basic**. JWT com refresh rotativo está previsto no roadmap.
+O [documento técnico](docs/documento-tecnico-fixflow.md) reúne requisitos, fluxos, modelo de dados, ADRs e backlog. Ele descreve a arquitetura alvo; para executar esta versão, use as versões e rotas abaixo. A autenticação usa **JWT RS256 de 15 minutos e refresh opaco rotativo em cookie HttpOnly**.
 
 ## Stack atual
 
@@ -74,6 +75,23 @@ Informe as senhas das duas roles. O script cria `application-local.properties`, 
 
 Variáveis de ambiente têm prioridade sobre o arquivo local. Execute os comandos a partir da raiz do projeto, inclusive ao configurar a IDE.
 
+### Configurar assinatura JWT local
+
+Depois de configurar o banco, execute uma vez, em `backend/fixflow`:
+
+```bash
+python3 scripts/configure-auth-local.py
+```
+
+O script requer OpenSSL e gera um par RSA persistente em `.local/auth/`, com permissões
+restritas e arquivos ignorados pelo Git. `application-auth-local.properties` configura
+as chaves e desabilita `Secure` no cookie exclusivamente para desenvolvimento HTTP local.
+Em produção, configure `AUTH_PRIVATE_KEY` e `AUTH_PUBLIC_KEY` com URLs `file:` de PEMs
+provisionados pelo gerenciador de segredos; mantenha `AUTH_COOKIE_SECURE=true` e HTTPS.
+`AUTH_KEY_ID` identifica a chave; `AUTH_ISSUER` identifica o emissor e `APP_ORIGIN` deve
+ser a origem exata do frontend. Não há chave privada padrão nem geração efêmera automática
+fora da configuração explícita usada pelos testes.
+
 ### Iniciar a API
 
 ```bash
@@ -102,18 +120,32 @@ Essas rotas são públicas na configuração atual. As probes retornam `200` qua
 
 ## Autenticação e isolamento
 
-As rotas protegidas usam o e-mail e a senha da identidade global. A identidade, o vínculo e a oficina precisam estar ativos para autorizar uma operação no tenant.
+As rotas protegidas recebem `Authorization: Bearer <accessToken>`.
 
-```bash
-curl --user 'seu-email@example.com' \
-  http://localhost:8080/api/oficinas/UUID_DA_OFICINA/selecao
-```
+1. Crie conta e empresa em `POST /api/contas`.
+2. Envie `{email, password}` para `POST /api/v1/auth/login`, com o header
+   `X-Auth-Request: true`. O campo opcional `tenantId` seleciona uma empresa autorizada;
+   quando omitido, a aplicação seleciona o vínculo ativo mais antigo.
+3. Use o `accessToken` retornado para acessar `/api/oficinas/{tenantId}/selecao`.
+4. Renove por `POST /api/v1/auth/refresh`, com o cookie e `X-Auth-Request: true`.
 
-O curl solicita a senha. Use uma identidade e uma oficina já cadastradas no banco; o cadastro público está disponível em `POST /api/contas`. A resposta informa `userId`, `tenantId` e `role` do vínculo autorizado. Uma identidade pode ter vínculos com diferentes oficinas.
+O refresh fica apenas no cookie `fixflow_refresh`, `HttpOnly`, `SameSite=Strict`,
+`Secure` por padrão e restrito a `/api/v1/auth`. Cada uso substitui o refresh anterior.
+Reutilizar qualquer geração consumida revoga toda a família, inclusive o token mais recente.
+O access token permanece válido por até 15 minutos; a revogação da família impede novas
+renovações. O frontend mantém o access token somente em memória, sem localStorage.
 
-A seleção vale para a requisição atual. Cada operação deve passar por `AuthorizedTenantOperations.execute(tenantId, operation)`, que valida o vínculo antes de configurar o contexto Java e `SET LOCAL app.tenant_id` na transação. O PostgreSQL aplica RLS sobre os dados do tenant, e o contexto é limpo ao finalizar a operação.
+Após cinco senhas incorretas, a conta é bloqueada por 1 minuto. Novas sequências de cinco
+falhas após o desbloqueio aumentam o período para 5 e depois 15 minutos. Login bem-sucedido
+zera a contagem. As respostas de credenciais inválidas, conta bloqueada ou suspensa são genéricas.
 
-Respostas da seleção: `401` para falha de autenticação, `403` para acesso à oficina negado e `400` para UUID inválido. A proteção CSRF permanece habilitada nos métodos que alteram estado.
+O JWT contém usuário, tenant e role, e cada requisição revalida o estado do usuário,
+do vínculo e da empresa. O token de uma empresa não autoriza selecionar outra.
+`AuthorizedTenantOperations` mantém a autorização e o contexto transacional `SET LOCAL`
+para aplicar RLS. HTTP Basic está disponível somente para os testes legados com perfil
+`integration-test`; não é habilitado em execução normal.
+
+Para usar a interface, consulte [frontend/README.md](../../frontend/README.md).
 
 ## Testes
 
@@ -196,7 +228,7 @@ O MVP descrito no documento técnico contempla:
 - Estoque básico com movimentações imutáveis e baixa atômica.
 - Pagamentos manuais, entrega e garantia.
 - Anexos, notificações por e-mail, dashboard e permissões por perfil.
-- JWT com refresh rotativo e deploy automatizado.
+- Logout, recuperação de senha e deploy automatizado.
 
 WhatsApp automatizado, gateways de pagamento, IA assistiva e recursos avançados ficam para fases posteriores. A arquitetura planejada usa Angular no frontend e serviços AWS para hospedagem, arquivos e e-mail; o ambiente local atual está descrito neste README.
 

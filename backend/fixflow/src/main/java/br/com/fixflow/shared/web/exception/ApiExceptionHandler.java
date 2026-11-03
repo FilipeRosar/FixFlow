@@ -15,6 +15,9 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @org.springframework.beans.factory.annotation.Value("${fixflow.auth.basic-enabled:false}")
+    private boolean legacyBasic;
+
 
     @ExceptionHandler(br.com.fixflow.shared.application.registration.EmailAlreadyRegisteredException.class)
     public ResponseEntity<ProblemDetail> handleDuplicateEmail() {
@@ -25,7 +28,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(br.com.fixflow.shared.application.registration.InvalidRegistrationException.class)
     public ResponseEntity<ProblemDetail> handleInvalidRegistration() {
         return ResponseEntity.badRequest().body(ProblemDetail.forStatusAndDetail(
-                HttpStatus.BAD_REQUEST, "Dados de cadastro inválidos. A senha deve ter de 10 a 72 caracteres e no máximo 72 bytes UTF-8."));
+                HttpStatus.BAD_REQUEST, "Confira os dados do cadastro. Use uma senha com pelo menos 8 caracteres, letra maiúscula, letra minúscula e número. Se a senha for muito longa, reduza o tamanho."));
     }
 
     @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
@@ -43,7 +46,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
     public ResponseEntity<ProblemDetail> handleAuthentication() {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .header("WWW-Authenticate", "Basic realm=\"FixFlow\"")
+                .header("WWW-Authenticate", legacyBasic ? "Basic realm=\"FixFlow\"" : "Bearer")
                 .body(ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Autenticação obrigatória."));
     }
 

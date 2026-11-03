@@ -1,3 +1,5 @@
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { App } from './app';
@@ -7,7 +9,7 @@ describe('FixFlow navigation', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
-      providers: [provideRouter(routes)],
+      providers: [provideRouter(routes), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
   });
 
@@ -16,9 +18,9 @@ describe('FixFlow navigation', () => {
     await TestBed.inject(Router).navigateByUrl('/');
     await fixture.whenStable();
     const page = fixture.nativeElement as HTMLElement;
-    expect(page.querySelector('h1')?.textContent).toContain('Tudo no seu fluxo.');
+    expect(page.querySelector('h1')?.textContent).toContain('Seu talento é reparar.');
     expect(page.querySelector('nav')?.getAttribute('aria-label')).toBe('Navegação principal');
-    expect(page.querySelector('.demolabel')?.textContent).toContain('dados fictícios');
+    expect(page.querySelector('.release-note')?.textContent).toContain('Em desenvolvimento');
   });
 
   it('redirects an unknown route to the home', async () => {

@@ -51,6 +51,9 @@ public class AuthorizedTenantExecutor implements AuthorizedTenantOperations {
         Objects.requireNonNull(requestedTenantId, "Tenant obrigatório");
         Objects.requireNonNull(operation, "Operação obrigatória");
 
+        if (identity.tenantId() != null && !identity.tenantId().equals(requestedTenantId)) {
+            throw new AccessDeniedException("Acesso à oficina não autorizado.");
+        }
         return transactionTemplate.execute(status -> {
 
             AuthorizedMembership membership = repository

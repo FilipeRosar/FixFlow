@@ -1,17 +1,11 @@
-import { Component, signal } from '@angular/core';
-
+import { Component, inject } from "@angular/core";
+import { RouterLink } from "@angular/router";
+import { SessionService } from "../../core/auth/data-access/session.service";
 @Component({
-  selector: 'app-header',
-  templateUrl: './header.html',
+  selector: "app-header",
+  imports: [RouterLink],
+  templateUrl: "./header.html",
 })
 export class Header {
-  protected readonly menuOpen = signal(false);
-
-  protected toggleMenu(): void {
-    this.menuOpen.update((open) => !open);
-  }
-
-  protected closeMenu(): void {
-    this.menuOpen.set(false);
-  }
+  protected readonly session = inject(SessionService).session;
 }

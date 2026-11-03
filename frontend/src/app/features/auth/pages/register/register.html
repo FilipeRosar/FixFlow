@@ -1,0 +1,310 @@
+<section class="auth-layout">
+  <div class="auth-intro">
+    <span class="eyebrow">Comece com o essencial</span>
+    <h1>Uma conta.<br />Um novo fluxo.</h1>
+    <p>
+      Crie sua conta e a empresa para começar a organizar a rotina da sua
+      assistência.
+    </p>
+    <div class="intro-note">Você será o proprietário da empresa.</div>
+  </div>
+  <div class="card">
+    <span class="eyebrow">Sua empresa começa aqui</span>
+    <h2>Criar conta</h2>
+    <p class="muted">Informe seus dados e o nome da assistência.</p>
+    @if (error()) {
+    <p class="error" role="alert">{{ error() }}</p>
+    }
+    <form [formGroup]="form" (ngSubmit)="submit()" [attr.aria-busy]="pending()">
+      <label for="companyName">Nome da empresa</label
+      ><input
+        id="companyName"
+        formControlName="companyName"
+        autocomplete="organization"
+        maxlength="150"
+        aria-describedby="company-error"
+      />
+      @if (form.controls.companyName.touched &&
+      form.controls.companyName.invalid) {
+      <small id="company-error" class="field-error"
+        >Informe o nome da empresa, com até 150 caracteres.</small
+      >
+      }
+      <label for="firstName">Primeiro nome</label>
+      <input
+        id="firstName"
+        formControlName="firstName"
+        autocomplete="given-name"
+        maxlength="150"
+        aria-describedby="firstName-error"
+      />
+      @if (form.controls.firstName.touched && form.controls.firstName.invalid) {
+      <small id="firstName-error" class="field-error"
+        >Informe primeiro nome, com até 150 caracteres.</small
+      >
+      }
+      <label for="lastName">Sobrenome</label>
+      <input
+        id="lastName"
+        formControlName="lastName"
+        autocomplete="family-name"
+        maxlength="150"
+        aria-describedby="lastName-error"
+      />
+      @if (form.controls.lastName.touched && form.controls.lastName.invalid) {
+      <small id="lastName-error" class="field-error"
+        >Informe sobrenome, com até 150 caracteres.</small
+      >
+      }
+      <label for="document">CPF ou CNPJ</label>
+      <input
+        id="document"
+        formControlName="document"
+        inputmode="numeric"
+        maxlength="18"
+        (blur)="normalizeContact('document')"
+        aria-describedby="document-error"
+      />
+      @if (form.controls.document.touched && form.controls.document.invalid) {
+      <small id="document-error" class="field-error"
+        >Informe um CPF com 11 dígitos ou CNPJ com 14 dígitos.</small
+      >
+      }
+      <label for="postalCode">CEP</label>
+      <div class="postal-code-input" [attr.aria-busy]="postalCodePending()">
+        <input
+          id="postalCode"
+          formControlName="postalCode"
+          autocomplete="postal-code"
+          placeholder="00000-000"
+          inputmode="numeric"
+          maxlength="9"
+          (input)="postalCodeChanged($event)"
+          aria-describedby="postalCode-error postalCode-status"
+        />
+        <button
+          id="confirmPostalCode"
+          class="button"
+          type="button"
+          (click)="lookupPostalCode()"
+          [disabled]="postalCodePending() || pending()"
+        >
+          {{ postalCodePending() ? 'Buscando…' : 'Confirmar CEP' }}
+        </button>
+      </div>
+      @if (form.controls.postalCode.touched && form.controls.postalCode.invalid)
+      {
+      <small id="postalCode-error" class="field-error"
+        >Informe um CEP com 8 dígitos.</small
+      >
+      }
+      <small
+        id="postalCode-status"
+        aria-live="polite"
+        [class.field-error]="postalCodeError()"
+        class="muted"
+        >{{ postalCodeMessage() }}</small
+      >
+      <label for="street">Rua / Avenida</label>
+      <input
+        id="street"
+        formControlName="street"
+        autocomplete="address-line1"
+        maxlength="150"
+        aria-describedby="street-error"
+      />
+      @if (form.controls.street.touched && form.controls.street.invalid) {
+      <small id="street-error" class="field-error"
+        >Confira o campo rua / avenida.</small
+      >
+      }
+      <label for="number">Número</label>
+      <input
+        id="number"
+        formControlName="number"
+        autocomplete="off"
+        maxlength="20"
+        aria-describedby="number-error"
+      />
+      @if (form.controls.number.touched && form.controls.number.invalid) {
+      <small id="number-error" class="field-error"
+        >Confira o campo número.</small
+      >
+      }
+      <label for="complement">Complemento (opcional)</label>
+      <input
+        id="complement"
+        formControlName="complement"
+        autocomplete="address-line2"
+        maxlength="100"
+        aria-describedby="complement-error"
+      />
+      @if (form.controls.complement.touched && form.controls.complement.invalid)
+      {
+      <small id="complement-error" class="field-error"
+        >Confira o campo complemento (opcional).</small
+      >
+      }
+      <label for="neighborhood">Bairro</label>
+      <input
+        id="neighborhood"
+        formControlName="neighborhood"
+        autocomplete="off"
+        maxlength="100"
+        aria-describedby="neighborhood-error"
+      />
+      @if (form.controls.neighborhood.touched &&
+      form.controls.neighborhood.invalid) {
+      <small id="neighborhood-error" class="field-error"
+        >Confira o campo bairro.</small
+      >
+      }
+      <label for="city">Cidade</label>
+      <input
+        id="city"
+        formControlName="city"
+        autocomplete="address-level2"
+        maxlength="100"
+        aria-describedby="city-error"
+      />
+      @if (form.controls.city.touched && form.controls.city.invalid) {
+      <small id="city-error" class="field-error">Confira o campo cidade.</small>
+      }
+      <label for="state">UF</label>
+      <input
+        id="state"
+        formControlName="state"
+        autocomplete="address-level1"
+        maxlength="2"
+        aria-describedby="state-error"
+      />
+      @if (form.controls.state.touched && form.controls.state.invalid) {
+      <small id="state-error" class="field-error"
+        >Informe a UF com 2 letras.</small
+      >
+      }
+      <label for="phone">Telefone com DDD</label>
+      <input
+        id="phone"
+        type="tel"
+        formControlName="phone"
+        autocomplete="tel-national"
+        maxlength="15"
+        (blur)="normalizeContact('phone')"
+        aria-describedby="phone-error"
+      />
+      @if (form.controls.phone.touched && form.controls.phone.invalid) {
+      <small id="phone-error" class="field-error"
+        >Informe um telefone com DDD e 10 ou 11 dígitos.</small
+      >
+      }
+      <label for="email">E-mail</label
+      ><input
+        id="email"
+        type="email"
+        formControlName="email"
+        autocomplete="username"
+        maxlength="254"
+        aria-describedby="email-error"
+      />
+      @if (form.controls.email.touched && form.controls.email.invalid) {
+      <small id="email-error" class="field-error"
+        >Informe um e-mail válido.</small
+      >
+      } <label for="password">Senha</label>
+      <div class="password-input">
+        <input
+          id="password"
+          [type]="showPassword() ? 'text' : 'password'"
+          formControlName="password"
+          autocomplete="new-password"
+          maxlength="72"
+          aria-describedby="password-hint password-error"
+        />
+        <button
+          type="button"
+          class="password-toggle"
+          (click)="showPassword.set(!showPassword())"
+          [attr.aria-label]="showPassword() ? 'Ocultar senha' : 'Mostrar senha'"
+          [attr.aria-pressed]="showPassword()"
+          aria-controls="password"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            aria-hidden="true"
+          >
+            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+            <circle cx="12" cy="12" r="3" />
+            @if (showPassword()) {
+            <path d="m3 3 18 18" />
+            }
+          </svg>
+        </button>
+      </div>
+      <small id="password-hint" class="muted"
+        >Pelo menos 8 caracteres, com letra maiúscula, letra minúscula e
+        número.</small
+      >
+      @if (form.controls.password.touched && form.controls.password.invalid) {
+      <small id="password-error" class="field-error"
+        >Use pelo menos 8 caracteres, com letra maiúscula, letra minúscula e
+        número. Se a senha for muito longa, reduza o tamanho.</small
+      >
+      }
+      <label for="confirmPassword">Confirmar senha</label>
+      <div class="password-input">
+        <input
+          id="confirmPassword"
+          [type]="showConfirmation() ? 'text' : 'password'"
+          formControlName="confirmPassword"
+          autocomplete="new-password"
+          maxlength="72"
+          aria-describedby="confirm-password-error"
+        />
+        <button
+          type="button"
+          class="password-toggle"
+          (click)="showConfirmation.set(!showConfirmation())"
+          [attr.aria-label]="showConfirmation() ? 'Ocultar senha' : 'Mostrar senha'"
+          [attr.aria-pressed]="showConfirmation()"
+          aria-controls="confirmPassword"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            aria-hidden="true"
+          >
+            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+            <circle cx="12" cy="12" r="3" />
+            @if (showConfirmation()) {
+            <path d="m3 3 18 18" />
+            }
+          </svg>
+        </button>
+      </div>
+      @if (form.controls.confirmPassword.touched &&
+      (form.controls.confirmPassword.invalid ||
+      form.hasError('passwordMismatch'))) {
+      <small id="confirm-password-error" class="field-error"
+        >As senhas devem ser iguais.</small
+      >
+      }
+      <button class="button full" type="submit" [disabled]="pending()">
+        {{ pending() ? 'Criando conta…' : 'Criar conta e empresa' }}
+        <span aria-hidden="true">↗</span>
+      </button>
+    </form>
+    <p class="form-footer">
+      Já tem uma conta? <a routerLink="/entrar">Entrar</a>
+    </p>
+  </div>
+</section>

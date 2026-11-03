@@ -1,0 +1,27 @@
+<section class="workspace">
+  <span class="eyebrow">Sua empresa no FixFlow</span>
+  <h1>Bem-vindo ao seu espaço.</h1>
+  <p class="muted">
+    Sua sessão está ativa. A gestão de serviços será disponibilizada nas
+    próximas etapas.
+  </p>
+  <div class="card">
+    <h2>Acesso confirmado</h2>
+    <p>
+      Seu perfil:
+      <strong
+        >{{ session()?.role === 'OWNER' ? 'Proprietário' : session()?.role
+        }}</strong
+      >
+    </p>
+    <button
+      type="button"
+      class="button"
+      (click)="verifyAccess()"
+      [disabled]="pending()"
+    >
+      {{ pending() ? 'Verificando…' : 'Verificar acesso à empresa' }}
+    </button>
+    <p role="status" aria-live="polite">{{ status() }}</p>
+  </div>
+</section>
