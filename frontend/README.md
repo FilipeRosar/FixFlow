@@ -1,27 +1,66 @@
-# FixFlow — Home
+# FixFlow — frontend Angular
 
-Página institucional estática com a identidade visual do FixFlow, layout responsivo, painel ilustrativo, etapas interativas e modal de apresentação.
+Aplicação Angular com a home institucional do FixFlow, baseada na identidade visual
+existente. O painel usa **dados fictícios** e não faz chamadas à API. Login e cadastro
+ainda não fazem parte desta interface.
 
-## Executar localmente
+## Executar
 
 Na raiz do repositório:
 
 ```bash
-python3 -m http.server 5500 --directory frontend --bind 127.0.0.1
+cd frontend
 ```
 
-Abra http://localhost:5500. No VS Code, também é possível abrir `frontend/index.html` com a extensão Live Server.
+Em seguida:
 
-Não há instalação de dependências nem etapa de build. Edite `index.html`, `styles.css` e `main.js`; a logo está em `assets/fixflow-logo.jpg`.
+```bash
+npm ci
+npm start
+```
 
-## Continuar com Codex
+Abra `http://localhost:4200`. Validado com Node 24 e npm 11.
 
-Abra a raiz do repositório no VS Code ou no terminal e trabalhe nesta branch. Exemplo de pedido:
+## Verificar e gerar produção
 
-> Continue o frontend em frontend/. Preserve a identidade visual e o backend existente. Antes de integrar autenticação, inspecione os contratos e a segurança do backend/fixflow. Não trate os dados ilustrativos como dados reais.
+```bash
+npm test -- --watch=false
+npm run build
+```
 
-## Escopo atual
+A saída publicável fica em `dist/fixflow-front/browser`. Configure a hospedagem para
+retornar `index.html` nas rotas da aplicação. A home é carregada sob demanda e rotas
+desconhecidas redirecionam para ela.
 
-A home não chama a API. Login, cadastro e operação real ainda não foram implementados. Os números e serviços do painel são fictícios. Os recursos descritos representam a proposta do produto.
+## Organização
 
-A página pode ser servida por qualquer servidor estático. As configurações e a identidade da hospedagem privada de origem não fazem parte deste frontend.
+```text
+frontend/
+├── angular.json
+├── package.json
+├── package-lock.json
+├── tsconfig*.json
+├── public/assets/              # Logos e arquivos públicos
+├── src/
+│   ├── main.ts
+│   ├── index.html
+│   ├── styles.css              # Tema e estilos responsivos
+│   └── app/
+│       ├── app.*               # Shell, configuração e rotas
+│       ├── layout/
+│       │   ├── header/
+│       │   └── footer/
+│       └── features/home/
+│           ├── pages/home/
+│           ├── components/about-dialog/
+│           ├── data/
+│           └── models/
+└── docs/reference/static-home/ # Referência da versão anterior
+```
+
+Estado e eventos usam bindings Angular e signals. Não há `onclick` inline nem
+manipulação global do DOM. O modal nativo cuida de foco, Escape e bloqueio do fundo.
+Os testes cobrem rotas, etapas, menu móvel e ações de abertura/fechamento do modal.
+
+A versão estática original está preservada em `docs/reference/static-home/`, fora de
+`src/` e `public/`. Ela não participa do build nem é uma segunda aplicação mantida.

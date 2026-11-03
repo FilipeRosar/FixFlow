@@ -1,0 +1,26 @@
+<nav aria-label="Navegação principal">
+  <a href="#inicio" class="brand" aria-label="FixFlow — início">
+    <span class="logo-window">
+      <img src="assets/logo.png" alt="" />
+    </span>
+    <span>FixFlow</span>
+  </a>
+  <button
+    type="button"
+    class="menu-toggle"
+    aria-controls="primary-navigation"
+    [attr.aria-expanded]="menuOpen()"
+    (click)="toggleMenu()"
+  >
+    {{ menuOpen() ? 'Fechar menu' : 'Abrir menu' }}
+  </button>
+  <div class="links" id="primary-navigation" [class.is-open]="menuOpen()">
+    <a href="#recursos" (click)="closeMenu()"> Recursos </a>
+    <a href="#como-funciona" (click)="closeMenu()"> Como funciona </a>
+    <a href="#projeto" (click)="closeMenu()"> O projeto </a>
+  </div>
+  <a class="button light navbutton" href="#demo">
+    Explorar o FixFlow
+    <span> ↗ </span>
+  </a>
+</nav>
