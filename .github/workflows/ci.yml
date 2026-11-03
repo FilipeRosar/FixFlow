@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: backend/fixflow
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: backend/fixflow/pom.xml
+      - run: ./mvnw --batch-mode --no-transfer-progress validate
+
+  build-test:
+    name: Build and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci_postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_URL: jdbc:postgresql://localhost:5432/fixflow
+      DB_USERNAME: fixflow_runtime
+      DB_PASSWORD: ci_runtime
+      DB_MIGRATOR_USERNAME: fixflow_migrator
+      DB_MIGRATOR_PASSWORD: ci_migrator
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: backend/fixflow/pom.xml
+      - name: Provision disposable databases and roles
+        env:
+          PGPASSWORD: ci_postgres
+        run: psql --host localhost --username postgres --dbname postgres --set ON_ERROR_STOP=1 --file scripts/ci/init-db.sql
+      - name: Migrate fixflow (integration tests also inspect this database)
+        run: ./mvnw --batch-mode --no-transfer-progress -Pci-db flyway:migrate
+      - name: Build and run full suite (Flyway migrates fixflow_test)
+        run: ./mvnw --batch-mode --no-transfer-progress clean verify
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-reports
+          path: |
+            backend/fixflow/target/surefire-reports/
+            backend/fixflow/target/checkstyle-result.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  docker-security:
+    name: Docker and security
+    needs: [lint, build-test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      TRIVY_IMAGE: aquasec/trivy:0.76.1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: backend/fixflow/pom.xml
+      - name: Resolve dependencies for scanner Maven cache
+        run: ./mvnw --batch-mode --no-transfer-progress dependency:resolve
+      - name: Scan source dependencies (High/Critical fail, including unfixed)
+        run: |
+          mkdir -p reports
+          docker run --rm \
+            -v "$PWD:/workspace" -w /workspace \
+            -v "$HOME/.m2:/root/.m2:ro" \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" fs --scanners vuln \
+            --severity HIGH,CRITICAL --exit-code 1 \
+            --ignore-unfixed=false --ignorefile /dev/null \
+            --format table --output reports/dependencies.txt .
+      - name: Build Docker image
+        run: docker build --tag fixflow:ci .
+      - name: Export image for scanning
+        run: docker save --output /tmp/fixflow-ci.tar fixflow:ci
+      - name: Scan image OS and Java dependencies (High/Critical fail)
+        run: |
+          docker run --rm \
+            -v /tmp/fixflow-ci.tar:/image.tar:ro \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
+            -v "$PWD/reports:/reports" \
+            "$TRIVY_IMAGE" image --input /image.tar --scanners vuln \
+            --severity HIGH,CRITICAL --exit-code 1 \
+            --ignore-unfixed=false --ignorefile /dev/null \
+            --format table --output /reports/image.txt
+      - name: Show security reports
+        if: always()
+        run: find reports -type f -name '*.txt' -exec cat {} +
+      - name: Upload security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: backend/fixflow/reports/
+          if-no-files-found: warn
+          retention-days: 7
