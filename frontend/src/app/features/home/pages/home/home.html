@@ -1,0 +1,218 @@
+<div class="hero" id="inicio">
+  <div>
+    <div class="eyebrow">
+      <span class="dot"> </span>
+      Para quem faz tudo voltar a funcionar
+    </div>
+    <h1>
+      Cada reparo.
+      <br />
+      Cada cliente.
+      <br />
+      <em> Tudo no seu fluxo. </em>
+    </h1>
+    <p class="intro">
+      Menos informações espalhadas. Mais clareza para cuidar da sua assistência técnica, da entrada
+      do aparelho à entrega.
+    </p>
+    <div class="actions">
+      <a href="#demo" class="button">
+        Conhecer a solução
+        <span> ↗ </span>
+      </a>
+      <a class="button light" href="#como-funciona">
+        Como funciona
+        <span> ↓ </span>
+      </a>
+    </div>
+    <div class="note">Uma nova forma de organizar a rotina da sua assistência.</div>
+  </div>
+  <div class="scene" id="demo">
+    <div class="app">
+      <div class="apphead">
+        <strong> FixFlow </strong>
+        <div style="color: #8b9589">
+          Assistência Central &nbsp; ⌄ &nbsp;
+          <span class="avatar"> AC </span>
+        </div>
+      </div>
+      <div class="appbody">
+        <div class="sidebar">
+          <span> ◫ Visão geral </span>
+          ▤ Ordens
+          <br />
+          ♧ Clientes
+          <br />
+          ◇ Aparelhos
+          <br />
+          ⚙ Ajustes
+        </div>
+        <div class="main">
+          <div class="topline">
+            <div>
+              <h3>Sua operação, em dia.</h3>
+              <div class="sub">Veja como estão os serviços da sua assistência.</div>
+            </div>
+            <span style="background: #256b4d; color: white; padding: 7px; border-radius: 4px">
+              + Nova OS
+            </span>
+          </div>
+          <div class="metrics">
+            <div class="metric">
+              Em andamento
+              <b> 24 </b>
+            </div>
+            <div class="metric">
+              Aguardando aprovação
+              <b> 08 </b>
+            </div>
+            <div class="metric">
+              Prontos para entrega
+              <b> 12 </b>
+            </div>
+          </div>
+          <div class="listtitle">
+            <span> Ordens recentes </span>
+            <span style="color: #86917f; font-weight: 400"> Ver todas ↗ </span>
+          </div>
+          <div class="row">
+            <b> #OS-1042 </b>
+            <span>
+              iPhone 13
+              <br />
+              <small class="sub"> Troca de tela </small>
+            </span>
+            <span class="status"> Em reparo </span>
+          </div>
+          <div class="row">
+            <b> #OS-1041 </b>
+            <span>
+              Notebook Dell
+              <br />
+              <small class="sub"> Diagnóstico </small>
+            </span>
+            <span class="status b"> Em análise </span>
+          </div>
+          <div class="row">
+            <b> #OS-1040 </b>
+            <span>
+              Samsung A54
+              <br />
+              <small class="sub"> Troca de bateria </small>
+            </span>
+            <span class="status g"> Concluído </span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="float">
+      <span class="check"> ✓ </span>
+      <div>
+        Do recebimento à entrega.
+        <small> Uma visão clara de cada etapa. </small>
+      </div>
+    </div>
+    <span class="demolabel"> Interface ilustrativa · dados fictícios </span>
+  </div>
+</div>
+<div class="strip">
+  <span> Rotina mais organizada </span>
+  <span> Histórico em um só lugar </span>
+  <span> Visibilidade de cada reparo </span>
+  <span> Foco no seu atendimento </span>
+</div>
+<section id="recursos">
+  <div class="sectionhead">
+    <div>
+      <div class="eyebrow">Menos complicação. Mais controle.</div>
+      <h2>
+        O seu trabalho já é técnico.
+        <br />
+        A gestão pode ser simples.
+      </h2>
+    </div>
+    <p>
+      O FixFlow está sendo desenvolvido para conectar as informações que fazem a sua assistência
+      funcionar.
+    </p>
+  </div>
+  <div class="features">
+    <article class="feature">
+      <div class="icon">▤</div>
+      <h3>Cada ordem tem seu lugar</h3>
+      <p>
+        A proposta é reunir defeito relatado, diagnóstico e andamento do serviço em uma ordem fácil
+        de acompanhar.
+      </p>
+    </article>
+    <article class="feature">
+      <div class="icon">♧</div>
+      <h3>Atendimento com contexto</h3>
+      <p>
+        Clientes, aparelhos e histórico conectados para dar continuidade ao atendimento com mais
+        clareza.
+      </p>
+    </article>
+    <article class="feature">
+      <div class="icon">◴</div>
+      <h3>Clareza para decidir</h3>
+      <p>
+        Uma visão da operação para identificar o que precisa de atenção e organizar as próximas
+        entregas.
+      </p>
+    </article>
+  </div>
+</section>
+<section id="como-funciona" style="padding-top: 0; padding-bottom: 0">
+  <div class="flow">
+    <div>
+      <div class="eyebrow">Um fluxo que faz sentido</div>
+      <h2>
+        Do primeiro contato
+        <br />
+        ao problema resolvido.
+      </h2>
+      <p id="flowtext" aria-live="polite">
+        {{ steps[selectedStep()].description }}
+      </p>
+      <div class="note">Explore as etapas da jornada proposta →</div>
+    </div>
+    <div class="steps" aria-label="Etapas do atendimento">
+      @for (step of steps; track step.number; let index = $index) {
+        <button
+          type="button"
+          class="step"
+          [class.active]="selectedStep() === index"
+          [attr.aria-pressed]="selectedStep() === index"
+          aria-controls="flowtext"
+          (click)="selectStep(index)"
+        >
+          <span class="num">
+            {{ step.number }}
+          </span>
+          <span>
+            {{ step.title }}
+            <small>
+              {{ step.subtitle }}
+            </small>
+          </span>
+        </button>
+      }
+    </div>
+  </div>
+</section>
+<section class="cta" id="projeto">
+  <div class="eyebrow" style="justify-content: center">Conheça o que vem pela frente</div>
+  <h2>
+    Mais fluidez para sua assistência.
+    <br />
+    Mais tempo para fazer bem-feito.
+  </h2>
+  <p>O FixFlow está em desenvolvimento. Explore a visão do produto.</p>
+  <button class="button" type="button" (click)="about.open()">
+    Sobre o FixFlow
+    <span> ↗ </span>
+  </button>
+</section>
+
+<app-about-dialog #about />

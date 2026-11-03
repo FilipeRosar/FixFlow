@@ -1,0 +1,14 @@
+<dialog #dialog aria-labelledby="about-title" (click)="closeOnBackdrop($event)">
+  <button class="close" aria-label="Fechar" type="button" (click)="close()">×</button>
+  <div class="eyebrow">Em desenvolvimento</div>
+  <h2 id="about-title">Um fluxo melhor começa aqui.</h2>
+  <p>
+    O FixFlow é um projeto de gestão para assistências técnicas. Esta home apresenta a visão do
+    produto e uma interface ilustrativa.
+  </p>
+  <p>
+    Os recursos apresentados representam a proposta da solução. Cadastro, login e operação real
+    ainda não estão disponíveis nesta página.
+  </p>
+  <button class="button" type="button" (click)="close()">Continuar explorando</button>
+</dialog>
