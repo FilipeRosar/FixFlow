@@ -209,3 +209,48 @@ de integração. Cada publicador ativo precisa de conexões para a transação d
 e a transação do consumidor; dimensione o pool considerando ambas.
 
 Validação: `./mvnw -Dtest=OutboxIntegrationTest,ArchitectureTest test`.
+
+
+## Cadastro de Owner e empresa (US-001)
+
+`POST /api/contas` é público e recebe JSON:
+
+```json
+{
+  "companyName": "Oficina Exemplo",
+  "fullName": "Maria Silva",
+  "email": "maria@example.com",
+  "password": "uma-senha-longa"
+}
+```
+
+Retorna `201` com `userId`, `tenantId` e `role: "OWNER"`. Empresa, identidade e vínculo
+nascem ativos, em uma única transação. A identidade criada já pode autenticar via
+HTTP Basic e acessar `/api/oficinas/{tenantId}/selecao`. Não cria sessão nem token JWT.
+
+Nomes têm até 150 caracteres; e-mail, até 254. Espaços nas extremidades de nomes/e-mail
+são removidos e o e-mail é persistido em minúsculas. A senha exige de 10 a 72 caracteres
+e no máximo 72 bytes UTF-8 (limite BCrypt); não é normalizada nem devolvida na resposta.
+O hash usa o `PasswordEncoder` BCrypt existente, com custo 12.
+
+Dados inválidos ou JSON malformado retornam `400`. E-mail já cadastrado retorna `409`,
+inclusive com diferenças de caixa e em requisições concorrentes. A constraint global
+`uq_users_email` decide a unicidade; um conflito desfaz também o tenant recém-inserido.
+Uma identidade existente não recebe outra empresa por esse endpoint.
+
+A migration V12 fornece `register_owner` como operação `SECURITY DEFINER` com
+`search_path` fixo. A função gera IDs, fixa o papel `OWNER`, configura o tenant durante
+a inserção e restaura o contexto anterior. Runtime recebe somente permissão de executar
+a função, mantendo as restrições de escrita direta sobre identidades, tenants e vínculos.
+A exceção CSRF cobre apenas `POST /api/contas`; outras operações mantêm a proteção atual.
+
+Validação: `./mvnw -Dtest=OwnerRegistrationIntegrationTest,ArchitectureTest test`.
+
+
+### Organização do cadastro
+
+Os casos de uso ficam em `application.registration.usecase`, com implementação em
+`infrastructure.registration.usecase`. Os DTOs de saída ficam em
+`application.registration.dto`; os DTOs HTTP de entrada e suas validações ficam em
+`web.registration.dto`. Os controllers ficam em `web.registration.controller`.
+Cada DTO é uma classe própria, sem declarações aninhadas no controller ou no caso de uso.
