@@ -20,9 +20,13 @@ public class SecurityConfig {
         entryPoint.setRealmName("FixFlow");
         http
                 .authenticationProvider(provider)
+                .csrf(csrf -> csrf.ignoringRequestMatchers(
+                        org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher.withDefaults()
+                                .matcher(org.springframework.http.HttpMethod.POST, "/api/contas")))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(entryPoint))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/contas").permitAll()
                         .requestMatchers(
                                 "/api-docs/**",
                                 "/v3/api-docs/**",

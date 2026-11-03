@@ -16,6 +16,24 @@ import java.util.Map;
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
+    @ExceptionHandler(br.com.fixflow.shared.application.registration.EmailAlreadyRegisteredException.class)
+    public ResponseEntity<ProblemDetail> handleDuplicateEmail() {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "E-mail já cadastrado."));
+    }
+
+    @ExceptionHandler(br.com.fixflow.shared.application.registration.InvalidRegistrationException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidRegistration() {
+        return ResponseEntity.badRequest().body(ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST, "Dados de cadastro inválidos. A senha deve ter de 10 a 72 caracteres e no máximo 72 bytes UTF-8."));
+    }
+
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<ProblemDetail> handleUnreadableBody() {
+        return ResponseEntity.badRequest()
+                .body(ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Corpo da requisição inválido."));
+    }
+
     @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ProblemDetail> handleInvalidArgument() {
         return ResponseEntity.badRequest()

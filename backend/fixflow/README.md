@@ -15,6 +15,7 @@ O backend está em desenvolvimento, com foco na fundação técnica. Este reposi
 
 | Disponível no código | Escopo |
 |---|---|
+| Cadastro de conta/empresa | Endpoint público cria empresa e identidade com vínculo `OWNER`, atomicamente, com e-mail global único |
 | Identidade e autorização de oficina | Identidade global, senha BCrypt, vínculos de usuários com oficinas e seleção autorizada por requisição |
 | Isolamento entre tenants | Contexto transacional, PostgreSQL RLS e separação das roles de execução e migração |
 | Observabilidade | Logs JSON, IDs de requisição e correlação, contexto de usuário/tenant e probes de saúde |
@@ -108,7 +109,7 @@ curl --user 'seu-email@example.com' \
   http://localhost:8080/api/oficinas/UUID_DA_OFICINA/selecao
 ```
 
-O curl solicita a senha. Use uma identidade e uma oficina já cadastradas no banco; o cadastro público ainda faz parte do backlog. A resposta informa `userId`, `tenantId` e `role` do vínculo autorizado. Uma identidade pode ter vínculos com diferentes oficinas.
+O curl solicita a senha. Use uma identidade e uma oficina já cadastradas no banco; o cadastro público está disponível em `POST /api/contas`. A resposta informa `userId`, `tenantId` e `role` do vínculo autorizado. Uma identidade pode ter vínculos com diferentes oficinas.
 
 A seleção vale para a requisição atual. Cada operação deve passar por `AuthorizedTenantOperations.execute(tenantId, operation)`, que valida o vínculo antes de configurar o contexto Java e `SET LOCAL app.tenant_id` na transação. O PostgreSQL aplica RLS sobre os dados do tenant, e o contexto é limpo ao finalizar a operação.
 

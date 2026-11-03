@@ -1,0 +1,307 @@
+﻿Issue Id,Issue Type,Summary,Parent,Description,Priority,Labels,Story Points
+1,Epic,EPIC-01 — Fundação,,"Infra de código, multi-tenancy, observabilidade, auditoria, CI e outbox.",Highest,fixflow,
+2,Epic,EPIC-02 — Identidade e Tenant,,"Autenticação JWT, usuários, RBAC, configurações e limites de plano.",Highest,fixflow,
+3,Epic,EPIC-03 — Clientes e Equipamentos,,"Cadastros de clientes, contatos, equipamentos e LGPD.",Highest,fixflow,
+4,Epic,EPIC-04 — Ordens de Serviço,,"OS, state machine, diagnóstico, itens, anexos, entrega e garantia.",Highest,fixflow,
+5,Epic,EPIC-05 — Orçamento e Aprovação,,"Orçamento versionado, link público e aprovação com evidência.",Highest,fixflow,
+6,Epic,EPIC-06 — Estoque,,"Peças, movimentações, estoque mínimo e consistência.",Highest,fixflow,
+7,Epic,EPIC-07 — Financeiro,,"Pagamentos, estornos e integração futura com gateways.",Highest,fixflow,
+8,Epic,EPIC-08 — Notificações e Dashboard,,"E-mail, dashboard, notificações internas, WhatsApp e garantia.",High,fixflow,
+9,Epic,"EPIC-09 — Qualidade, Operação e Segurança",,"Testes, IaC, backup, hardening.",Highest,fixflow,
+10,Epic,EPIC-10 — IA assistiva,,Camada opcional de IA (pós-MVP).,Low,fixflow,
+11,Task,[F-01] Setup do projeto,1,"Repositório, estrutura modular, ArchUnit, Flyway, Compose, OpenAPI e ProblemDetail.
+
+Critérios de aceite:
+`compose up` sobe a stack; build verde; ArchUnit valida fronteiras.",Highest,"fixflow,fundacao",5
+12,Task,[F-02] Multi-tenancy base,1,"TenantContext, @TenantId, RLS, role de runtime sem BYPASSRLS, TenantScope para jobs, FKs compostas.
+
+Critérios de aceite:
+Teste de isolamento T8 passa; query nativa sem tenant é barrada.
+
+Dependências: F-01",Highest,"fixflow,fundacao,multi-tenant,seguranca",8
+13,Task,[F-03] Observabilidade base,1,"Logs JSON, requestId/correlationId, MDC (tenantId, userId), health checks.
+
+Critérios de aceite:
+Logs com requestId e tenantId; /health liveness e readiness.
+
+Dependências: F-01",Highest,"fixflow,fundacao,observabilidade",2
+14,Task,[F-04] Auditoria base,1,"AuditService e tabela audit_log append-only.
+
+Critérios de aceite:
+Eventos gravados na mesma transação; role sem UPDATE/DELETE.
+
+Dependências: F-02",Highest,"fixflow,fundacao,auditoria",5
+15,Task,[F-05] Pipeline CI,1,"GitHub Actions: build, test, lint, security scan, docker build.
+
+Critérios de aceite:
+Pipeline verde em PR; falha em vulnerabilidade High/Critical.
+
+Dependências: F-01",Highest,"fixflow,fundacao,ci-cd",5
+16,Task,[F-06] Transactional Outbox,1,"Tabela outbox_event, publicador com SKIP LOCKED, retry com backoff.
+
+Critérios de aceite:
+Evento gravado na transação de origem; reprocessa falhas.
+
+Dependências: F-02",Highest,"fixflow,fundacao,eventos",5
+17,Story,[US-001] Criar conta/empresa (Owner),2,"Como Owner, quero criar minha conta e empresa para começar a usar o sistema.
+
+Critérios de aceite:
+Cadastro cria tenant + Owner; e-mail único.
+
+Dependências: F-02",Highest,"fixflow,identity",5
+18,Story,[US-002] Login com JWT + refresh token,2,"Access 15 min, refresh opaco rotativo com detecção de reuso.
+
+Critérios de aceite:
+Reuso de refresh revoga a família; bloqueio após 5 falhas; teste T9.
+
+Dependências: US-001",Highest,"fixflow,identity,seguranca",8
+19,Story,[US-003] Logout e recuperação de senha,2,"Reset com token de uso único (30 min); resposta genérica.
+
+Critérios de aceite:
+Resposta idêntica com ou sem conta; token expira e é de uso único.
+
+Dependências: US-002",Highest,"fixflow,identity",2
+20,Story,[US-004] Gerenciar usuários e roles,2,"Owner cria, desativa e altera role (OWNER, ATTENDANT, TECHNICIAN).
+
+Critérios de aceite:
+RBAC aplicado conforme matriz; teste T5.
+
+Dependências: US-002",Highest,"fixflow,identity,rbac",5
+21,Story,[US-005] Configurações da empresa,2,"Logo, termos de garantia, validade de orçamento, permitir estoque negativo.
+
+Critérios de aceite:
+Configurações persistidas e aplicadas nas regras.
+
+Dependências: US-001",High,"fixflow,tenant",2
+22,Story,[US-006] Limites de plano,2,"Bloqueia criação além do limite de usuários/OS; nunca bloqueia leitura.
+
+Critérios de aceite:
+Mensagem de upgrade exibida ao atingir limite.
+
+Dependências: US-001",High,"fixflow,tenant,planos",2
+23,Story,[US-010] CRUD de clientes e contatos,3,"Busca por nome/telefone/documento, paginação, soft delete.
+
+Critérios de aceite:
+Exclusão bloqueada se houver OS aberta.
+
+Dependências: F-02",Highest,"fixflow,customers",5
+24,Story,[US-011] CRUD de equipamentos,3,"Equipamento vinculado ao cliente; busca por nº de série.
+
+Critérios de aceite:
+Equipamento sempre pertence a um cliente do mesmo tenant.
+
+Dependências: US-010",Highest,"fixflow,equipment",2
+25,Story,[US-012] Histórico do cliente,3,"Lista OS e equipamentos do cliente.
+
+Critérios de aceite:
+Histórico paginado e ordenado por data.
+
+Dependências: US-020",High,"fixflow,customers",2
+26,Story,[US-013] Anonimização e exportação LGPD,3,"Exportar dados do cliente e anonimizar mantendo OS/financeiro.
+
+Critérios de aceite:
+Anonimização bloqueada com OS aberta; ação auditada.
+
+Dependências: US-010",High,"fixflow,lgpd",5
+27,Story,[US-020] Abrir OS,4,"Cliente + equipamento + defeito + acessórios + estado físico; número sequencial por tenant.
+
+Critérios de aceite:
+Estado RECEBIDA; evento WorkOrderCreated; histórico e auditoria; teste T1.
+
+Dependências: US-010,US-011",Highest,"fixflow,workorders",5
+28,Story,[US-021] State machine da OS,4,"Todas as transições da seção 14 com guards e permissões.
+
+Critérios de aceite:
+Transição inválida retorna 409 INVALID_STATE_TRANSITION; teste T4.
+
+Dependências: US-020",Highest,"fixflow,workorders,dominio",8
+29,Story,[US-022] Atribuir técnico e minha fila,4,"Técnico vê apenas OS atribuídas.
+
+Critérios de aceite:
+Filtro por técnico respeitado no RBAC.
+
+Dependências: US-020",Highest,"fixflow,workorders",2
+30,Story,[US-023] Registrar diagnóstico,4,"Achados, causa provável e solução proposta com histórico.
+
+Critérios de aceite:
+Transição para AGUARDANDO_ORCAMENTO exige diagnóstico.
+
+Dependências: US-021",Highest,"fixflow,workorders",2
+31,Story,[US-024] Itens da OS (serviços e peças),4,"Adicionar/remover itens; peça gera baixa de estoque.
+
+Critérios de aceite:
+Baixa atômica; testes T6 e T7.
+
+Dependências: US-021,US-040",Highest,"fixflow,workorders,estoque",5
+32,Story,[US-025] Anexos e fotos da OS,4,"Upload com validação MIME + magic bytes, S3 privado, URL pré-assinada de 5 min.
+
+Critérios de aceite:
+Máx. 10 MB/arquivo e 20 por OS; arquivo falso rejeitado (T12).
+
+Dependências: US-020",Highest,"fixflow,workorders,uploads,seguranca",5
+33,Story,[US-026] Timeline da OS,4,"Exibe transições e eventos.
+
+Critérios de aceite:
+Histórico imutável com usuário, data e motivo.
+
+Dependências: US-021",Highest,"fixflow,workorders",2
+34,Story,[US-027] Entrega e garantia,4,"Entrega calcula warranty_until e exige pagamento quitado (exceção do Owner auditada).
+
+Critérios de aceite:
+OS ENTREGUE é terminal.
+
+Dependências: US-050",Highest,"fixflow,workorders",2
+35,Story,[US-028] Impressão PDF da OS,4,"Termo de entrada/entrega em PDF.
+
+Critérios de aceite:
+PDF com dados da empresa e termos.
+
+Dependências: US-020",High,"fixflow,workorders",5
+36,Story,[US-030] Montar orçamento,5,"Cálculo conforme seção 20.2; versionamento; snapshot de preços.
+
+Critérios de aceite:
+Total = mão de obra + peças − desconto; imutável após envio.
+
+Dependências: US-023",Highest,"fixflow,quotes",5
+37,Story,[US-031] Enviar orçamento,5,"Gera token (hash no banco), e-mail com link, Idempotency-Key.
+
+Critérios de aceite:
+OS vai para AGUARDANDO_APROVACAO; reenvio idempotente.
+
+Dependências: US-030,F-06",Highest,"fixflow,quotes,notificacoes",5
+38,Story,[US-032] Página pública do orçamento,5,"Token 256 bits, rate limit, headers de segurança, dados mínimos.
+
+Critérios de aceite:
+Token inválido/expirado retorna 404 idêntico; 429 no limite; teste T10.
+
+Dependências: US-031",Highest,"fixflow,quotes,publico,seguranca",8
+39,Story,[US-033] Aprovar/rejeitar via link,5,"Decisão única com evidência (IP, UA, hash do conteúdo, hora).
+
+Critérios de aceite:
+OS vai para APROVADA ou ORCAMENTO_REJEITADO; testes T2 e T3.
+
+Dependências: US-032",Highest,"fixflow,quotes,auditoria",5
+40,Story,[US-034] Aprovação manual,5,"Atendente/Owner aprova por telefone/balcão com justificativa.
+
+Critérios de aceite:
+Justificativa obrigatória; ação auditada.
+
+Dependências: US-030",Highest,"fixflow,quotes",2
+41,Story,[US-035] Revogar e reenviar link,5,"Invalida o token anterior.
+
+Critérios de aceite:
+Link antigo retorna 404.
+
+Dependências: US-031",High,"fixflow,quotes,seguranca",2
+42,Story,[US-040] CRUD de peças,6,"SKU único por tenant, custo, preço, mínimo.
+
+Critérios de aceite:
+Soft delete; saldo não editável diretamente.
+
+Dependências: F-02",Highest,"fixflow,inventory",2
+43,Story,[US-041] Entrada e ajuste de estoque,6,"Movimentação imutável; ajuste exige motivo (Owner).
+
+Critérios de aceite:
+Custo médio atualizado nas entradas.
+
+Dependências: US-040",Highest,"fixflow,inventory",2
+44,Story,[US-042] Estoque mínimo e alerta,6,"Lista belowMinimum e notificação interna.
+
+Critérios de aceite:
+Alerta quando saldo ≤ mínimo.
+
+Dependências: US-040",High,"fixflow,inventory",2
+45,Task,[US-043] Job de reconciliação de estoque,6,"Verifica SUM(movimentações) = saldo por tenant.
+
+Critérios de aceite:
+Divergências geram alerta.
+
+Dependências: US-041",Medium,"fixflow,inventory",2
+46,Story,[US-050] Registrar pagamento,7,"Parcial ou total, idempotente; atualiza financial_status.
+
+Critérios de aceite:
+Status UNPAID/PARTIAL/PAID derivado da soma dos pagamentos.
+
+Dependências: US-033",Highest,"fixflow,billing",5
+47,Story,[US-051] Estorno de pagamento,7,"Void com motivo, apenas Owner.
+
+Critérios de aceite:
+Pagamento nunca é apagado; ação auditada.
+
+Dependências: US-050",High,"fixflow,billing",2
+48,Story,[US-052] PaymentGateway + Asaas,7,"Adapter de gateway com webhook assinado e idempotente.
+
+Critérios de aceite:
+Cobrança PIX criada e conciliada via webhook.
+
+Dependências: US-050",Low,"fixflow,billing,integracao",8
+49,Story,[US-060] E-mail por evento,8,"Templates por evento, retry e notification_delivery.
+
+Critérios de aceite:
+Entrega idempotente; falhas visíveis (FAILED).
+
+Dependências: F-06",High,"fixflow,notificacoes",5
+50,Story,[US-061] Dashboard básico,8,"OS por status, faturamento, ticket médio, tempo médio.
+
+Critérios de aceite:
+Dados filtrados por tenant e período.
+
+Dependências: US-021",High,"fixflow,dashboard",5
+51,Story,[US-062] Notificações internas,8,"Sino de notificações.
+
+Critérios de aceite:
+Marca como lida.
+
+Dependências: US-060",Medium,"fixflow,notificacoes",2
+52,Story,[US-063] WhatsApp oficial + broker,8,"WhatsApp Business API com templates, opt-in e RabbitMQ/SQS.
+
+Critérios de aceite:
+Mensagens entregues com retry e DLQ.
+
+Dependências: US-060",Medium,"fixflow,notificacoes,integracao",13
+53,Story,[US-064] Alerta de garantia a vencer,8,"Job diário por tenant, aviso 15 dias antes.
+
+Critérios de aceite:
+Notificação enviada uma única vez por OS.
+
+Dependências: US-027",Medium,"fixflow,notificacoes",2
+54,Task,[T-01] Suíte de isolamento de tenant (T8),9,"Testes automatizados de vazamento entre tenants.
+
+Critérios de aceite:
+Roda no CI; falha bloqueia merge.
+
+Dependências: F-02",Highest,"fixflow,testes,multi-tenant",5
+55,Task,[T-02] Cenários de teste T1–T12,9,"Implementar cenários da seção 24.
+
+Critérios de aceite:
+Todos verdes em CI.",Highest,"fixflow,testes",8
+56,Task,[T-03] E2E Playwright (OS → aprovação → entrega),9,"Fluxo crítico ponta a ponta.
+
+Critérios de aceite:
+Verde no CI/pre-deploy.",High,"fixflow,testes",5
+57,Task,[O-01] IaC mínima (Terraform) e deploy,9,"Staging e produção reprodutíveis na AWS.
+
+Critérios de aceite:
+Deploy com aprovação manual em produção; rollback para imagem anterior.
+
+Dependências: F-05",Highest,"fixflow,infra,ci-cd",8
+58,Task,[O-02] Backup e teste de restore,9,"RDS com backup/PITR e restore documentado.
+
+Critérios de aceite:
+Restore executado com sucesso em staging.
+
+Dependências: O-01",Highest,"fixflow,infra",2
+59,Task,[S-01] Hardening de segurança,9,"Headers, CORS, rate limit, secrets, CSP.
+
+Critérios de aceite:
+Checklist OWASP sem High aberto.",Highest,"fixflow,seguranca",5
+60,Task,[AI-01] Interface AiAssistant + feature flag,10,"Camada desacoplada e opt-in por tenant.
+
+Critérios de aceite:
+Sistema funciona 100% com a flag desligada.",Low,"fixflow,ia",2
+61,Story,[AI-02] Reescrever diagnóstico e mensagem ao cliente,10,"Sugestão gerada por IA, revisada pelo humano.
+
+Critérios de aceite:
+Marcada como 'sugestão de IA'; sem dados pessoais desnecessários.
+
+Dependências: AI-01",Low,"fixflow,ia",5
