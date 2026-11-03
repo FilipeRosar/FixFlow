@@ -1,127 +1,118 @@
-# FixFlow backend
+# FixFlow
 
-Fluxo completo, permissões e migração controlada do legado:
-[F-02 — Identidade global e seleção de oficina](docs/F02.md).
+Backend de um SaaS B2B para gestão de assistências técnicas pequenas e médias. O FixFlow foi pensado para centralizar o atendimento, rastrear equipamentos e registrar decisões ao longo de todo o serviço.
 
-## Banco local
+```text
+Cliente → Equipamento → Ordem de Serviço → Diagnóstico → Orçamento
+        → Aprovação → Manutenção → Pagamento → Entrega → Garantia
+```
 
-O PostgreSQL deve estar disponível em `localhost:5432/fixflow`, com os usuários
-`fixflow_runtime` e `fixflow_migrator` já configurados.
+Cada assistência é um **tenant**, com seus próprios dados e vínculos de usuários. O produto atende proprietários, atendentes e técnicos; o acesso do cliente final por link de orçamento faz parte do escopo planejado.
 
-Na raiz do projeto, configure uma vez as senhas existentes no banco:
+## Estado do projeto
+
+O backend está em desenvolvimento, com foco na fundação técnica. Este repositório contém a aplicação Spring Boot; a interface Angular e os módulos de negócio descritos no documento técnico fazem parte da evolução do produto.
+
+| Disponível no código | Escopo |
+|---|---|
+| Identidade e autorização de oficina | Identidade global, senha BCrypt, vínculos de usuários com oficinas e seleção autorizada por requisição |
+| Isolamento entre tenants | Contexto transacional, PostgreSQL RLS e separação das roles de execução e migração |
+| Observabilidade | Logs JSON, IDs de requisição e correlação, contexto de usuário/tenant e probes de saúde |
+| Auditoria base | `AuditService`, gravação na transação de negócio e tabela `audit_log` append-only para a role de execução |
+| Persistência e qualidade | Migrations Flyway, testes de integração e regras de arquitetura com ArchUnit |
+| API | OpenAPI, Swagger UI e tratamento global de erros |
+
+O [documento técnico](docs/documento-tecnico-fixflow.md) reúne requisitos, fluxos, modelo de dados, ADRs e backlog. Ele descreve a arquitetura alvo; para executar esta versão, use as versões e rotas abaixo. A autenticação atual usa **HTTP Basic**. JWT com refresh rotativo está previsto no roadmap.
+
+## Stack atual
+
+| Tecnologia | Uso |
+|---|---|
+| Java 25 | Linguagem e runtime |
+| Spring Boot 4.1.1 | Aplicação e configuração |
+| Spring Security | Autenticação e autorização |
+| Spring Data JPA / Hibernate e JDBC | Persistência e acesso transacional |
+| PostgreSQL | Banco relacional, RLS e JSONB |
+| Flyway | Versionamento do schema |
+| Spring Boot Actuator | Probes de saúde |
+| springdoc-openapi | Documentação da API |
+| JUnit, Spring Test e ArchUnit | Testes e validação das fronteiras de arquitetura |
+| Maven Wrapper e Docker | Build e empacotamento |
+
+## Executar localmente
+
+### Pré-requisitos
+
+- JDK 25.
+- Python 3 para o assistente de configuração local.
+- PostgreSQL disponível em `localhost:5432`, com o banco `fixflow` criado.
+- Roles `fixflow_runtime` e `fixflow_migrator` previamente provisionadas, com suas senhas e permissões.
+- Banco `fixflow_test` para os testes de integração.
+
+A role de execução deve operar sem privilégios administrativos, sem `BYPASSRLS` e sem ser proprietária das tabelas. A role de migração aplica o schema pelo Flyway. O assistente abaixo apenas salva as credenciais existentes; o provisionamento do PostgreSQL é uma etapa prévia.
+
+### Configurar credenciais
+
+Na raiz do repositório:
 
 ```bash
 python3 scripts/configure-local.py
 ```
 
-O comando cria `application-local.properties`, ignorado pelo Git e legível apenas
-pelo usuário atual. O Spring carrega esse arquivo ao iniciar a aplicação e os
-testes. Para mudar host, banco, usuários ou senhas, edite esse arquivo local.
-O comando não altera usuários nem senhas no PostgreSQL.
+Informe as senhas das duas roles. O script cria `application-local.properties`, ignorado pelo Git e com acesso restrito ao usuário atual. Para atualizar uma configuração existente, edite esse arquivo.
 
-Variáveis de ambiente têm prioridade sobre os valores locais. Para remover
-valores antigos do terminal antes de usar o arquivo:
+| Variável | Finalidade | Padrão / configuração |
+|---|---|---|
+| `DB_URL` | URL JDBC da aplicação e do Flyway | `jdbc:postgresql://localhost:5432/fixflow` |
+| `DB_USERNAME` | Role de execução | `fixflow_runtime` |
+| `DB_PASSWORD` | Senha de execução | Informada na configuração local |
+| `DB_MIGRATOR_USERNAME` | Role de migração | `fixflow_migrator` |
+| `DB_MIGRATOR_PASSWORD` | Senha de migração | Informada na configuração local |
 
-```bash
-unset DB_URL DB_USERNAME DB_PASSWORD DB_MIGRATOR_USERNAME DB_MIGRATOR_PASSWORD
-./mvnw clean verify
-```
+Variáveis de ambiente têm prioridade sobre o arquivo local. Execute os comandos a partir da raiz do projeto, inclusive ao configurar a IDE.
 
-Para iniciar a aplicação:
+### Iniciar a API
 
 ```bash
 ./mvnw spring-boot:run
 ```
 
-Se a porta 8080 estiver ocupada:
+O Flyway aplica as migrations ao iniciar. A aplicação atende em `http://localhost:8080`.
+
+Para usar outra porta:
 
 ```bash
 ./mvnw spring-boot:run -Dspring-boot.run.arguments="--server.port=8081"
 ```
 
-Execute os comandos a partir da raiz deste projeto. Para testes pela IDE,
-configure essa mesma pasta como diretório de trabalho.
+### Documentação e saúde
 
-## Autenticação e seleção de oficina (P0)
+| Rota | Finalidade |
+|---|---|
+| `/swagger-ui.html` | Interface da documentação da API |
+| `/api-docs` | Especificação OpenAPI em JSON |
+| `/health` | Saúde agregada |
+| `/health/liveness` | Estado da aplicação, independente do banco |
+| `/health/readiness` | Disponibilidade da aplicação e conexão com PostgreSQL |
 
-As rotas protegidas usam HTTP Basic com o email e a senha da identidade global
-em `users`. O `GlobalAuthenticationProvider` verifica a senha com BCrypt e exige
-usuário `ACTIVE`. O principal do Spring Security contém apenas `userId` e email;
-as credenciais são descartadas após a autenticação. Não há login por formulário
-nem sessão que guarde a oficina selecionada. A proteção CSRF permanece habilitada
-para métodos que alteram estado.
+Essas rotas são públicas na configuração atual. As probes retornam `200` quando disponíveis e `503` quando indisponíveis, sem expor detalhes internos.
 
-```bash
-curl --user 'seu-email@example.com' http://localhost:8080/api/oficinas/UUID_DA_OFICINA/selecao
-```
+## Autenticação e isolamento
 
-O curl solicita a senha. A resposta contém `userId`, `tenantId` e `role` do vínculo
-autorizado. A seleção é por requisição: ela valida o vínculo e não concede acesso
-a chamadas futuras. Cada operação da oficina deve chamar
-`AuthorizedTenantOperations.execute(tenantId, operation)` novamente.
-
-- `401`: autenticação ausente, senha incorreta ou identidade suspensa.
-- `403`: identidade autenticada sem vínculo ativo, vínculo suspenso, oficina
-  suspensa ou inexistente. A resposta não revela qual dessas condições ocorreu.
-- `400`: identificador de oficina inválido.
-
-O executor obtém a identidade exclusivamente do `SecurityContext`, abre uma
-transação `REQUIRES_NEW` e consulta `authorize_tenant_membership`. Somente após a
-autorização configura `TenantContext` e `SET LOCAL app.tenant_id`. JPA e JDBC usam
-a mesma conexão e transação. Todo acesso ao banco da operação deve ocorrer
-dentro do callback; não transfira trabalho para outra thread nem retorne consultas
-JPA para executar depois. Em erro, a transação sofre rollback. Ao terminar, o
-contexto Java anterior é restaurado e a configuração SQL local deixa de valer.
-Um filtro limpa o ThreadLocal no início e no fim da requisição, inclusive quando
-a autenticação falha.
-
-Controllers dependem da interface da camada de aplicação. As regras ArchUnit
-impedem dependência HTTP de infraestrutura, uso de `TenantScope` fora do executor
-e alteração direta do tenant fora do escopo. UUID e userId enviados pelo cliente
-nunca substituem a identidade autenticada.
-
-Os testes HTTP e do executor usam o perfil `integration-test` (`fixflow_test`),
-credenciais reais de teste e fixtures com UUIDs aleatórios. O migrator prepara e
-remove as fixtures; o runtime executa as consultas de autorização e isolamento.
-Como `tenant_memberships` usa FORCE RLS, a preparação abre uma policy temporária
-restrita aos IDs da fixture e ao migrator, removida na mesma transação antes do
-commit. A aplicação executa com as policies originais e sem privilégios adicionais.
+As rotas protegidas usam o e-mail e a senha da identidade global. A identidade, o vínculo e a oficina precisam estar ativos para autorizar uma operação no tenant.
 
 ```bash
-./mvnw -Dtest=ArchitectureTest,AuthorizedTenantExecutorIntegrationTest,TenantSelectionIntegrationTest,TenantMembershipAuthorizationRepositoryIntegrationTest test
+curl --user 'seu-email@example.com' \
+  http://localhost:8080/api/oficinas/UUID_DA_OFICINA/selecao
 ```
 
-## Testes e infraestrutura (P1)
+O curl solicita a senha. Use uma identidade e uma oficina já cadastradas no banco; o cadastro público ainda faz parte do backlog. A resposta informa `userId`, `tenantId` e `role` do vínculo autorizado. Uma identidade pode ter vínculos com diferentes oficinas.
 
-Todos os testes que sobem o Spring usam `integration-test` e executam em
-`fixflow_test`. `DatabaseInfrastructureIntegrationTest` também consulta `fixflow`
-apenas para conferir a V8: registro com sucesso, checksum igual ao validado pelo
-Flyway, permissões SELECT e RLS com FORCE nas tabelas `tenants` e `app_users`.
-Os dois bancos precisam estar disponíveis e migrados para executar essa verificação.
+A seleção vale para a requisição atual. Cada operação deve passar por `AuthorizedTenantOperations.execute(tenantId, operation)`, que valida o vínculo antes de configurar o contexto Java e `SET LOCAL app.tenant_id` na transação. O PostgreSQL aplica RLS sobre os dados do tenant, e o contexto é limpo ao finalizar a operação.
 
-`MembershipFixtures` cria identidades, oficinas, vínculos e usuários legados com
-IDs aleatórios, e remove os dados ao terminar cada teste. A criação é atômica e
-o fechamento é idempotente. O helper recusa URLs fora de `fixflow_test`. Nos testes
-com `@Transactional`, a preparação e a limpeza acontecem antes e depois da
-transação de teste, usando `@BeforeTransaction` e `@AfterTransaction`.
+Respostas da seleção: `401` para falha de autenticação, `403` para acesso à oficina negado e `400` para UUID inválido. A proteção CSRF permanece habilitada nos métodos que alteram estado.
 
-`TenantWriteIsolationIntegrationTest` usa uma cópia descartável da estrutura de
-`app_users` e da sua policy real. Somente essa tabela recebe permissões de CRUD
-para o runtime. Isso exercita INSERT, UPDATE e DELETE com RLS sem conceder escrita
-nas tabelas de produção, que continuam com SELECT. A tabela é removida no teardown.
-
-A cobertura inclui:
-
-- Leituras por JPA/JDBC e bloqueio de UPDATE/DELETE cruzados nos dois sentidos.
-- INSERT autorizado com commit, DELETE próprio e bloqueio de INSERT em outra oficina.
-- Bloqueio de alteração do `tenant_id` e de escrita sem contexto.
-- Rollback de escritas quando ocorre exceção Java, erro SQL ou `Error`.
-- Pool de tamanho 1 com comparação de `pg_backend_pid()`, comprovando a reutilização
-  física da conexão após commit e rollback, sem vazamento de `app.tenant_id`.
-- Restauração do contexto Java e SQL da transação externa ao suspender e retomar
-  transações com `REQUIRES_NEW`.
-- Limpeza de ThreadLocal inclusive quando a requisição termina com 401.
-- Remoção de dados, tabelas e policy de fixture mesmo após falha no corpo do teste.
+## Testes
 
 Para executar a suíte completa:
 
@@ -129,27 +120,60 @@ Para executar a suíte completa:
 ./mvnw clean verify
 ```
 
-## Observabilidade (F-03)
+Os testes de integração usam PostgreSQL real e o perfil `integration-test`, com URL fixa para `localhost:5432/fixflow_test`. As credenciais vêm da mesma configuração local. As fixtures são criadas e removidas com a role de migração; as operações da aplicação usam a role de execução.
 
-O console emite logs JSON (Logstash). Cada requisição recebe `requestId` e
-`correlationId` no MDC e nos headers de resposta `X-Request-Id` e
-`X-Correlation-Id`. IDs recebidos são aceitos apenas com 1–128 caracteres
-alfanuméricos, ponto, hífen ou underscore; valores inválidos são substituídos por
-UUIDs. Sem correlation ID, usa-se o request ID.
+`DatabaseInfrastructureIntegrationTest` também consulta o banco `fixflow` para validar migrations e permissões. Os dois bancos precisam estar disponíveis e migrados para a suíte completa.
 
-`userId` vem do principal autenticado. `tenantId` acompanha exclusivamente o
-escopo autorizado da oficina, inclusive nos logs de conclusão ou falha da operação.
-Ao sair do escopo, restaura-se o tenant anterior; ao terminar a requisição,
-limpam-se os campos do MDC. Headers de identidade enviados pelo cliente não
-preenchem esses campos. Logs de conclusão HTTP incluem método, status e duração,
-sem registrar credenciais, corpo ou query string. O contexto é síncrono e não é
-propagado automaticamente para outras threads.
+Para validar apenas a arquitetura, sem banco:
 
-As probes são públicas e não expõem detalhes internos:
+```bash
+./mvnw -Dtest=ArchitectureTest test
+```
 
-- `GET /health`: saúde agregada.
-- `GET /health/liveness`: estado de vida da aplicação, independente do banco.
-- `GET /health/readiness`: disponibilidade da aplicação e conexão com PostgreSQL.
+Para validar auditoria e arquitetura:
 
-As probes retornam `200` quando disponíveis e `503` quando indisponíveis.
-Os endpoints de saúde substituem `/actuator/health`; apenas health está exposto.
+```bash
+./mvnw -Dtest=AuditServiceIntegrationTest,ArchitectureTest test
+```
+
+A cobertura da fundação inclui autorização de vínculos, isolamento de leitura/escrita, rollback, reutilização de conexão sem vazamento de tenant, limpeza de contexto, observabilidade e permissões append-only da auditoria.
+
+## Organização do repositório
+
+```text
+src/main/java/br/com/fixflow/
+├── FixflowApplication.java
+└── shared/
+    ├── application/       # Interfaces de autorização e auditoria
+    ├── infrastructure/    # Persistência, segurança, tenant e observabilidade
+    └── web/               # Controllers e tratamento de erros
+src/main/resources/
+├── application.properties
+├── application-integration-test.properties
+└── db/migration/          # Migrations Flyway
+src/test/java/             # Testes e fixtures
+scripts/                   # Configuração local
+docs/                      # Especificação e guia de desenvolvimento
+Dockerfile                 # Build Maven e execução com Java 25
+```
+
+A arquitetura alvo é um **monólito modular**, com camadas de domínio, aplicação, infraestrutura e web. Os módulos de negócio serão organizados por responsabilidade, com fronteiras verificáveis e interfaces para integrações externas. Migrations já aplicadas devem ser preservadas; alterações de schema entram em novos arquivos.
+
+## Evolução planejada
+
+O MVP descrito no documento técnico contempla:
+
+- Gestão de clientes e equipamentos.
+- Ordens de serviço com diagnóstico, atribuição de técnico e máquina de estados.
+- Orçamentos versionados e aprovação/rejeição por link seguro, com evidência auditável.
+- Estoque básico com movimentações imutáveis e baixa atômica.
+- Pagamentos manuais, entrega e garantia.
+- Anexos, notificações por e-mail, dashboard e permissões por perfil.
+- JWT com refresh rotativo, Outbox transacional e automação de CI/CD.
+
+WhatsApp automatizado, gateways de pagamento, IA assistiva e recursos avançados ficam para fases posteriores. A arquitetura planejada usa Angular no frontend e serviços AWS para hospedagem, arquivos e e-mail; o ambiente local atual está descrito neste README.
+
+## Documentação
+
+- [Documento técnico do FixFlow](docs/documento-tecnico-fixflow.md): visão do produto, requisitos, arquitetura, modelo de dados e roadmap.
+- [Guia de desenvolvimento](docs/desenvolvimento.md): detalhes de autorização, transações, fixtures, observabilidade e uso do `AuditService`.
