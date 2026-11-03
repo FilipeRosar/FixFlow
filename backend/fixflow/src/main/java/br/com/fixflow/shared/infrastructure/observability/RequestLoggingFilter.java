@@ -23,7 +23,6 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        // Never carry identity or request metadata over from a pooled servlet thread.
         MDC.remove("userId");
         String requestId = identifier(request.getHeader("X-Request-Id"));
         String correlation = request.getHeader("X-Correlation-Id");
