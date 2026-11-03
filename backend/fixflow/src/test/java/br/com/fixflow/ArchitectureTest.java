@@ -33,6 +33,15 @@ public class ArchitectureTest {
             .should().dependOnClassesThat().resideInAPackage("..infrastructure..");
 
     @ArchTest
+    static final ArchRule domain_is_independent = noClasses().that().resideInAPackage("..domain..")
+            .should().dependOnClassesThat().resideInAnyPackage("..application..", "..infrastructure..", "..web..",
+                    "org.springframework..", "jakarta..", "com.fasterxml.jackson..", "tools.jackson..");
+
+    @ArchTest
+    static final ArchRule application_is_independent = noClasses().that().resideInAPackage("..application..")
+            .should().dependOnClassesThat().resideInAnyPackage("..infrastructure..", "..web..", "org.springframework..", "jakarta..");
+
+    @ArchTest
     static final ArchRule hexagonal_architecture =
             layeredArchitecture()
                     .consideringOnlyDependenciesInLayers()
@@ -44,7 +53,7 @@ public class ArchitectureTest {
 
                     .withOptionalLayers(true)
 
-                    .whereLayer("Domain").mayNotBeAccessedByAnyLayer()
+                    .whereLayer("Domain").mayOnlyBeAccessedByLayers("Application", "Infrastructure", "Web")
                     .whereLayer("Application").mayOnlyAccessLayers("Domain")
                     .whereLayer("Infrastructure").mayOnlyAccessLayers("Application", "Domain", "Framework")
                     .whereLayer("Web")

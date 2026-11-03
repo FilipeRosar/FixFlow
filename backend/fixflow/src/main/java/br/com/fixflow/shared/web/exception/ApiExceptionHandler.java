@@ -15,6 +15,9 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @org.springframework.beans.factory.annotation.Value("${fixflow.auth.basic-enabled:false}")
+    private boolean legacyBasic;
+
 
     @ExceptionHandler(br.com.fixflow.shared.application.registration.EmailAlreadyRegisteredException.class)
     public ResponseEntity<ProblemDetail> handleDuplicateEmail() {
@@ -43,7 +46,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
     public ResponseEntity<ProblemDetail> handleAuthentication() {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .header("WWW-Authenticate", "Basic realm=\"FixFlow\"")
+                .header("WWW-Authenticate", legacyBasic ? "Basic realm=\"FixFlow\"" : "Bearer")
                 .body(ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Autenticação obrigatória."));
     }
 

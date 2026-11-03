@@ -38,3 +38,6 @@ build/
 ### Python tooling cache ###
 __pycache__/
 *.py[cod]
+
+/.local/
+/application-auth-local.properties

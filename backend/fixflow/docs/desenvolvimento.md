@@ -44,25 +44,14 @@ configure essa mesma pasta como diretório de trabalho.
 
 ## Autenticação e seleção de oficina (P0)
 
-As rotas protegidas usam HTTP Basic com o email e a senha da identidade global
-em `users`. O `GlobalAuthenticationProvider` verifica a senha com BCrypt e exige
-usuário `ACTIVE`. O principal do Spring Security contém apenas `userId` e email;
-as credenciais são descartadas após a autenticação. Não há login por formulário
-nem sessão que guarde a oficina selecionada. A proteção CSRF permanece habilitada
-para métodos que alteram estado.
+As rotas protegidas usam JWT de 15 minutos em `Authorization: Bearer <accessToken>`.
+Faça login em `POST /api/v1/auth/login` com `X-Auth-Request: true`, e utilize o token
+na seleção `/api/oficinas/{tenantId}/selecao`. O JWT fica restrito ao tenant escolhido;
+cada operação valida novamente o vínculo. Consulte a seção US-002 para o contrato
+completo e a renovação por cookie.
 
-```bash
-curl --user 'seu-email@example.com' http://localhost:8080/api/oficinas/UUID_DA_OFICINA/selecao
-```
-
-O curl solicita a senha. A resposta contém `userId`, `tenantId` e `role` do vínculo
-autorizado. A seleção é por requisição: ela valida o vínculo e não concede acesso
-a chamadas futuras. Cada operação da oficina deve chamar
-`AuthorizedTenantOperations.execute(tenantId, operation)` novamente.
-
-- `401`: autenticação ausente, senha incorreta ou identidade suspensa.
-- `403`: identidade autenticada sem vínculo ativo, vínculo suspenso, oficina
-  suspensa ou inexistente. A resposta não revela qual dessas condições ocorreu.
+- `401`: token ausente, inválido/expirado ou identidade/vínculo/empresa indisponíveis.
+- `403`: token autenticado tentando acessar outro tenant ou falha de CSRF/origem.
 - `400`: identificador de oficina inválido.
 
 O executor obtém a identidade exclusivamente do `SecurityContext`, abre uma
@@ -225,8 +214,7 @@ Validação: `./mvnw -Dtest=OutboxIntegrationTest,ArchitectureTest test`.
 ```
 
 Retorna `201` com `userId`, `tenantId` e `role: "OWNER"`. Empresa, identidade e vínculo
-nascem ativos, em uma única transação. A identidade criada já pode autenticar via
-HTTP Basic e acessar `/api/oficinas/{tenantId}/selecao`. Não cria sessão nem token JWT.
+nascem ativos, em uma única transação. A identidade criada já pode autenticar em `POST /api/v1/auth/login` e acessar `/api/oficinas/{tenantId}/selecao`. Não cria sessão nem token JWT.
 
 Nomes têm até 150 caracteres; e-mail, até 254. Espaços nas extremidades de nomes/e-mail
 são removidos e o e-mail é persistido em minúsculas. A senha exige de 10 a 72 caracteres
@@ -254,3 +242,79 @@ Os casos de uso ficam em `application.registration.usecase`, com implementação
 `application.registration.dto`; os DTOs HTTP de entrada e suas validações ficam em
 `web.registration.dto`. Os controllers ficam em `web.registration.controller`.
 Cada DTO é uma classe própria, sem declarações aninhadas no controller ou no caso de uso.
+
+
+## Sessões JWT e refresh (US-002 / FIX-18)
+
+O módulo `modules.identity` separa `domain`, `application/usecase`, `application/port`,
+`application/dto`, `infrastructure` e `web/controller`, `web/dto`. `AuthenticateSession`
+não conhece Spring, JDBC nem HTTP. Os adaptadores fazem persistência transacional,
+BCrypt, CSPRNG/SHA-256 e assinatura/validação JWT com Spring Security Nimbus.
+
+### Contrato HTTP
+
+- `POST /api/v1/auth/login`: `{email, password, tenantId?}`. Retorna `accessToken`,
+  `tokenType: "Bearer"`, `expiresIn: 900`, `userId`, `tenantId`, `role` e cookie refresh.
+- `POST /api/v1/auth/refresh`: sem corpo obrigatório; recebe cookie `fixflow_refresh`,
+  rotaciona e retorna o mesmo contrato com novos tokens.
+- Ambos exigem `X-Auth-Request: true`. Se houver `Origin`, deve corresponder exatamente
+  a `APP_ORIGIN` (padrão `http://localhost:4200`). A aplicação não habilita CORS permissivo.
+  Formulários de outra origem não podem enviar o header; a checagem de origem reforça
+  a proteção contra login CSRF e uso indevido do cookie de refresh.
+- `401` genérico para credencial inválida, bloqueio, refresh inválido/reutilizado/expirado
+  ou identidade sem acesso ativo. `400` para JSON ou campos inválidos; `403` para CSRF/origem.
+- Respostas de sessão têm `Cache-Control: no-store`. O refresh nunca aparece no JSON.
+
+JWT: RS256 com `kid`, `iss`, `aud: fixflow-api`, `sub`, `tid`, `role`, `jti`, `iat`, `exp`.
+A validação verifica assinatura, emissor, audiência, expiração sem tolerância adicional,
+claims obrigatórias e identidade/vínculo/empresa ativos. Alterar a role invalida o JWT
+anterior; o refresh emite um novo JWT com a role atual. Tokens são restritos ao tenant
+selecionado no login; sem `tenantId`, escolhe-se o vínculo ativo mais antigo.
+
+### Persistência e concorrência
+
+V13 cria `auth_session` e `refresh_token` e adiciona contagem/bloqueio à identidade global.
+Runtime não tem acesso direto a essas tabelas; usa funções restritas com `search_path`
+fixo. RLS continua habilitado e forçado, com políticas de proprietário explícitas para
+as funções de autenticação. A seleção de memberships retorna somente o usuário solicitado.
+
+Refresh: 32 bytes aleatórios, Base64URL sem padding, somente hash SHA-256 armazenado.
+Validade deslizante de 7 dias, limitada a 30 dias desde a criação da família. Gerações
+consumidas são mantidas durante a vida da família para permitir detectar reuso. Retenção
+operacional deve remover somente famílias expiradas e seus tokens, nunca gerações
+consumidas de famílias ainda ativas.
+
+Login bloqueia a linha da identidade; refresh bloqueia a família antes da leitura da
+geração. Assim a contagem de falhas e a revogação não dependem de locks em memória.
+Falhas retornam um resultado da transação; a exceção HTTP só é lançada após commit,
+preservando contadores e revogações. Reuso concorrente falha de forma conservadora:
+uma requisição pode receber `200`, mas a segunda revoga a família e impede usar o descendente.
+No Angular, chamadas concorrentes compartilham uma única renovação. Abas independentes
+que disputem a mesma geração podem exigir novo login, conforme essa política de reuso.
+
+Bloqueio: quinta falha dispara 1 minuto; próximas sequências disparam 5 e 15 minutos.
+Tentativas durante o bloqueio não prorrogam o prazo. Sucesso zera contagem e progressão.
+Identidades inexistentes ou indisponíveis passam por uma verificação BCrypt simulada e
+recebem a mesma mensagem genérica. Limitação distribuída por IP é uma evolução separada;
+o controle implementado aqui é o bloqueio por conta exigido pela US-002.
+
+A revogação por reuso bloqueia refreshes da família. Access tokens emitidos antes dela
+podem durar até os 15 minutos; suspensão de usuário, vínculo ou tenant é checada em cada
+requisição. Logout e recuperação de senha pertencem à US-003.
+
+### Execução e testes
+
+`python3 scripts/configure-auth-local.py` gera chaves persistentes para desenvolvimento.
+Não execute com segredos de produção. Em produção mantenha HTTPS/cookie Secure, configure
+PEMs via `AUTH_PRIVATE_KEY`/`AUTH_PUBLIC_KEY` e a origem exata em `APP_ORIGIN`. O perfil de
+integração permite chaves efêmeras e ativa Basic apenas para compatibilidade dos testes
+anteriores; T9 desabilita Basic explicitamente.
+
+```bash
+./mvnw -Dtest=AuthenticationT9IntegrationTest,ArchitectureTest test
+./mvnw verify
+```
+
+T9 cobre ausência/expiração/adulteração de JWT, emissor/audiência/tenant inválidos,
+rotação, hash e atributos do cookie, reuso com revogação persistida, concorrência,
+expiração absoluta, bloqueio e progressão, CSRF/origem e suspensão imediata.
