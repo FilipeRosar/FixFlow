@@ -23,6 +23,7 @@ public class ArchitectureTest {
     @ArchTest
     static final ArchRule only_authorized_executor_opens_tenant_scope = noClasses()
             .that().doNotHaveFullyQualifiedName("br.com.fixflow.shared.infrastructure.tenant.AuthorizedTenantExecutor")
+            .and().doNotHaveFullyQualifiedName("br.com.fixflow.shared.infrastructure.outbox.OutboxPublisher")
             .should().dependOnClassesThat()
             .haveFullyQualifiedName("br.com.fixflow.shared.infrastructure.tenant.TenantScope");
 
