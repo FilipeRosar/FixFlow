@@ -4,9 +4,10 @@ FROM maven:3.9-eclipse-temurin-25 AS build
 WORKDIR /app
 
 COPY pom.xml .
+COPY config ./config
 COPY src ./src
 
-RUN mvn -B clean package -DskipTests
+RUN mvn -B --no-transfer-progress clean package -DskipTests
 
 FROM eclipse-temurin:25-jre
 

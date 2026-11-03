@@ -1,0 +1,9 @@
+.git
+.idea
+.agents
+.codex
+.aws
+target
+application-local.properties
+*.env
+.env*
