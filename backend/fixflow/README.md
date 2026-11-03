@@ -128,3 +128,28 @@ Para executar a suíte completa:
 ```bash
 ./mvnw clean verify
 ```
+
+## Observabilidade (F-03)
+
+O console emite logs JSON (Logstash). Cada requisição recebe `requestId` e
+`correlationId` no MDC e nos headers de resposta `X-Request-Id` e
+`X-Correlation-Id`. IDs recebidos são aceitos apenas com 1–128 caracteres
+alfanuméricos, ponto, hífen ou underscore; valores inválidos são substituídos por
+UUIDs. Sem correlation ID, usa-se o request ID.
+
+`userId` vem do principal autenticado. `tenantId` acompanha exclusivamente o
+escopo autorizado da oficina, inclusive nos logs de conclusão ou falha da operação.
+Ao sair do escopo, restaura-se o tenant anterior; ao terminar a requisição,
+limpam-se os campos do MDC. Headers de identidade enviados pelo cliente não
+preenchem esses campos. Logs de conclusão HTTP incluem método, status e duração,
+sem registrar credenciais, corpo ou query string. O contexto é síncrono e não é
+propagado automaticamente para outras threads.
+
+As probes são públicas e não expõem detalhes internos:
+
+- `GET /health`: saúde agregada.
+- `GET /health/liveness`: estado de vida da aplicação, independente do banco.
+- `GET /health/readiness`: disponibilidade da aplicação e conexão com PostgreSQL.
+
+As probes retornam `200` quando disponíveis e `503` quando indisponíveis.
+Os endpoints de saúde substituem `/actuator/health`; apenas health está exposto.
