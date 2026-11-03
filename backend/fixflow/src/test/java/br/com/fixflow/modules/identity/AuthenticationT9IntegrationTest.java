@@ -46,9 +46,13 @@ class AuthenticationT9IntegrationTest {
     @Test
     void t9RejectsMissingExpiredTamperedAndMalformedTokens() throws Exception {
         try (var fixture = new MembershipFixtures(environment, encoder)) {
+
             String path = selection(fixture.tenantA);
+
             mvc.perform(get(path)).andExpect(status().isUnauthorized()).andExpect(header().string("WWW-Authenticate", "Bearer"));
+
             String basic = java.util.Base64.getEncoder().encodeToString((fixture.email + ":" + fixture.password).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
             mvc.perform(get(path).header("Authorization", "Basic " + basic)).andExpect(status().isUnauthorized());
             var login = login(fixture, fixture.password);
             assertEquals(200, login.getResponse().getStatus());
