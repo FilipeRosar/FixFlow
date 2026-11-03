@@ -1,27 +1,268 @@
-<section class="workspace">
-  <span class="eyebrow">Sua empresa no FixFlow</span>
-  <h1>Bem-vindo ao seu espaço.</h1>
-  <p class="muted">
-    Sua sessão está ativa. A gestão de serviços será disponibilizada nas
-    próximas etapas.
-  </p>
-  <div class="card">
-    <h2>Acesso confirmado</h2>
-    <p>
-      Seu perfil:
-      <strong
-        >{{ session()?.role === 'OWNER' ? 'Proprietário' : session()?.role
-        }}</strong
-      >
-    </p>
+<div class="operation">
+  <svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <symbol id="op-dashboard" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="7" height="7" rx="1.5" />
+        <rect x="14" y="3" width="7" height="7" rx="1.5" />
+        <rect x="3" y="14" width="7" height="7" rx="1.5" />
+        <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      </symbol>
+      <symbol id="op-orders" viewBox="0 0 24 24">
+        <rect x="5" y="4" width="14" height="17" rx="2" />
+        <path d="M9 4V2h6v2M9 9h6M9 13h6M9 17h4" />
+      </symbol>
+      <symbol id="op-clients" viewBox="0 0 24 24">
+        <circle cx="9" cy="8" r="3" />
+        <path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 5" />
+      </symbol>
+      <symbol id="op-devices" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="18" height="13" rx="2" />
+        <path d="M8 21h8M12 16v5" />
+      </symbol>
+      <symbol id="op-finance" viewBox="0 0 24 24">
+        <path d="M4 21V11M10 21V7M16 21V3M3 8l6-4 5 1 7-4" />
+      </symbol>
+      <symbol id="op-settings" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3" />
+        <path d="m9 3-1 3-3 1 1 3-2 2 2 2-1 3 3 1 1 3h6l1-3 3-1-1-3 2-2-2-2 1-3-3-1-1-3Z" />
+      </symbol>
+      <symbol id="op-clock" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </symbol>
+      <symbol id="op-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></symbol>
+      <symbol id="op-exit" viewBox="0 0 24 24">
+        <path d="M10 3H4v18h6M9 12h12m-5-5 5 5-5 5" />
+      </symbol>
+      <symbol id="op-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></symbol>
+    </defs>
+  </svg>
+
+  @if (menuOpen()) {
     <button
+      class="sidebar-backdrop"
       type="button"
-      class="button"
-      (click)="verifyAccess()"
-      [disabled]="pending()"
+      aria-label="Fechar menu"
+      (click)="closeMenu()"
+    ></button>
+  }
+  <aside
+    class="sidebar"
+    [class.open]="menuOpen()"
+    aria-label="Menu da empresa"
+    id="operation-sidebar"
+  >
+    <a class="operation-brand" routerLink="/" aria-label="FixFlow — voltar ao site"
+      ><span class="brand-symbol"><img src="assets/logo.png" alt="" /></span>FixFlow</a
     >
-      {{ pending() ? 'Verificando…' : 'Verificar acesso à empresa' }}
-    </button>
-    <p role="status" aria-live="polite">{{ status() }}</p>
+    <div class="company">
+      <span class="avatar">FF</span>
+      <div><strong>Minha assistência</strong><small>Ambiente da empresa</small></div>
+      <svg class="icon" aria-hidden="true"><use href="#op-check" /></svg>
+    </div>
+    <p class="nav-label">Espaço de trabalho</p>
+    <nav class="operation-nav" aria-label="Navegação da empresa">
+      <a class="nav-item active" routerLink="/inicio" aria-current="page" (click)="closeMenu()"
+        ><svg class="icon" aria-hidden="true"><use href="#op-dashboard" /></svg
+        ><span>Visão geral</span></a
+      >
+      @for (item of upcoming; track item.label) {
+        <button type="button" class="nav-item" disabled>
+          <svg class="icon" aria-hidden="true"><use [attr.href]="'#op-' + item.icon" /></svg
+          ><span>{{ item.label }}</span
+          ><small>Em breve</small>
+        </button>
+      }
+    </nav>
+    <div class="sidebar-bottom">
+      <a class="back-link" routerLink="/"><span aria-hidden="true">↗</span> Voltar ao site</a>
+      <div class="profile">
+        <span class="avatar"
+          ><svg class="icon" aria-hidden="true"><use href="#op-clients" /></svg
+        ></span>
+        <div>
+          <strong>Minha conta</strong
+          ><small>{{ session()?.role === 'OWNER' ? 'Proprietário' : session()?.role }}</small>
+        </div>
+        <button
+          id="logout"
+          type="button"
+          class="logout"
+          (click)="logout()"
+          [disabled]="leaving()"
+          [attr.aria-label]="leaving() ? 'Saindo…' : 'Sair da conta'"
+          title="Sair da conta"
+        >
+          <svg class="icon" aria-hidden="true"><use href="#op-exit" /></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="operation-shell">
+    <header class="operation-header">
+      <div class="breadcrumb">
+        <button
+          class="menu-toggle"
+          type="button"
+          aria-controls="operation-sidebar"
+          [attr.aria-expanded]="menuOpen()"
+          [attr.aria-label]="menuOpen() ? 'Fechar menu' : 'Abrir menu'"
+          (click)="menuOpen.set(!menuOpen())"
+        >
+          <svg class="icon" aria-hidden="true"><use href="#op-menu" /></svg></button
+        ><span>Minha empresa</span><span class="breadcrumb-divider" aria-hidden="true">/</span
+        ><strong>Visão geral</strong>
+      </div>
+      <span class="development"><span aria-hidden="true">●</span> Em desenvolvimento</span>
+    </header>
+    <div class="operation-content">
+      <div class="page-heading">
+        <div>
+          <p class="date-label">{{ today }}</p>
+          <h1>Bom trabalho.<span class="spark" aria-hidden="true">✦</span></h1>
+          <p>Tudo o que sua assistência precisa, no mesmo fluxo.</p>
+        </div>
+        <div class="new-order">
+          <button class="primary" type="button" disabled aria-describedby="new-order-hint">
+            <span aria-hidden="true">＋</span> Nova ordem de serviço</button
+          ><small id="new-order-hint">Disponível em uma próxima etapa</small>
+        </div>
+      </div>
+      <section class="metrics" aria-label="Indicadores da assistência">
+        @for (metric of metrics; track metric.label) {
+          <article class="metric">
+            <div class="metric-label">
+              <h2>{{ metric.label }}</h2>
+              <span class="metric-icon" [class]="'metric-icon ' + metric.tone"
+                ><svg class="icon" aria-hidden="true">
+                  <use [attr.href]="'#op-' + metric.icon" /></svg
+              ></span>
+            </div>
+            <strong aria-label="Indicador ainda não disponível">—</strong>
+            <p>{{ metric.hint }}</p>
+          </article>
+        }
+      </section>
+      <div class="overview-grid">
+        <section class="panel" aria-labelledby="movement-heading">
+          <div class="panel-heading">
+            <div>
+              <h2 id="movement-heading">Movimento da assistência</h2>
+              <p>Entrada e conclusão de ordens nesta semana</p>
+            </div>
+            <span class="period">Últimos 7 dias</span>
+          </div>
+          <div class="empty-chart">
+            <svg class="icon empty-icon" aria-hidden="true"><use href="#op-finance" /></svg>
+            <h3>O movimento vai aparecer aqui</h3>
+            <p>
+              Este espaço reunirá as entradas e conclusões quando o módulo de ordens estiver
+              disponível.
+            </p>
+          </div>
+        </section>
+        <section class="panel" aria-labelledby="stages-heading">
+          <div class="panel-heading">
+            <div>
+              <h2 id="stages-heading">Serviços por etapa</h2>
+              <p>Uma visão do seu fluxo de trabalho</p>
+            </div>
+          </div>
+          <div class="stages-empty">
+            <div class="empty-ring">
+              <span>—<small>serviços ativos</small></span>
+            </div>
+            <div class="stage-legend">
+              <span><i class="purple"></i> Em reparo <b>—</b></span
+              ><span><i class="blue"></i> Em análise <b>—</b></span
+              ><span><i class="amber"></i> Aguardando <b>—</b></span
+              ><span><i class="green"></i> Prontos <b>—</b></span>
+            </div>
+          </div>
+        </section>
+      </div>
+      <section class="panel recent-orders" aria-labelledby="orders-heading">
+        <div class="panel-heading">
+          <div>
+            <h2 id="orders-heading">Ordens recentes</h2>
+            <p>Acompanhe os últimos atendimentos</p>
+          </div>
+          <span class="coming-soon">Em breve</span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <caption class="sr-only">
+              As ordens serão listadas quando o módulo estiver disponível.
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Ordem</th>
+                <th scope="col">Cliente</th>
+                <th scope="col">Aparelho / serviço</th>
+                <th scope="col">Status</th>
+                <th scope="col">Previsão</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="orders-empty">
+          <svg class="icon empty-icon" aria-hidden="true"><use href="#op-orders" /></svg>
+          <h3>O próximo passo é organizar seus atendimentos</h3>
+          <p>O cadastro de ordens de serviço será disponibilizado em uma próxima etapa.</p>
+        </div>
+      </section>
+      <div class="activity-grid">
+        <section class="panel">
+          <div class="panel-heading"><h2>Atividade recente</h2></div>
+          <div class="small-empty">
+            <span class="empty-marker" aria-hidden="true">◷</span>
+            <div>
+              <h3>A história da sua operação</h3>
+              <p>
+                Os registros de atendimento serão reunidos aqui conforme os módulos forem
+                disponibilizados.
+              </p>
+            </div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-heading"><h2>Precisa da sua atenção</h2></div>
+          <div class="small-empty">
+            <span class="empty-marker" aria-hidden="true">◇</span>
+            <div>
+              <h3>Um lugar para as pendências</h3>
+              <p>
+                Orçamentos, retiradas e peças terão um espaço para você acompanhar o que vem a
+                seguir.
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+      <section class="connection-panel" aria-label="Acesso à empresa">
+        <div>
+          <h2>Seu ambiente de trabalho</h2>
+          <p>
+            Cadastro e acesso à empresa disponíveis. Os demais módulos estão em desenvolvimento.
+          </p>
+        </div>
+        <button
+          id="verify-access"
+          type="button"
+          class="secondary"
+          (click)="verifyAccess()"
+          [disabled]="pending() || leaving()"
+        >
+          {{ pending() ? 'Verificando…' : 'Verificar acesso à empresa' }}
+        </button>
+      </section>
+      <p class="operation-status" role="status" aria-live="polite">{{ status() }}</p>
+      <footer class="operation-footer">
+        <span>FixFlow · Gestão para assistências técnicas</span
+        ><span>Uma etapa de cada vez. Tudo no seu fluxo.</span>
+      </footer>
+    </div>
   </div>
-</section>
+</div>

@@ -31,7 +31,13 @@ em produção, use HTTPS e mantenha Secure=true.
 - `/inicio`: guard restaura a sessão por refresh ao recarregar a página. Um botão confirma
   o acesso ao tenant pela API existente. Funcionalidades de ordens de serviço ainda não existem.
 
-Não há logout nem recuperação de senha nesta task (US-003).
+- `/recuperar-senha`: solicita o e-mail com resposta genérica e validade de 30 minutos.
+- `/redefinir-senha#token=...`: redefine a senha com confirmação e remove o token da URL.
+- Em `/inicio`, **Sair da conta** revoga o refresh no servidor, limpa a sessão em memória
+  e volta ao login. Aguarda uma renovação em andamento para não deixar um cookie novo
+  ativo após o logout. Se houver falha de rede, oferece nova tentativa de saída.
+
+O e-mail requer SMTP configurado; consulte US-003 no README do backend para Mailpit local.
 Chamadas simultâneas no mesmo cliente compartilham o refresh para evitar reuso involuntário.
 Reuso entre abas independentes pode revogar a família, exigindo novo login.
 
@@ -85,3 +91,15 @@ Crie o diretório de perfil antes de iniciar o Firefox. `FIXFLOW_E2E_ORIGIN` e
 criado para a limpeza posterior; `FIXFLOW_E2E_ARTIFACTS` aponta para um diretório já
 existente onde gravar screenshots. O teste confere cadastro, login, tenant autorizado,
 renovação ao recarregar, ausência de tokens em armazenamento JS e layout móvel sem overflow.
+
+## Referência da área operacional
+
+A estrutura de `/inicio` segue `prototypes/operational` na branch
+`docs/operational-visual-prototype`. A primeira etapa implementa menu lateral,
+cabeçalho, adaptação para celular e visão geral com estados vazios. O layout público
+fica restrito às telas de apresentação e autenticação. Logout e verificação do
+acesso à empresa continuam usando a API existente. Indicadores não mostram valores
+fictícios; os módulos futuros ficam identificados como “Em breve”.
+
+As próximas etapas podem trazer a lista de ordens, clientes e aparelhos, conforme
+os respectivos contratos da API forem implementados.

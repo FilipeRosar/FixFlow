@@ -94,7 +94,7 @@ try {
   await waitFor(
     'location.pathname==="/inicio" && !!document.querySelector("app-workspace")',
   );
-  await evaluate("document.querySelector('app-workspace button').click();true");
+  await evaluate("document.querySelector('#verify-access').click();true");
   await waitFor(
     'document.querySelector("[role=status]")?.textContent.includes("confirmado")',
   );
@@ -114,7 +114,7 @@ try {
   await waitFor(
     'location.pathname==="/inicio" && !!document.querySelector("app-workspace")',
   );
-  await evaluate("document.querySelector('app-workspace button').click();true");
+  await evaluate("document.querySelector('#verify-access').click();true");
   await waitFor(
     'document.querySelector("[role=status]")?.textContent.includes("confirmado")',
   );

@@ -228,7 +228,7 @@ O MVP descrito no documento técnico contempla:
 - Estoque básico com movimentações imutáveis e baixa atômica.
 - Pagamentos manuais, entrega e garantia.
 - Anexos, notificações por e-mail, dashboard e permissões por perfil.
-- Logout, recuperação de senha e deploy automatizado.
+- Deploy automatizado.
 
 WhatsApp automatizado, gateways de pagamento, IA assistiva e recursos avançados ficam para fases posteriores. A arquitetura planejada usa Angular no frontend e serviços AWS para hospedagem, arquivos e e-mail; o ambiente local atual está descrito neste README.
 
@@ -236,3 +236,56 @@ WhatsApp automatizado, gateways de pagamento, IA assistiva e recursos avançados
 
 - [Documento técnico do FixFlow](docs/documento-tecnico-fixflow.md): visão do produto, requisitos, arquitetura, modelo de dados e roadmap.
 - [Guia de desenvolvimento](docs/desenvolvimento.md): detalhes de autorização, transações, fixtures, observabilidade e uso do `AuditService`.
+
+## Logout e recuperação de senha (US-003)
+
+Os três endpoints exigem `X-Auth-Request: true` e a mesma checagem de `Origin` do login.
+Não envie um access token vencido: as rotas usam o cookie ou token de recuperação.
+
+- `POST /api/v1/auth/logout`: cookie `fixflow_refresh`; retorna `204`, revoga a família e
+  remove o cookie com o mesmo Path/HttpOnly/Secure/SameSite. É idempotente, inclusive
+  sem cookie. O frontend descarta o access token em memória e volta ao login.
+- `POST /api/v1/auth/forgot-password`: `{ "email": "..." }`; para qualquer e-mail válido,
+  retorna sempre `202` e a mesma mensagem, exista conta ou não, inclusive conta suspensa.
+  A consulta e o SMTP rodam em uma fila limitada em memória, fora da requisição.
+- `POST /api/v1/auth/reset-password`: `{ "token": "...", "newPassword": "..." }`;
+  retorna `204` ao trocar a senha, `400` para token desconhecido/usado/expirado ou senha
+  inválida. Política: mínimo 8 caracteres, maiúscula, minúscula e número (limite interno
+  do BCrypt preservado). Não autentica automaticamente após a troca.
+
+V16 guarda somente SHA-256 do segredo aleatório de 256 bits. O token vale 30 minutos
+pelo relógio do PostgreSQL e é consumido atomicamente, mesmo sob concorrência. Um novo
+link invalida os anteriores; solicitações no mesmo minuto não enviam outro e-mail.
+A redefinição revoga todas as famílias de refresh da conta e limpa o bloqueio por
+senhas incorretas. JWTs já emitidos expiram naturalmente em até 15 minutos, conforme
+US-002; logout também revoga apenas refresh, sem blacklist de access tokens.
+
+O link usa `/redefinir-senha#token=...`: o fragmento não é enviado ao servidor. A tela
+retira o token da URL ao abrir e o mantém só em memória. A origem do link vem de
+`APP_ORIGIN`, nunca do Host recebido. Segredos não são incluídos em respostas ou logs.
+
+### E-mail local e produção
+
+Após atualizar o código, reinicie a API para aplicar V16 e registrar as novas rotas.
+Para testar sem enviar mensagens reais, na raiz do repositório:
+
+```bash
+docker compose up -d mailpit
+```
+
+O backend executado no host usa SMTP `localhost:1025`. Abra `http://localhost:8025`
+para ler o e-mail e clicar no link. Quem usa Podman pode executar o comando equivalente
+com `podman compose`. O Mailpit também inicia automaticamente com `docker compose up -d`,
+com reinício automático junto aos demais serviços. A aplicação no Compose usa `mailpit`
+como hostname SMTP padrão e depende da inicialização desse serviço. Para produção configure `SMTP_HOST`, `SMTP_PORT`,
+`SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_AUTH=true`, `SMTP_STARTTLS=true`, `MAIL_FROM`
+e `APP_ORIGIN` com HTTPS e remetente autorizado pelo seu provedor.
+O indicador de saúde SMTP é opcional (`SMTP_HEALTH_ENABLED=true`); permanece
+desligado por padrão para não derrubar `/health` sem Mailpit local.
+
+Se SMTP falhar ou a fila estiver cheia, a resposta permanece genérica e um aviso sem
+segredos é registrado. A fila é local e não persiste reinícios; após corrigir SMTP,
+solicite outro link depois de um minuto. Retenção operacional pode remover tokens
+usados ou expirados; não existe limpeza automática nesta entrega.
+
+Validação: `./mvnw -Dtest=AccountRecoveryIntegrationTest,AuthenticationT9IntegrationTest,ArchitectureTest test`.

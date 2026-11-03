@@ -17,6 +17,13 @@ services:
       timeout: 3s
       retries: 10
 
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
   app:
     build:
       context: ./backend/fixflow
@@ -30,9 +37,18 @@ services:
       SPRING_FLYWAY_URL: jdbc:postgresql://postgres:5432/fixflow
       SPRING_FLYWAY_USER: ${DB_MIGRATOR_USERNAME:-fixflow_migrator}
       SPRING_FLYWAY_PASSWORD: ${DB_MIGRATOR_PASSWORD}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_AUTH: ${SMTP_AUTH:-false}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      MAIL_FROM: ${MAIL_FROM:-noreply@fixflow.local}
     ports:
       - "8080:8080"
     depends_on:
+      mailpit:
+        condition: service_started
       postgres:
         condition: service_healthy
 

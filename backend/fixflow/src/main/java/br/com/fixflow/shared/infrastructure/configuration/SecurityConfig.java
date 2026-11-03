@@ -24,6 +24,7 @@ public class SecurityConfig {
         boolean basicForTests = legacyBasic && environment.acceptsProfiles(org.springframework.core.env.Profiles.of("integration-test"));
         var signup = PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/contas");
         var login = PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/login");
+        var recovery = PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/{operation:logout|forgot-password|reset-password}");
         var refresh = PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/refresh");
         org.springframework.security.web.AuthenticationEntryPoint entryPoint = (request, response, error) -> {
             response.setStatus(401);
@@ -35,12 +36,12 @@ public class SecurityConfig {
         http.authenticationProvider(provider)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .csrf(csrf -> csrf.ignoringRequestMatchers(signup, request ->
-                        (login.matches(request) || refresh.matches(request))
+                        (login.matches(request) || refresh.matches(request) || recovery.matches(request))
                         && "true".equals(request.getHeader("X-Auth-Request"))
                         && (request.getHeader("Origin") == null || allowedOrigin.equals(request.getHeader("Origin")))))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/enderecos/cep/*").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/contas", "/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/contas", "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password").permitAll()
                         .requestMatchers("/api-docs/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/health", "/health/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(entryPoint))
