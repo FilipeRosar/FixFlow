@@ -1,3 +1,8 @@
-<a class="skip-link" href="#conteudo">Pular para o conteúdo</a><app-header />
+<a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+@if (!operational()) {
+  <app-header />
+}
 <main id="conteudo" tabindex="-1"><router-outlet /></main>
-<footer>FixFlow · Gestão pensada para assistências técnicas.</footer>
+@if (!operational()) {
+  <footer>FixFlow · Gestão pensada para assistências técnicas.</footer>
+}

@@ -318,3 +318,9 @@ anteriores; T9 desabilita Basic explicitamente.
 T9 cobre ausência/expiração/adulteração de JWT, emissor/audiência/tenant inválidos,
 rotação, hash e atributos do cookie, reuso com revogação persistida, concorrência,
 expiração absoluta, bloqueio e progressão, CSRF/origem e suspensão imediata.
+
+## US-003 — Logout e recuperação de senha
+
+Implementação e configuração SMTP: [README — US-003](../README.md#logout-e-recuperação-de-senha-us-003).
+Os testes de integração verificam respostas idênticas, validade de 30 minutos, uso
+único sob concorrência, invalidação por novo link, revogação de refresh e CSRF.

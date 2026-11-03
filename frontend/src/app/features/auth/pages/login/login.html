@@ -10,11 +10,10 @@
     <h2>Entrar no FixFlow</h2>
     <p class="muted">Use o e-mail e a senha do seu cadastro.</p>
     @if (registered()) {
-    <p class="notice" role="status">
-      Conta e empresa criadas. Entre para começar.
-    </p>
-    } @if (error()) {
-    <p class="error" role="alert">{{ error() }}</p>
+      <p class="notice" role="status">Conta e empresa criadas. Entre para começar.</p>
+    }
+    @if (error()) {
+      <p class="error" role="alert">{{ error() }}</p>
     }
     <form [formGroup]="form" (ngSubmit)="submit()" [attr.aria-busy]="pending()">
       <label for="email">E-mail</label
@@ -28,10 +27,9 @@
         [attr.aria-invalid]="form.controls.email.touched && form.controls.email.invalid"
       />
       @if (form.controls.email.touched && form.controls.email.invalid) {
-      <small id="email-error" class="field-error"
-        >Informe um e-mail válido.</small
-      >
-      } <label for="password">Senha</label
+        <small id="email-error" class="field-error">Informe um e-mail válido.</small>
+      }
+      <label for="password">Senha</label
       ><input
         id="password"
         type="password"
@@ -41,13 +39,14 @@
         aria-describedby="password-error"
       />
       @if (form.controls.password.touched && form.controls.password.invalid) {
-      <small id="password-error" class="field-error">Informe sua senha.</small>
+        <small id="password-error" class="field-error">Informe sua senha.</small>
       }
       <button class="button full" type="submit" [disabled]="pending()">
         {{ pending() ? 'Entrando…' : 'Entrar' }}
         <span aria-hidden="true">↗</span>
       </button>
     </form>
+    <p class="form-footer"><a routerLink="/recuperar-senha">Esqueci minha senha</a></p>
     <p class="form-footer">
       Ainda não tem conta? <a routerLink="/cadastro">Criar conta e empresa</a>
     </p>
