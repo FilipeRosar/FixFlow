@@ -19,7 +19,9 @@
                 "input": "public"
               }
             ],
-            "styles": ["src/styles.css"]
+            "styles": [
+              "src/styles.css"
+            ]
           },
           "configurations": {
             "production": {
@@ -34,7 +36,8 @@
             },
             "development": {
               "optimization": false,
-              "sourceMap": true
+              "sourceMap": true,
+              "extractLicenses": false
             }
           },
           "defaultConfiguration": "production"
@@ -44,6 +47,9 @@
           "configurations": {
             "development": {
               "buildTarget": "fixflow-front:build:development"
+            },
+            "production": {
+              "buildTarget": "fixflow-front:build:production"
             }
           },
           "defaultConfiguration": "development",
@@ -56,5 +62,8 @@
         }
       }
     }
+  },
+  "cli": {
+    "packageManager": "npm"
   }
 }

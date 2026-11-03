@@ -3,3 +3,12 @@
 /.angular/
 /coverage/
 *.log
+
+# Local editor state and secondary build output
+/out-tsc/
+/.vscode/*
+!/.vscode/extensions.json
+!/.vscode/launch.json
+!/.vscode/tasks.json
+/.DS_Store
+/Thumbs.db

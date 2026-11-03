@@ -12,7 +12,7 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(withInterceptors([sessionInterceptor])),
     provideRouter(
       routes,
-      withInMemoryScrolling({ scrollPositionRestoration: "top" }),
+      withInMemoryScrolling({ anchorScrolling: "enabled", scrollPositionRestoration: "enabled" }),
     ),
   ],
 };

@@ -5,7 +5,9 @@
   "scripts": {
     "start": "ng serve",
     "build": "ng build",
-    "test": "ng test"
+    "test": "ng test",
+    "ng": "ng",
+    "watch": "ng build --watch --configuration development"
   },
   "dependencies": {
     "@angular/common": "22.2.4",
