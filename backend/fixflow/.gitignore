@@ -31,3 +31,10 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local database credentials ###
+/application-local.properties
+
+### Python tooling cache ###
+__pycache__/
+*.py[cod]
