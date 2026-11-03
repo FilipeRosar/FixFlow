@@ -1,6 +1,8 @@
 
 package br.com.fixflow.shared.infrastructure.tenant;
 
+import org.slf4j.MDC;
+
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,6 +21,7 @@ public final class TenantContext {
         }
 
         CURRENT_TENANT.set(tenantId);
+        MDC.put("tenantId", tenantId.toString());
     }
 
     public static Optional<UUID> getTenantId() {
@@ -35,5 +38,6 @@ public final class TenantContext {
 
     public static void clearTenantId() {
         CURRENT_TENANT.remove();
+        MDC.remove("tenantId");
     }
 }

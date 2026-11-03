@@ -1,6 +1,8 @@
 package br.com.fixflow.shared.infrastructure.configuration;
 
 
+import br.com.fixflow.shared.infrastructure.observability.UserMdcFilter;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -26,11 +28,14 @@ public class SecurityConfig {
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
-                                "/actuator/**"
+                                "/health",
+                                "/health/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
-                .httpBasic(basic -> basic.authenticationEntryPoint(entryPoint));
+                .httpBasic(basic -> basic.authenticationEntryPoint(entryPoint))
+                .addFilterAfter(new UserMdcFilter(),
+                        BasicAuthenticationFilter.class);
         return http.build();
     }
 }

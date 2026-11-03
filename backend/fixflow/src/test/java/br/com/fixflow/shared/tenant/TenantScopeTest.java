@@ -25,12 +25,15 @@ class TenantScopeTest {
     @Test
     void shouldSetAndClearTenantWhenNoPreviousContextExists() {
         assertTrue(TenantContext.getTenantId().isEmpty());
+        assertNull(org.slf4j.MDC.get("tenantId"));
 
         TenantScope.run(TENANT_A, () -> {
             assertEquals(TENANT_A, TenantContext.requireTenantId());
+        assertEquals(TENANT_A.toString(), org.slf4j.MDC.get("tenantId"));
         });
 
         assertTrue(TenantContext.getTenantId().isEmpty());
+        assertNull(org.slf4j.MDC.get("tenantId"));
     }
 
     @Test
@@ -39,9 +42,11 @@ class TenantScopeTest {
 
         TenantScope.run(TENANT_B, () -> {
             assertEquals(TENANT_B, TenantContext.requireTenantId());
+            assertEquals(TENANT_B.toString(), org.slf4j.MDC.get("tenantId"));
         });
 
         assertEquals(TENANT_A, TenantContext.requireTenantId());
+        assertEquals(TENANT_A.toString(), org.slf4j.MDC.get("tenantId"));
     }
 
     @Test
@@ -52,11 +57,13 @@ class TenantScopeTest {
                 IllegalStateException.class,
                 () -> TenantScope.run(TENANT_B, () -> {
                     assertEquals(TENANT_B, TenantContext.requireTenantId());
+            assertEquals(TENANT_B.toString(), org.slf4j.MDC.get("tenantId"));
                     throw new IllegalStateException("Erro simulado");
                 })
         );
 
         assertEquals(TENANT_A, TenantContext.requireTenantId());
+        assertEquals(TENANT_A.toString(), org.slf4j.MDC.get("tenantId"));
     }
 
     @Test

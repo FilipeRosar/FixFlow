@@ -5,6 +5,8 @@ import br.com.fixflow.shared.application.tenant.AuthorizedMembership;
 import br.com.fixflow.shared.application.tenant.AuthorizedTenantOperations;
 import br.com.fixflow.shared.infrastructure.security.CurrentAuthenticatedIdentity;
 import org.springframework.security.access.AccessDeniedException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -16,6 +18,8 @@ import java.util.function.Function;
 
 @Service
 public class AuthorizedTenantExecutor implements AuthorizedTenantOperations {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthorizedTenantExecutor.class);
 
     private final CurrentAuthenticatedIdentity currentIdentity;
 
@@ -59,7 +63,13 @@ public class AuthorizedTenantExecutor implements AuthorizedTenantOperations {
 
             TenantScope.run(membership.tenantId(), () -> {
                 tenantTransaction.configureCurrentTenant();
-                result[0] = operation.apply(membership);
+                try {
+                    result[0] = operation.apply(membership);
+                    log.info("Authorized tenant operation completed");
+                } catch (RuntimeException | Error exception) {
+                    log.warn("Authorized tenant operation failed");
+                    throw exception;
+                }
             });
 
             @SuppressWarnings("unchecked")
