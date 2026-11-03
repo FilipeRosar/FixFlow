@@ -20,6 +20,7 @@ O backend está em desenvolvimento, com foco na fundação técnica. Este reposi
 | Observabilidade | Logs JSON, IDs de requisição e correlação, contexto de usuário/tenant e probes de saúde |
 | Auditoria base | `AuditService`, gravação na transação de negócio e tabela `audit_log` append-only para a role de execução |
 | Persistência e qualidade | Migrations Flyway, testes de integração e regras de arquitetura com ArchUnit |
+| Integração contínua | GitHub Actions com build, testes, lint e gate de segurança High/Critical |
 | API | OpenAPI, Swagger UI e tratamento global de erros |
 
 O [documento técnico](docs/documento-tecnico-fixflow.md) reúne requisitos, fluxos, modelo de dados, ADRs e backlog. Ele descreve a arquitetura alvo; para executar esta versão, use as versões e rotas abaixo. A autenticação atual usa **HTTP Basic**. JWT com refresh rotativo está previsto no roadmap.
@@ -138,6 +139,30 @@ Para validar auditoria e arquitetura:
 
 A cobertura da fundação inclui autorização de vínculos, isolamento de leitura/escrita, rollback, reutilização de conexão sem vazamento de tenant, limpeza de contexto, observabilidade e permissões append-only da auditoria.
 
+## Integração contínua (F-05)
+
+O workflow [CI](../../.github/workflows/ci.yml) executa em todos os PRs e pushes e também pode ser disparado manualmente. Requer a fundação F-01 (Java 25, Maven Wrapper e Dockerfile).
+
+| Check | Validação |
+|---|---|
+| `Lint` | Checkstyle sobre fontes e testes: classes, instruções vazias, imports proibidos, `equals`/`hashCode` e fall-through |
+| `Build and test` | PostgreSQL 17 descartável, roles restritas, migrations nos dois bancos e `clean verify` com a suíte completa |
+| `Docker and security` | Trivy nas dependências do projeto, build Docker e Trivy nas dependências Java e pacotes do SO da imagem |
+
+Vulnerabilidades **HIGH ou CRITICAL reprovam o check**, inclusive quando ainda não há correção disponível. Falhas do scanner também reprovam a execução. A configuração segue os parâmetros de severidade e código de saída da [documentação do Trivy](https://trivy.dev/docs/latest/ecosystem/cicd/). Os relatórios de testes, lint e segurança ficam nos artefatos da execução por sete dias. A imagem é construída para validação no runner.
+
+O CI usa credenciais públicas exclusivas do PostgreSQL descartável, definidas em [init-db.sql](scripts/ci/init-db.sql), e não depende de secrets ou de `application-local.properties`. O perfil Maven `ci-db` aplica as migrations no banco `fixflow`; a inicialização dos testes aplica as mesmas migrations em `fixflow_test`.
+
+O POM fixa patches de segurança além das versões gerenciadas pelo Spring Boot 4.1.1: [Jackson 2.21.7](https://github.com/FasterXML/jackson/wiki/Jackson-Release-2.21.7), [Jackson 3.1.7](https://github.com/FasterXML/jackson/wiki/Jackson-Release-3.1.7) e [Tomcat 11.0.25](https://tomcat.apache.org/security-11.html). Essas atualizações corrigem os achados High/Critical detectados ao implantar o pipeline; reavalie os overrides ao atualizar o Spring Boot.
+
+Para executar apenas o lint localmente:
+
+```bash
+./mvnw validate
+```
+
+Para tornar os checks obrigatórios para merge, configure a proteção da branch no GitHub exigindo `Lint`, `Build and test` e `Docker and security`. A primeira execução no PR confirma o estado do pipeline com a base de vulnerabilidades atual.
+
 ## Organização do repositório
 
 ```text
@@ -169,7 +194,7 @@ O MVP descrito no documento técnico contempla:
 - Estoque básico com movimentações imutáveis e baixa atômica.
 - Pagamentos manuais, entrega e garantia.
 - Anexos, notificações por e-mail, dashboard e permissões por perfil.
-- JWT com refresh rotativo, Outbox transacional e automação de CI/CD.
+- JWT com refresh rotativo, Outbox transacional e deploy automatizado.
 
 WhatsApp automatizado, gateways de pagamento, IA assistiva e recursos avançados ficam para fases posteriores. A arquitetura planejada usa Angular no frontend e serviços AWS para hospedagem, arquivos e e-mail; o ambiente local atual está descrito neste README.
 
