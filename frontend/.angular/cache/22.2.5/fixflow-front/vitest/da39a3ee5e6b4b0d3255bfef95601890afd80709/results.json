@@ -1,0 +1,1 @@
+{"version":"4.1.12","results":[["fixflow-front:src/app/app.spec.ts",{"duration":221.8595150000001,"failed":false}],["fixflow-front:src/app/features/home/pages/home/home.spec.ts",{"duration":242.60421999999994,"failed":false}],["fixflow-front:src/app/layout/header/header.spec.ts",{"duration":109.24345900000003,"failed":false}]]}
