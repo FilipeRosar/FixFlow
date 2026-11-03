@@ -18,6 +18,7 @@ O backend está em desenvolvimento, com foco na fundação técnica. Este reposi
 | Identidade e autorização de oficina | Identidade global, senha BCrypt, vínculos de usuários com oficinas e seleção autorizada por requisição |
 | Isolamento entre tenants | Contexto transacional, PostgreSQL RLS e separação das roles de execução e migração |
 | Observabilidade | Logs JSON, IDs de requisição e correlação, contexto de usuário/tenant e probes de saúde |
+| Outbox transacional | Gravação atômica, publicação Spring com `SKIP LOCKED`, retry exponencial e estado `FAILED` |
 | Auditoria base | `AuditService`, gravação na transação de negócio e tabela `audit_log` append-only para a role de execução |
 | Persistência e qualidade | Migrations Flyway, testes de integração e regras de arquitetura com ArchUnit |
 | Integração contínua | GitHub Actions com build, testes, lint e gate de segurança High/Critical |
@@ -194,7 +195,7 @@ O MVP descrito no documento técnico contempla:
 - Estoque básico com movimentações imutáveis e baixa atômica.
 - Pagamentos manuais, entrega e garantia.
 - Anexos, notificações por e-mail, dashboard e permissões por perfil.
-- JWT com refresh rotativo, Outbox transacional e deploy automatizado.
+- JWT com refresh rotativo e deploy automatizado.
 
 WhatsApp automatizado, gateways de pagamento, IA assistiva e recursos avançados ficam para fases posteriores. A arquitetura planejada usa Angular no frontend e serviços AWS para hospedagem, arquivos e e-mail; o ambiente local atual está descrito neste README.
 

@@ -168,3 +168,44 @@ A migration V10 cria `audit_log` com RLS obrigatório e índice por tenant/horá
 `TRUNCATE`. A role proprietária de migração continua administrativa.
 
 Validação: `./mvnw -Dtest=AuditServiceIntegrationTest,ArchitectureTest test`.
+
+
+## Outbox transacional (F-06)
+
+Injete `OutboxService` e chame `record(aggregateType, aggregateId, eventType, payloadJson)`
+na mesma transação que altera o negócio, dentro do tenant autorizado. A propagação
+`MANDATORY` rejeita chamadas sem transação. O JSON é validado pelo PostgreSQL.
+Rollback da operação também remove o evento.
+
+`OutboxPublisher` consulta os tenants com eventos vencidos por uma função restrita,
+abre o contexto de cada tenant e processa até 100 eventos por ciclo, um por transação.
+O RLS protege payloads; a função `pending_outbox_tenants()` revela somente IDs de tenants
+com trabalho pendente. O lock `FOR UPDATE SKIP LOCKED` fica retido até o registro do resultado.
+A role runtime pode inserir/ler eventos e atualizar somente os campos de processamento.
+
+A entrega usa `ApplicationEventPublisher` com `OutboxEvent`. Consumidores devem usar
+`@EventListener` síncrono, propagar falhas e ser idempotentes por `event.id()`.
+Não use `@Async` nem `@TransactionalEventListener` para confirmar entrega: a falha
+precisa retornar ao publicador. Os listeners executam em uma transação separada,
+com o mesmo tenant, para que falhas SQL não impeçam a persistência do retry.
+A entrega é **pelo menos uma vez**: uma queda entre a entrega e a confirmação pode
+repetir o evento; múltiplos listeners também podem receber novamente eventos.
+Sem listeners registrados, a publicação Spring é considerada bem-sucedida.
+
+A primeira falha aguarda 1 segundo; as seguintes aguardam 2, 4 e 8 segundos.
+A quinta falha marca `FAILED`, preservando a classe do erro em `last_error`, sem
+armazenar mensagens que possam conter dados sensíveis. Para reprocessar após corrigir
+a causa, na transação do tenant, execute:
+
+```sql
+UPDATE outbox_event
+SET status = 'PENDING', attempts = 0, next_attempt_at = clock_timestamp(), last_error = NULL
+WHERE id = :event_id AND status = 'FAILED';
+```
+
+O intervalo entre ciclos é `fixflow.outbox.poll-delay-ms` (padrão 1000).
+`fixflow.outbox.scheduling-enabled=false` desabilita o agendamento, como no perfil
+de integração. Cada publicador ativo precisa de conexões para a transação do lock
+e a transação do consumidor; dimensione o pool considerando ambas.
+
+Validação: `./mvnw -Dtest=OutboxIntegrationTest,ArchitectureTest test`.
