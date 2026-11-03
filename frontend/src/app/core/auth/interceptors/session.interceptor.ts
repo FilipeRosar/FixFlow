@@ -8,7 +8,8 @@ export const sessionInterceptor: HttpInterceptorFn = (request, next) => {
   if (
     !request.url.startsWith("/api/") ||
     request.url.startsWith("/api/v1/auth/") ||
-    request.url === "/api/contas"
+    request.url === "/api/contas" ||
+    request.url.startsWith("/api/enderecos/cep/")
   ) {
     return next(request);
   }

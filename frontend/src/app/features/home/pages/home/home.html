@@ -1,18 +1,296 @@
-<section class="hero">
-  <span class="eyebrow">Para quem faz tudo voltar a funcionar</span>
-  <h1>Cada reparo.<br />Cada cliente.<br /><em>Tudo no seu fluxo.</em></h1>
-  <p>
-    Mais clareza para cuidar da sua assistência técnica, da entrada do aparelho
-    à entrega.
-  </p>
-  <div class="actions">
-    <a class="button" routerLink="/entrar">
-      Entrar na minha conta <span aria-hidden="true">↗</span>
-    </a>
-    <a class="button secondary" routerLink="/cadastro">Criar minha conta</a>
-  </div>
-  <p class="muted">
-    O FixFlow está em desenvolvimento. Cadastro e acesso à empresa já estão
-    disponíveis.
-  </p>
-</section>
+<div class="home">
+  <nav class="section-nav" aria-label="Conheça o FixFlow">
+    <span>Da recepção à bancada.</span>
+    <div>
+      <a href="#como-funciona">Como funciona</a><a href="#recursos">Recursos</a
+      ><a href="#perguntas">Dúvidas</a>
+    </div>
+  </nav>
+
+  <section class="home-hero" aria-labelledby="home-title">
+    <div class="hero-copy">
+      <span class="eyebrow">Gestão para assistências técnicas</span>
+      <h1 id="home-title">
+        Seu talento é reparar.<br /><em>O nosso foco é organizar.</em>
+      </h1>
+      <p>
+        O FixFlow está sendo criado para conectar cada etapa da sua assistência:
+        o cliente, o equipamento e todo o caminho até a entrega.
+      </p>
+      <div class="actions">
+        <a class="button" routerLink="/cadastro"
+          >Criar minha conta <span aria-hidden="true">↗</span></a
+        >
+        <a class="text-link" href="#como-funciona"
+          >Conhecer o fluxo <span aria-hidden="true">↓</span></a
+        >
+      </div>
+      <p class="release-note">
+        <span class="status-dot" aria-hidden="true"></span> Em desenvolvimento ·
+        Cadastro e acesso já disponíveis
+      </p>
+    </div>
+    <figure class="flow-visual">
+      <div class="visual-heading">
+        <span class="mini-mark" aria-hidden="true">F<span>↗</span></span
+        ><span
+          >Menos pontas soltas.<br /><strong>Mais continuidade.</strong></span
+        >
+      </div>
+      <ol class="visual-timeline">
+        <li>
+          <span class="step-dot" aria-hidden="true">01</span>
+          <div>
+            <strong>Equipamento recebido</strong
+            ><span>Cliente, aparelho e defeito relatado</span>
+          </div>
+          <span class="step-symbol" aria-hidden="true">↗</span>
+        </li>
+        <li>
+          <span class="step-dot" aria-hidden="true">02</span>
+          <div>
+            <strong>Diagnóstico e orçamento</strong
+            ><span>Uma proposta clara para o cliente</span>
+          </div>
+          <span class="step-symbol" aria-hidden="true">↗</span>
+        </li>
+        <li>
+          <span class="step-dot" aria-hidden="true">03</span>
+          <div>
+            <strong>Reparo em andamento</strong
+            ><span>Serviços, peças e histórico reunidos</span>
+          </div>
+          <span class="step-symbol" aria-hidden="true">↗</span>
+        </li>
+        <li>
+          <span class="step-dot" aria-hidden="true">04</span>
+          <div>
+            <strong>Pronto para entregar</strong
+            ><span>Pagamento, entrega e garantia</span>
+          </div>
+          <span class="step-symbol" aria-hidden="true">✓</span>
+        </li>
+      </ol>
+      <figcaption>Visão do fluxo previsto para o produto.</figcaption>
+    </figure>
+  </section>
+
+  <section class="audience-strip" aria-label="Para quem é o FixFlow">
+    <span>Feito para a rotina de quem cuida de</span>
+    <ul>
+      <li>Computadores</li>
+      <li>Notebooks</li>
+      <li>Impressoras</li>
+      <li>Periféricos e eletrônicos</li>
+    </ul>
+  </section>
+
+  <section class="home-section" aria-labelledby="routine-title">
+    <div class="section-heading">
+      <span class="eyebrow">A rotina merece mais clareza</span>
+      <h2 id="routine-title">A informação precisa acompanhar o reparo.</h2>
+      <p>
+        O aparelho está na bancada. O orçamento, na conversa. O histórico, no
+        caderno. A proposta do FixFlow é reunir essas informações em um só
+        lugar.
+      </p>
+    </div>
+    <div class="problem-grid">
+      <article>
+        <span class="feature-index">01 / Atendimento</span>
+        <h3>O contexto fica com o equipamento.</h3>
+        <p>
+          Cliente, defeito relatado, acessórios e histórico previstos no mesmo
+          atendimento, para reduzir informações perdidas entre o balcão e a
+          bancada.
+        </p>
+      </article>
+      <article>
+        <span class="feature-index">02 / Comunicação</span>
+        <h3>Uma aprovação que fica registrada.</h3>
+        <p>
+          O fluxo planejado permite enviar o orçamento por link e registrar a
+          decisão do cliente, evitando depender de uma aprovação apenas verbal.
+        </p>
+      </article>
+      <article>
+        <span class="feature-index">03 / Gestão</span>
+        <h3>Visibilidade além da bancada.</h3>
+        <p>
+          Peças utilizadas, pagamentos e indicadores fazem parte da evolução do
+          produto, para ajudar o proprietário a acompanhar a operação.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section
+    id="como-funciona"
+    class="home-section journey-section"
+    aria-labelledby="journey-title"
+  >
+    <div class="section-heading">
+      <span class="eyebrow">Como o fluxo foi pensado</span>
+      <h2 id="journey-title">
+        Da entrada à entrega.<br />Sem perder o fio da história.
+      </h2>
+      <p>
+        Uma sequência de trabalho planejada para manter cada atendimento
+        organizado, com registro do que aconteceu em cada etapa.
+      </p>
+    </div>
+    <ol class="journey-grid">
+      @for (step of steps; track step.title; let i = $index) {
+      <li>
+        <span class="journey-number">0{{ i + 1 }}</span>
+        <h3>{{ step.title }}</h3>
+        <p>{{ step.description }}</p>
+      </li>
+      }
+    </ol>
+    <p class="section-caption">
+      Fluxo previsto para as próximas entregas. As funções de ordens de serviço
+      ainda estão em desenvolvimento.
+    </p>
+  </section>
+
+  <section id="recursos" class="home-section" aria-labelledby="features-title">
+    <div class="heading-row">
+      <div class="section-heading">
+        <span class="eyebrow">O que vem pela frente</span>
+        <h2 id="features-title">
+          As partes da sua operação.<br />Pensadas para trabalhar juntas.
+        </h2>
+      </div>
+      <span class="outline-tag">Recursos previstos</span>
+    </div>
+    <div class="feature-grid">
+      @for (feature of features; track feature.title; let i = $index) {
+      <article>
+        <span class="feature-index">0{{ i + 1 }}</span>
+        <h3>{{ feature.title }}</h3>
+        <p>{{ feature.description }}</p>
+      </article>
+      }
+    </div>
+  </section>
+
+  <section class="home-section team-section" aria-labelledby="team-title">
+    <div class="section-heading">
+      <span class="eyebrow">Uma equipe, um fluxo</span>
+      <h2 id="team-title">Para quem atende, repara e cuida do negócio.</h2>
+      <p>
+        Planejado para assistências independentes com equipes de 1 a 10 pessoas,
+        com responsabilidades claras para cada perfil.
+      </p>
+    </div>
+    <div class="team-grid">
+      <article>
+        <span class="role-label">Proprietário</span>
+        <h3>Olhar para o todo.</h3>
+        <p>
+          Gestão da empresa, equipe, estoque e resultados, com visão dos
+          atendimentos.
+        </p>
+      </article>
+      <article>
+        <span class="role-label">Atendente</span>
+        <h3>Conectar as etapas.</h3>
+        <p>
+          Entrada de equipamentos, abertura de ordens, envio de orçamentos e
+          registro de pagamentos.
+        </p>
+      </article>
+      <article>
+        <span class="role-label">Técnico</span>
+        <h3>Foco na bancada.</h3>
+        <p>
+          Fila de trabalho, diagnóstico, execução do serviço e registro das
+          peças utilizadas.
+        </p>
+      </article>
+    </div>
+    <p class="section-caption">
+      Os perfis de atendente e técnico fazem parte das funcionalidades
+      planejadas.
+    </p>
+  </section>
+
+  <section
+    class="home-section availability"
+    aria-labelledby="availability-title"
+  >
+    <div class="section-heading">
+      <span class="eyebrow">Um produto em construção</span>
+      <h2 id="availability-title">Conheça o momento do FixFlow.</h2>
+      <p>
+        Estamos construindo a base para uma gestão completa. Você já pode criar
+        sua conta e acessar o ambiente da sua empresa.
+      </p>
+    </div>
+    <div class="availability-list">
+      <div>
+        <span class="availability-label available"
+          ><span class="status-dot" aria-hidden="true"></span> Disponível
+          agora</span
+        >
+        <h3>O primeiro passo da sua empresa</h3>
+        <p>
+          Cadastro da conta e da assistência, login e acesso ao ambiente
+          protegido da empresa.
+        </p>
+        <a routerLink="/cadastro" class="text-link"
+          >Criar minha conta <span aria-hidden="true">↗</span></a
+        >
+      </div>
+      <div>
+        <span class="availability-label">Próximas etapas</span>
+        <h3>O ciclo do atendimento</h3>
+        <p>
+          Clientes, equipamentos, ordens de serviço, diagnóstico, orçamento por
+          link, peças, pagamentos manuais e indicadores básicos.
+        </p>
+      </div>
+      <div>
+        <span class="availability-label">Evoluções futuras</span>
+        <h3>Mais automação na rotina</h3>
+        <p>
+          WhatsApp automático, cobrança integrada, alertas de garantia e
+          relatórios avançados estão previstos para fases posteriores.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section
+    id="perguntas"
+    class="home-section faq-section"
+    aria-labelledby="faq-title"
+  >
+    <div class="section-heading">
+      <span class="eyebrow">Antes de começar</span>
+      <h2 id="faq-title">Dúvidas comuns.</h2>
+    </div>
+    <div class="faq-list">
+      @for (faq of faqs; track faq.question) {
+      <details>
+        <summary>{{ faq.question }}<span aria-hidden="true">+</span></summary>
+        <p>{{ faq.answer }}</p>
+      </details>
+      }
+    </div>
+  </section>
+
+  <section class="closing-section" aria-labelledby="closing-title">
+    <span class="eyebrow">O próximo passo começa aqui</span>
+    <h2 id="closing-title">
+      Sua assistência tem muito para fazer.<br /><em
+        >Vamos dar um fluxo a tudo isso.</em
+      >
+    </h2>
+    <p>Crie sua conta e conheça o ambiente inicial da sua empresa.</p>
+    <a class="button" routerLink="/cadastro"
+      >Criar minha conta <span aria-hidden="true">↗</span></a
+    ><a class="closing-login" routerLink="/entrar">Já tenho conta. Entrar</a>
+  </section>
+</div>

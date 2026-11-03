@@ -3,7 +3,7 @@ import { sessionGuard } from "./core/auth/guards/session.guard";
 export const routes: Routes = [
   {
     path: "",
-    title: "FixFlow",
+    title: "FixFlow — Gestão para assistências técnicas",
     loadComponent: () =>
       import("./features/home/pages/home/home").then((m) => m.Home),
   },

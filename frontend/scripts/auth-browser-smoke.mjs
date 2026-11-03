@@ -68,9 +68,19 @@ try {
     });
   const fields = {
     companyName: "Oficina de teste do navegador",
-    fullName: "Owner de teste",
+    firstName: "Owner",
+    lastName: "de teste",
     email,
     password: "Owner-browser-123!",
+    confirmPassword: "Owner-browser-123!",
+    document: "52998224725",
+    street: "Rua Teste",
+    number: "123",
+    neighborhood: "Centro",
+    city: "São Paulo",
+    state: "SP",
+    postalCode: "01001000",
+    phone: "11999999999",
   };
   await evaluate(
     `(()=>{const fields=${JSON.stringify(fields)};for(const [id,value] of Object.entries(fields)){const input=document.getElementById(id);input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('form').requestSubmit();return true;})()`,

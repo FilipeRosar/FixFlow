@@ -21,6 +21,7 @@ public class AccountRegistrationController {
     @PostMapping("/api/contas")
     @ResponseStatus(HttpStatus.CREATED)
     public RegisteredAccount register(@Valid @RequestBody RegistrationRequest request) {
-        return registration.register(request.companyName(), request.fullName(), request.email(), request.password());
+        return registration.register(request.companyName(), request.firstName(), request.lastName(), request.email(), request.password(),
+                request.document(), request.address().toApplication(), request.phone());
     }
 }

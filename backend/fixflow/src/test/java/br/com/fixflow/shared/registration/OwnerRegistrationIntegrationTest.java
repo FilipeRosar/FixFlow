@@ -1,6 +1,7 @@
 package br.com.fixflow.shared.registration;
 
 import br.com.fixflow.shared.application.registration.usecase.AccountRegistration;
+import br.com.fixflow.shared.application.registration.dto.RegistrationAddress;
 import br.com.fixflow.shared.application.registration.EmailAlreadyRegisteredException;
 import br.com.fixflow.shared.infrastructure.tenant.TenantContext;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("integration-test")
 class OwnerRegistrationIntegrationTest {
-    private static final String PASSWORD = "Owner1234!";
+    private static final String PASSWORD = "Owner12!";
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
     @Autowired Environment environment;
@@ -53,11 +54,25 @@ class OwnerRegistrationIntegrationTest {
             var result = mapper.readTree(response);
             String tenant = result.get("tenantId").asText();
             String user = result.get("userId").asText();
+            new TransactionTemplate(manager).executeWithoutResult(status -> {
+                runtime.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, tenant);
+                var details = runtime.queryForMap("SELECT document, street, number, complement, neighborhood, city, state, postal_code, phone FROM tenants WHERE id = ?::uuid", tenant);
+                assertEquals("52998224725", details.get("document"));
+                assertEquals("Rua Teste", details.get("street"));
+                assertEquals("123", details.get("number"));
+                assertEquals("Centro", details.get("neighborhood"));
+                assertEquals("São Paulo", details.get("city"));
+                assertEquals("SP", details.get("state"));
+                assertEquals("01001000", details.get("postal_code"));
+                assertEquals("11999999999", details.get("phone"));
+            });
             mvc.perform(get("/api/oficinas/" + tenant + "/selecao").with(httpBasic(email, PASSWORD)))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.userId").value(user))
                     .andExpect(jsonPath("$.role").value("OWNER"));
             var owner = owner();
             assertEquals("Owner Test", owner.queryForObject("SELECT full_name FROM users WHERE email = ?", String.class, email));
+            assertEquals("Owner", owner.queryForObject("SELECT first_name FROM users WHERE email = ?", String.class, email));
+            assertEquals("Test", owner.queryForObject("SELECT last_name FROM users WHERE email = ?", String.class, email));
             assertTrue(encoder.matches(PASSWORD, owner.queryForObject("SELECT password_hash FROM users WHERE email = ?", String.class, email)));
             mvc.perform(post("/api/contas").contentType("application/json").content(body(company, email, PASSWORD)))
                     .andExpect(status().isConflict());
@@ -70,8 +85,20 @@ class OwnerRegistrationIntegrationTest {
     void invalidInputsAndMalformedJsonReturnBadRequest() throws Exception {
         String email = UUID.randomUUID() + "@example.invalid";
         for (String body : new String[]{"{}", "{", body("", email, PASSWORD), body("Workshop", "invalid", PASSWORD),
-                body("Workshop", email, "short1234"), body("Workshop", email, "á".repeat(40)), body("Workshop", email, "x".repeat(73))}) {
+                body("Workshop", email, "Abc1234"), body("Workshop", email, "abcdefgh1"), body("Workshop", email, "ABCDEFGH1"), body("Workshop", email, "Abcdefgh"), body("Workshop", email, "á".repeat(40)), body("Workshop", email, "x".repeat(73))}) {
             mvc.perform(post("/api/contas").contentType("application/json").content(body)).andExpect(status().isBadRequest());
+        }
+        for (String field : new String[]{"firstName", "lastName", "document", "address", "phone"}) {
+            var invalid = mapper.readTree(body("Workshop", email, PASSWORD));
+            ((tools.jackson.databind.node.ObjectNode) invalid).put(field, "");
+            mvc.perform(post("/api/contas").contentType("application/json")
+                    .content(mapper.writeValueAsString(invalid))).andExpect(status().isBadRequest());
+        }
+        for (String field : new String[]{"street", "number", "neighborhood", "city", "state", "postalCode"}) {
+            var invalid = mapper.readTree(body("Workshop", email, PASSWORD));
+            ((tools.jackson.databind.node.ObjectNode) invalid.get("address")).put(field, "");
+            mvc.perform(post("/api/contas").contentType("application/json")
+                    .content(mapper.writeValueAsString(invalid))).andExpect(status().isBadRequest());
         }
         assertEquals(0, owner().queryForObject("SELECT count(*) FROM users WHERE email = ?", Integer.class, email));
         // The CSRF exemption is limited to the registration operation.
@@ -83,7 +110,7 @@ class OwnerRegistrationIntegrationTest {
         String company = UUID.randomUUID().toString();
         String email = company + "@example.invalid";
         new TransactionTemplate(manager).executeWithoutResult(status -> {
-            registration.register(company, "Owner", email, PASSWORD);
+            registration.register(company, "Owner", "Test", email, PASSWORD, "52998224725", address(), "11999999999");
             assertEquals("", runtime.queryForObject("SELECT coalesce(current_setting('app.tenant_id', true), '')", String.class));
             status.setRollbackOnly();
         });
@@ -98,7 +125,7 @@ class OwnerRegistrationIntegrationTest {
         try (var executor = Executors.newFixedThreadPool(2)) {
             java.util.concurrent.Callable<Boolean> task = () -> {
                 try {
-                    registration.register(company, "Owner", email, PASSWORD);
+                    registration.register(company, "Owner", "Test", email, PASSWORD, "52998224725", address(), "11999999999");
                     return true;
                 } catch (EmailAlreadyRegisteredException exception) { return false; }
             };
@@ -109,8 +136,13 @@ class OwnerRegistrationIntegrationTest {
         } finally { cleanup(email); }
     }
 
+    private RegistrationAddress address() {
+        return new RegistrationAddress("Rua Teste", "123", "", "Centro", "São Paulo", "SP", "01001000");
+    }
+
     private String body(String company, String email, String password) {
-        return mapper.writeValueAsString(java.util.Map.of("companyName", company, "fullName", "Owner Test", "email", email, "password", password));
+        return mapper.writeValueAsString(java.util.Map.of("companyName", company, "firstName", "Owner", "lastName", "Test",
+                "email", email, "password", password, "document", "52998224725", "address", address(), "phone", "11999999999"));
     }
 
     private DriverManagerDataSource ownerSource() {

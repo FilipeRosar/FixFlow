@@ -28,7 +28,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(br.com.fixflow.shared.application.registration.InvalidRegistrationException.class)
     public ResponseEntity<ProblemDetail> handleInvalidRegistration() {
         return ResponseEntity.badRequest().body(ProblemDetail.forStatusAndDetail(
-                HttpStatus.BAD_REQUEST, "Dados de cadastro inválidos. A senha deve ter de 10 a 72 caracteres e no máximo 72 bytes UTF-8."));
+                HttpStatus.BAD_REQUEST, "Confira os dados do cadastro. Use uma senha com pelo menos 8 caracteres, letra maiúscula, letra minúscula e número. Se a senha for muito longa, reduza o tamanho."));
     }
 
     @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)

@@ -350,3 +350,56 @@ button:focus-visible {
     width: calc(100% - 32px);
   }
 }
+
+.password-input {
+  position: relative;
+}
+.password-input input {
+  width: 100%;
+  padding-right: 3rem;
+}
+.password-toggle {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.password-toggle:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.postal-code-input {
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+.postal-code-input input {
+  flex: 1;
+  min-width: 0;
+}
+.postal-code-input .button {
+  margin: 0;
+  flex-shrink: 0;
+  padding: 0.65rem 0.85rem;
+}
+@media (max-width: 380px) {
+  .postal-code-input {
+    gap: 0.4rem;
+  }
+  .postal-code-input .button {
+    padding: 0.65rem 0.5rem;
+    font-size: 0.8rem;
+  }
+}

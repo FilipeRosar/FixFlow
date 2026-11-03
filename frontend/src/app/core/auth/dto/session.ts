@@ -12,8 +12,20 @@ export interface LoginRequest {
   tenantId?: string;
 }
 export interface RegistrationRequest {
+  document: string;
+  address: {
+    street: string;
+    number: string;
+    complement: string;
+    neighborhood: string;
+    city: string;
+    state: string;
+    postalCode: string;
+  };
+  phone: string;
   companyName: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   email: string;
   password: string;
 }

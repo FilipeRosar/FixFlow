@@ -39,6 +39,7 @@ public class SecurityConfig {
                         && "true".equals(request.getHeader("X-Auth-Request"))
                         && (request.getHeader("Origin") == null || allowedOrigin.equals(request.getHeader("Origin")))))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.GET, "/api/enderecos/cep/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/contas", "/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
                         .requestMatchers("/api-docs/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/health", "/health/**").permitAll()
                         .anyRequest().authenticated())
