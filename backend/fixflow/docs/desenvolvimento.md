@@ -324,3 +324,43 @@ expiração absoluta, bloqueio e progressão, CSRF/origem e suspensão imediata.
 Implementação e configuração SMTP: [README — US-003](../README.md#logout-e-recuperação-de-senha-us-003).
 Os testes de integração verificam respostas idênticas, validade de 30 minutos, uso
 único sob concorrência, invalidação por novo link, revogação de refresh e CSRF.
+
+## Gestão de usuários e roles (US-004)
+
+O Owner acessa **Gerenciar usuários** na página inicial da empresa. O contrato protegido
+por JWT é `/api/oficinas/{tenantId}/usuarios`:
+
+- `GET`: lista `userId`, `fullName`, `email`, `role` e `status` dos vínculos da oficina.
+- `POST`: recebe `{fullName, email, password, role}` e retorna `201`. A senha inicial
+  exige 10–72 caracteres e até 72 bytes UTF-8; o hash BCrypt nunca é retornado.
+- `PATCH /{userId}/role`: recebe `{role}` e retorna `204`.
+- `DELETE /{userId}`: suspende o vínculo da oficina e retorna `204`.
+
+Roles atribuíveis: `OWNER`, `ATTENDANT`, `TECHNICIAN`. Roles legadas `ADMIN` e `VIEWER`
+continuam legíveis, sem permissões novas, até a conversão explícita pelo Owner.
+E-mail duplicado e tentativa de remover/rebaixar o último Owner ativo retornam `409`;
+role inválida retorna `400`; usuário fora da oficina retorna `404`. Não é possível
+vincular por esse endpoint uma identidade já existente nem alterar sua senha.
+
+A migration V17 concede somente execução de uma função restrita, sem escrita direta
+nas tabelas globais. O executor autoriza o tenant e a função revalida o Owner;
+um lock da empresa serializa mudanças e protege o último Owner contra concorrência.
+Criação, alteração e desativação geram auditoria na mesma transação. A suspensão
+é local à oficina; outros vínculos da identidade permanecem independentes.
+O JWT anterior à troca de role ou suspensão é rejeitado na requisição seguinte.
+A renovação segue a validação de vínculo da US-002.
+
+`RolePermissions` centraliza a matriz da seção 5. O conversor JWT carrega permissões
+somente após revalidar o vínculo ativo. Method security está habilitado para os casos
+de uso dos próximos módulos. O filtro já exige `workorder:create` em
+`POST /api/v1/work-orders` e `finance:read` em `/api/v1/finance/**` e
+`/api/v1/dashboard/**`. Os módulos de OS/financeiro ainda não existem; T5 usa
+controllers de teste nessas rotas para exercitar a cadeia real de segurança,
+com JWTs reais, incluindo respostas positivas para os perfis permitidos.
+As restrições por OS atribuída, escrita limitada e justificativa serão aplicadas
+pelos respectivos módulos, além da permissão da matriz.
+
+Escritas de usuários com Bearer dispensam CSRF, pois o cookie refresh não autentica
+essas rotas. Autenticação Basic dos testes mantém a exigência de CSRF.
+
+Validação: `./mvnw -Dtest=UserManagementT5IntegrationTest,ArchitectureTest test`.

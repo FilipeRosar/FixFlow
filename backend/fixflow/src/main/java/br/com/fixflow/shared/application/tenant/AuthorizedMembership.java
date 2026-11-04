@@ -17,6 +17,7 @@ public record AuthorizedMembership(
 
     public enum Role {
         OWNER,
+        ATTENDANT,
         ADMIN,
         TECHNICIAN,
         VIEWER

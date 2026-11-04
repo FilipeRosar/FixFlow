@@ -21,6 +21,13 @@ describe('Protected workspace', () => {
       role: 'OWNER',
     });
     await navigation;
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/oficinas/t/selecao')
+      .flush({ userId: 'u', tenantId: 't', role: 'OWNER', companyName: 'Oficina Horizonte' });
+    harness.detectChanges();
+    expect(harness.routeNativeElement?.querySelector('.company strong')?.textContent).toContain(
+      'Oficina Horizonte',
+    );
     expect(TestBed.inject(Router).url).toBe('/inicio');
     expect(
       harness.routeNativeElement?.querySelector('[aria-current="page"]')?.textContent,

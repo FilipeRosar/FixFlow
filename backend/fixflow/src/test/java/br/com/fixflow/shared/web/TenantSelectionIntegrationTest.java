@@ -64,7 +64,8 @@ class TenantSelectionIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value(fixtures.userId.toString()))
                 .andExpect(jsonPath("$.tenantId").value(fixtures.tenantA.toString()))
-                .andExpect(jsonPath("$.role").value("OWNER"));
+                .andExpect(jsonPath("$.role").value("OWNER"))
+                .andExpect(jsonPath("$.companyName").value("Integration workshop"));
     }
 
     @Test

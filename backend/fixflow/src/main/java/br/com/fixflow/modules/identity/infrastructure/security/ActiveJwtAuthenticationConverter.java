@@ -9,13 +9,19 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
-import java.util.List;
 import java.util.UUID;
 
 @Component
 public class ActiveJwtAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
     private final SessionStore store;
     public ActiveJwtAuthenticationConverter(SessionStore store) { this.store = store; }
+    private static java.util.List<SimpleGrantedAuthority> authorities(String role) {
+        var result = new java.util.ArrayList<SimpleGrantedAuthority>();
+        result.add(new SimpleGrantedAuthority("ROLE_" + role));
+        br.com.fixflow.modules.identity.domain.RolePermissions.forRole(role)
+                .forEach(permission -> result.add(new SimpleGrantedAuthority(permission)));
+        return result;
+    }
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
         try {
@@ -24,7 +30,7 @@ public class ActiveJwtAuthenticationConverter implements Converter<Jwt, Abstract
             var identity = store.activeMembership(user, tenant).orElseThrow(() -> new BadCredentialsException("Token inválido."));
             if (!identity.role().equals(jwt.getClaimAsString("role"))) throw new BadCredentialsException("Token inválido.");
             return UsernamePasswordAuthenticationToken.authenticated(new AuthenticatedIdentity(user, identity.email(), tenant),
-                    null, List.of(new SimpleGrantedAuthority("ROLE_" + identity.role())));
+                    null, authorities(identity.role()));
         } catch (IllegalArgumentException | NullPointerException exception) {
             throw new BadCredentialsException("Token inválido.");
         }

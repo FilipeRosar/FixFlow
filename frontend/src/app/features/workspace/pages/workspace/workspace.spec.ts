@@ -7,7 +7,7 @@ import { of } from 'rxjs';
 import { Workspace } from './workspace';
 import { SessionService } from '../../../../core/auth/data-access/session.service';
 
-const account = { tenantId: 'tenant', role: 'OWNER' };
+const account = { tenantId: 'tenant', role: 'OWNER', companyName: 'Oficina Horizonte' };
 describe('Operational workspace', () => {
   const logout = vi.fn(() => of(undefined));
   beforeEach(() => {
@@ -26,6 +26,8 @@ describe('Operational workspace', () => {
   function setup() {
     const fixture = TestBed.createComponent(Workspace);
     fixture.detectChanges();
+    TestBed.inject(HttpTestingController).expectOne('/api/oficinas/tenant/selecao').flush(account);
+    fixture.detectChanges();
     return { fixture, page: fixture.nativeElement as HTMLElement };
   }
   it('marks the current area and future modules without making up business data', () => {
@@ -38,6 +40,18 @@ describe('Operational workspace', () => {
     expect(page.querySelectorAll('.operation-nav button:disabled')).toHaveLength(5);
     expect(page.querySelector('.orders-empty')?.textContent).toContain('próxima etapa');
     expect(page.querySelector('.profile')?.textContent).toContain('Proprietário');
+  });
+  it('shows the actual company name and allows collapsing and expanding the sidebar', () => {
+    const { fixture, page } = setup();
+    expect(page.querySelector('.company strong')?.textContent).toContain('Oficina Horizonte');
+    const button = page.querySelector<HTMLButtonElement>('.sidebar-collapse')!;
+    button.click();
+    fixture.detectChanges();
+    expect(page.querySelector('.operation')?.classList.contains('sidebar-collapsed')).toBe(true);
+    expect(button.getAttribute('aria-label')).toBe('Expandir menu lateral');
+    button.click();
+    fixture.detectChanges();
+    expect(page.querySelector('.operation')?.classList.contains('sidebar-collapsed')).toBe(false);
   });
   it('opens the mobile navigation and closes it using Escape', () => {
     const { fixture, page } = setup();

@@ -15,6 +15,7 @@ import org.springframework.security.web.authentication.www.BasicAuthenticationFi
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 @Configuration
+@org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, GlobalAuthenticationProvider provider,
@@ -35,7 +36,10 @@ public class SecurityConfig {
         };
         http.authenticationProvider(provider)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .csrf(csrf -> csrf.ignoringRequestMatchers(signup, request ->
+                .csrf(csrf -> csrf.ignoringRequestMatchers(signup,
+                        request -> request.getRequestURI().substring(request.getContextPath().length()).matches("/api/oficinas/[^/]+/usuarios(?:/.*)?")
+                                && request.getHeader("Authorization") != null
+                                && request.getHeader("Authorization").startsWith("Bearer "), request ->
                         (login.matches(request) || refresh.matches(request) || recovery.matches(request))
                         && "true".equals(request.getHeader("X-Auth-Request"))
                         && (request.getHeader("Origin") == null || allowedOrigin.equals(request.getHeader("Origin")))))
@@ -43,6 +47,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/enderecos/cep/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/contas", "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password").permitAll()
                         .requestMatchers("/api-docs/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/health", "/health/**").permitAll()
+                         .requestMatchers(HttpMethod.POST, "/api/v1/work-orders").hasAuthority("workorder:create")
+                        .requestMatchers("/api/v1/finance/**", "/api/v1/dashboard/**").hasAuthority("finance:read")
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(entryPoint))
                 .oauth2ResourceServer(resource -> resource.jwt(jwt -> jwt.decoder(decoder).jwtAuthenticationConverter(converter))

@@ -1,6 +1,6 @@
 export interface Session {
   accessToken: string;
-  tokenType: "Bearer";
+  tokenType: 'Bearer';
   expiresIn: number;
   userId: string;
   tenantId: string;
@@ -35,6 +35,7 @@ export interface RegisteredAccount {
   role: string;
 }
 export interface Membership {
+  companyName: string;
   userId: string;
   tenantId: string;
   role: string;
