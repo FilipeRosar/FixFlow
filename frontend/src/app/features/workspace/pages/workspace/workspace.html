@@ -1,4 +1,4 @@
-<div class="operation">
+<div class="operation" [class.sidebar-collapsed]="sidebarCollapsed()">
   <svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <symbol id="op-dashboard" viewBox="0 0 24 24">
@@ -52,30 +52,64 @@
     aria-label="Menu da empresa"
     id="operation-sidebar"
   >
-    <a class="operation-brand" routerLink="/" aria-label="FixFlow — voltar ao site"
-      ><span class="brand-symbol"><img src="assets/logo.png" alt="" /></span>FixFlow</a
+    <button
+      class="sidebar-collapse"
+      type="button"
+      (click)="sidebarCollapsed.set(!sidebarCollapsed())"
+      [attr.aria-label]="sidebarCollapsed() ? 'Expandir menu lateral' : 'Recolher menu lateral'"
+      [attr.title]="sidebarCollapsed() ? 'Expandir menu' : 'Recolher menu'"
+      [attr.aria-expanded]="!sidebarCollapsed()"
+      aria-controls="operation-sidebar"
     >
-    <div class="company">
-      <span class="avatar">FF</span>
-      <div><strong>Minha assistência</strong><small>Ambiente da empresa</small></div>
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <path d="M9 4v16" />
+        <path [attr.d]="sidebarCollapsed() ? 'm13 9 3 3-3 3' : 'm16 9-3 3 3 3'" />
+      </svg>
+    </button>
+    <a class="operation-brand" routerLink="/" aria-label="FixFlow — voltar ao site"
+      ><span class="brand-symbol"><img src="assets/logo.png" alt="" /></span
+      ><span class="brand-wordmark">FixFlow</span></a
+    >
+    <div class="company" [attr.title]="companyName() || 'Carregando empresa…'">
+      <span class="avatar">{{ companyName().slice(0, 2).toUpperCase() || '…' }}</span>
+      <div>
+        <strong>{{ companyName() || 'Carregando empresa…' }}</strong
+        ><small>Ambiente da empresa</small>
+      </div>
       <svg class="icon" aria-hidden="true"><use href="#op-check" /></svg>
     </div>
     <p class="nav-label">Espaço de trabalho</p>
     <nav class="operation-nav" aria-label="Navegação da empresa">
-      <a class="nav-item active" routerLink="/inicio" aria-current="page" (click)="closeMenu()"
+      <a
+        title="Visão geral"
+        class="nav-item active"
+        routerLink="/inicio"
+        aria-current="page"
+        (click)="closeMenu()"
         ><svg class="icon" aria-hidden="true"><use href="#op-dashboard" /></svg
         ><span>Visão geral</span></a
       >
       @for (item of upcoming; track item.label) {
-        <button type="button" class="nav-item" disabled>
-          <svg class="icon" aria-hidden="true"><use [attr.href]="'#op-' + item.icon" /></svg
-          ><span>{{ item.label }}</span
-          ><small>Em breve</small>
-        </button>
+        @if ((item.icon !== 'finance' && item.icon !== 'settings') || session()?.role === 'OWNER') {
+          <button
+            type="button"
+            class="nav-item"
+            [attr.title]="item.label"
+            [attr.aria-label]="item.label"
+            disabled
+          >
+            <svg class="icon" aria-hidden="true"><use [attr.href]="'#op-' + item.icon" /></svg
+            ><span>{{ item.label }}</span
+            ><small>Em breve</small>
+          </button>
+        }
       }
     </nav>
     <div class="sidebar-bottom">
-      <a class="back-link" routerLink="/"><span aria-hidden="true">↗</span> Voltar ao site</a>
+      <a class="back-link" title="Voltar ao site" routerLink="/"
+        ><span aria-hidden="true">↗</span> <span class="back-link-label">Voltar ao site</span></a
+      >
       <div class="profile">
         <span class="avatar"
           ><svg class="icon" aria-hidden="true"><use href="#op-clients" /></svg
@@ -129,19 +163,226 @@
           ><small id="new-order-hint">Disponível em uma próxima etapa</small>
         </div>
       </div>
+      @if (session()?.role === 'OWNER') {
+        <section class="panel user-management" aria-labelledby="users-heading">
+          <div class="users-header">
+            <div class="users-heading-group">
+              <span class="users-section-icon"
+                ><svg class="icon" aria-hidden="true"><use href="#op-clients" /></svg
+              ></span>
+              <div>
+                <span class="users-eyebrow">Equipe e acessos</span>
+                <h2 id="users-heading">Usuários da empresa</h2>
+                <p>As pessoas certas, com os acessos certos.</p>
+              </div>
+            </div>
+            <button
+              class="secondary users-toggle"
+              type="button"
+              (click)="usersOpen() ? usersOpen.set(false) : loadUsers()"
+              [attr.aria-expanded]="usersOpen()"
+              aria-controls="users-content"
+            >
+              {{ usersOpen() ? 'Recolher equipe' : 'Gerenciar usuários' }}
+              <span aria-hidden="true">{{ usersOpen() ? '−' : '↗' }}</span>
+            </button>
+          </div>
+          @if (usersOpen()) {
+            <div class="users-content" id="users-content">
+              <aside class="user-create">
+                <div class="user-create-heading">
+                  <span class="user-add-icon" aria-hidden="true">＋</span>
+                  <div>
+                    <h3>Adicionar à equipe</h3>
+                    <p>Crie um acesso para um novo integrante.</p>
+                  </div>
+                </div>
+                <form #userForm="ngForm" (ngSubmit)="createUser()">
+                  <label
+                    >Nome completo<input
+                      name="fullName"
+                      [(ngModel)]="userName"
+                      required
+                      maxlength="150"
+                      placeholder="Como a pessoa se chama?"
+                      autocomplete="name"
+                  /></label>
+                  <label
+                    >E-mail<input
+                      name="email"
+                      type="email"
+                      [(ngModel)]="userEmail"
+                      required
+                      email
+                      maxlength="254"
+                      placeholder="nome@empresa.com"
+                      autocomplete="email"
+                  /></label>
+                  <label
+                    >Senha inicial<input
+                      name="password"
+                      type="password"
+                      [(ngModel)]="userPassword"
+                      required
+                      minlength="10"
+                      maxlength="72"
+                      autocomplete="new-password"
+                      placeholder="Crie uma senha segura"
+                      aria-describedby="user-password-hint"
+                    /><small id="user-password-hint">Use de 10 a 72 caracteres.</small></label
+                  >
+                  <label
+                    >Perfil de acesso<select name="role" [(ngModel)]="userRole">
+                      <option value="OWNER">Proprietário</option>
+                      <option value="ATTENDANT">Atendente</option>
+                      <option value="TECHNICIAN">Técnico</option>
+                    </select></label
+                  >
+                  <p class="user-role-hint">
+                    {{
+                      userRole === 'OWNER'
+                        ? 'Gerencia a empresa, a equipe e todos os acessos.'
+                        : userRole === 'ATTENDANT'
+                          ? 'Organiza os atendimentos e acompanha os clientes.'
+                          : 'Acompanha sua fila e executa os serviços técnicos.'
+                    }}
+                  </p>
+                  <button
+                    class="primary user-submit"
+                    type="submit"
+                    [disabled]="userForm.invalid || savingUser()"
+                  >
+                    <span aria-hidden="true">＋</span
+                    >{{ savingUser() ? 'Salvando…' : 'Criar usuário' }}
+                  </button>
+                </form>
+              </aside>
+              <div class="users-directory">
+                <div class="users-directory-heading">
+                  <div>
+                    <h3>
+                      Sua equipe <span class="users-count">{{ users().length }}</span>
+                    </h3>
+                    <p>Gerencie os perfis e a disponibilidade dos acessos.</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="users-refresh"
+                    (click)="loadUsers()"
+                    [disabled]="loadingUsers()"
+                    aria-label="Atualizar lista de usuários"
+                    title="Atualizar lista"
+                  >
+                    <span aria-hidden="true">↻</span>
+                  </button>
+                </div>
+                <div class="table-scroll" [attr.aria-busy]="loadingUsers()">
+                  <table class="users-table">
+                    <caption class="sr-only">
+                      Integrantes da empresa, perfis de acesso e situação do vínculo.
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Integrante</th>
+                        <th scope="col">Perfil de acesso</th>
+                        <th scope="col">Status</th>
+                        <th scope="col"><span class="sr-only">Ações</span></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (user of users(); track user.userId) {
+                        <tr [class.user-inactive]="user.status !== 'ACTIVE'">
+                          <td>
+                            <div class="user-identity">
+                              <span
+                                class="user-avatar"
+                                [class.technician]="user.role === 'TECHNICIAN'"
+                                [class.attendant]="user.role === 'ATTENDANT'"
+                                aria-hidden="true"
+                                >{{ user.fullName.slice(0, 1).toUpperCase() }}</span
+                              >
+                              <div>
+                                <strong>{{ user.fullName }}</strong
+                                ><span class="user-email">{{ user.email }}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td data-label="Perfil">
+                            <select
+                              class="user-role-select"
+                              #role
+                              [value]="user.role"
+                              [attr.aria-label]="'Perfil de ' + user.fullName"
+                              [disabled]="savingUser()"
+                              (change)="changeUser(user.userId, role.value)"
+                            >
+                              <option value="OWNER">Proprietário</option>
+                              <option value="ATTENDANT">Atendente</option>
+                              <option value="TECHNICIAN">Técnico</option>
+                            </select>
+                          </td>
+                          <td data-label="Status">
+                            <span class="user-status" [class.inactive]="user.status !== 'ACTIVE'"
+                              ><i aria-hidden="true"></i
+                              >{{ user.status === 'ACTIVE' ? 'Ativo' : 'Desativado' }}</span
+                            >
+                          </td>
+                          <td class="user-actions">
+                            <button
+                              type="button"
+                              class="user-deactivate"
+                              [disabled]="savingUser() || user.status !== 'ACTIVE'"
+                              [attr.aria-label]="'Desativar acesso de ' + user.fullName"
+                              (click)="changeUser(user.userId, null)"
+                            >
+                              Desativar
+                            </button>
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                  @if (loadingUsers() && !users().length) {
+                    <p class="users-empty" role="status">Carregando sua equipe…</p>
+                  } @else if (usersError()) {
+                    <p class="users-empty" role="alert">
+                      {{ usersError() }}
+                      <button type="button" class="users-retry" (click)="loadUsers()">
+                        Tentar novamente
+                      </button>
+                    </p>
+                  } @else if (!users().length) {
+                    <div class="users-empty">
+                      <svg class="icon" aria-hidden="true"><use href="#op-clients" /></svg
+                      ><strong>Sua equipe começa aqui</strong>
+                      <p>Adicione o primeiro integrante pelo formulário ao lado.</p>
+                    </div>
+                  }
+                </div>
+                <p class="users-footnote">
+                  <svg class="icon" aria-hidden="true"><use href="#op-check" /></svg>Os acessos são
+                  exclusivos desta empresa.
+                </p>
+              </div>
+            </div>
+          }
+        </section>
+      }
       <section class="metrics" aria-label="Indicadores da assistência">
         @for (metric of metrics; track metric.label) {
-          <article class="metric">
-            <div class="metric-label">
-              <h2>{{ metric.label }}</h2>
-              <span class="metric-icon" [class]="'metric-icon ' + metric.tone"
-                ><svg class="icon" aria-hidden="true">
-                  <use [attr.href]="'#op-' + metric.icon" /></svg
-              ></span>
-            </div>
-            <strong aria-label="Indicador ainda não disponível">—</strong>
-            <p>{{ metric.hint }}</p>
-          </article>
+          @if (metric.icon !== 'finance' || session()?.role === 'OWNER') {
+            <article class="metric">
+              <div class="metric-label">
+                <h2>{{ metric.label }}</h2>
+                <span class="metric-icon" [class]="'metric-icon ' + metric.tone"
+                  ><svg class="icon" aria-hidden="true">
+                    <use [attr.href]="'#op-' + metric.icon" /></svg
+                ></span>
+              </div>
+              <strong aria-label="Indicador ainda não disponível">—</strong>
+              <p>{{ metric.hint }}</p>
+            </article>
+          }
         }
       </section>
       <div class="overview-grid">

@@ -1,4 +1,5 @@
-import { Component, HostListener, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { Component, HostListener, OnInit, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { finalize } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
@@ -7,14 +8,27 @@ import { Membership } from '../../../../core/auth/dto/session';
 
 @Component({
   selector: 'app-workspace',
-  imports: [RouterLink],
+  imports: [RouterLink, FormsModule],
   templateUrl: './workspace.html',
   styleUrl: './workspace.css',
 })
-export class Workspace {
+export class Workspace implements OnInit {
   private readonly sessions = inject(SessionService);
   private readonly router = inject(Router);
   protected readonly session = this.sessions.session;
+  protected readonly companyName = signal('');
+  protected readonly sidebarCollapsed = signal(false);
+  ngOnInit(): void {
+    const session = this.session();
+    if (!session) return;
+    this.http.get<Membership>(`/api/oficinas/${session.tenantId}/selecao`).subscribe({
+      next: (membership) => this.companyName.set(membership.companyName),
+      error: () =>
+        this.status.set(
+          'Não foi possível carregar o nome da empresa. Tente verificar o acesso novamente.',
+        ),
+    });
+  }
   protected readonly leaving = signal(false);
   protected readonly menuOpen = signal(false);
   protected readonly today = new Intl.DateTimeFormat('pt-BR', {
@@ -64,6 +78,83 @@ export class Workspace {
   protected readonly status = signal('');
   protected readonly pending = signal(false);
 
+  protected readonly users = signal<
+    { userId: string; fullName: string; email: string; role: string; status: string }[]
+  >([]);
+  protected readonly usersOpen = signal(false);
+  protected readonly loadingUsers = signal(false);
+  protected readonly usersError = signal('');
+  protected readonly savingUser = signal(false);
+  protected userName = '';
+  protected userEmail = '';
+  protected userPassword = '';
+  protected userRole = 'ATTENDANT';
+  private usersUrl(): string {
+    return `/api/oficinas/${this.session()?.tenantId}/usuarios`;
+  }
+  protected loadUsers(): void {
+    if (this.loadingUsers()) return;
+    this.usersOpen.set(true);
+    this.loadingUsers.set(true);
+    this.usersError.set('');
+    this.http
+      .get<{ userId: string; fullName: string; email: string; role: string; status: string }[]>(
+        this.usersUrl(),
+      )
+      .pipe(finalize(() => this.loadingUsers.set(false)))
+      .subscribe({
+        next: (users) => this.users.set(users),
+        error: () => this.usersError.set('Não foi possível carregar os usuários.'),
+      });
+  }
+  protected createUser(): void {
+    if (this.savingUser()) return;
+    this.savingUser.set(true);
+    this.http
+      .post(this.usersUrl(), {
+        fullName: this.userName,
+        email: this.userEmail,
+        password: this.userPassword,
+        role: this.userRole,
+      })
+      .pipe(finalize(() => this.savingUser.set(false)))
+      .subscribe({
+        next: () => {
+          this.userName = '';
+          this.userEmail = '';
+          this.userPassword = '';
+          this.status.set('Usuário criado.');
+          this.loadUsers();
+        },
+        error: (error) =>
+          this.status.set(
+            error.status === 409 ? 'E-mail já cadastrado.' : 'Confira os dados e tente novamente.',
+          ),
+      });
+  }
+  protected changeUser(userId: string, role: string | null): void {
+    if (this.savingUser()) return;
+    this.savingUser.set(true);
+    const operation =
+      role === null
+        ? this.http.delete(`${this.usersUrl()}/${userId}`)
+        : this.http.patch(`${this.usersUrl()}/${userId}/role`, { role });
+    operation.pipe(finalize(() => this.savingUser.set(false))).subscribe({
+      next: () => {
+        this.status.set('Usuário atualizado.');
+        this.loadUsers();
+      },
+      error: (error) => {
+        this.status.set(
+          error.status === 409
+            ? 'A empresa precisa de um proprietário ativo.'
+            : 'Não foi possível atualizar o usuário.',
+        );
+        this.loadUsers();
+      },
+    });
+  }
+
   protected logout(): void {
     if (this.leaving()) return;
     this.leaving.set(true);
@@ -84,7 +175,8 @@ export class Workspace {
     if (!session || this.pending()) return;
     this.pending.set(true);
     this.http.get<Membership>(`/api/oficinas/${session.tenantId}/selecao`).subscribe({
-      next: () => {
+      next: (membership) => {
+        this.companyName.set(membership.companyName);
         this.status.set('Acesso à empresa confirmado.');
         this.pending.set(false);
       },

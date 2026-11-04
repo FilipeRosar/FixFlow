@@ -29,20 +29,21 @@ describe('FixFlow navigation', () => {
     TestBed.inject(SessionService)
       .login({ email: 'owner@example.com', password: 'Owner1234!' })
       .subscribe();
-    TestBed.inject(HttpTestingController)
-      .expectOne('/api/v1/auth/login')
-      .flush({
-        accessToken: 'token',
-        tokenType: 'Bearer',
-        expiresIn: 900,
-        userId: 'u',
-        tenantId: 't',
-        role: 'OWNER',
-      });
+    TestBed.inject(HttpTestingController).expectOne('/api/v1/auth/login').flush({
+      accessToken: 'token',
+      tokenType: 'Bearer',
+      expiresIn: 900,
+      userId: 'u',
+      tenantId: 't',
+      role: 'OWNER',
+    });
     const router = TestBed.inject(Router);
     await router.navigateByUrl('/inicio');
     await fixture.whenStable();
     const page = fixture.nativeElement as HTMLElement;
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/oficinas/t/selecao')
+      .flush({ userId: 'u', tenantId: 't', role: 'OWNER', companyName: 'Oficina Horizonte' });
     expect(page.querySelector('app-header')).toBeNull();
     expect(page.querySelector('.operation-nav')).not.toBeNull();
     expect(page.querySelectorAll('footer')).toHaveLength(1);

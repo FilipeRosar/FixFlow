@@ -84,6 +84,12 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(problem);
     }
 
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<ProblemDetail> handleStatus(org.springframework.web.server.ResponseStatusException exception) {
+        return ResponseEntity.status(exception.getStatusCode())
+                .body(ProblemDetail.forStatusAndDetail(exception.getStatusCode(), exception.getReason()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnexpected(
             Exception exception,
