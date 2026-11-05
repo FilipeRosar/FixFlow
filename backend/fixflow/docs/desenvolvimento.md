@@ -653,8 +653,8 @@ e fica registrada no histórico/auditoria/evento.
 
 ### Contrato de integração dos guards
 
-Os módulos de atribuição, diagnóstico, orçamento, execução, estoque e pagamentos
-ainda precisam fornecer seus dados de negócio. A migration V27 cria a projeção
+Atribuição, diagnóstico e itens executados já fornecem suas evidências reais.
+Orçamento e pagamentos ainda precisam fornecer seus dados de negócio. A migration V27 cria a projeção
 interna `work_order_transition_facts` para esse contrato. Ela **não é editável por
 endpoint nem por flags do PATCH**. Cada módulo deve gravar sua evidência na mesma
 transação da operação real, bloqueando primeiro a OS e depois a projeção. A
@@ -768,3 +768,278 @@ um diagnóstico completo pela nova operação.
 histórico, autor/data, guard real, leitura por atendente, técnico atribuído,
 reatribuição, isolamento entre tenants, validação, concorrência e rollback.
 As fixtures do T4 agora fornecem diagnóstico completo na tabela canônica.
+
+## US-024 — Serviços, peças e consumo de estoque
+
+A migration `V31` cria `parts`, `work_order_items` e o livro-razão
+`inventory_movements`, com RLS obrigatório e chaves compostas por empresa.
+A role de execução só pode consultar e inserir movimentações: não pode alterá-las
+nem apagá-las. O item removido preserva seu registro com `removed_at`.
+
+### API e acesso
+
+- `GET /api/v1/work-orders/{id}/items`: itens ativos e `workOrderVersion`;
+  proprietário/atendente consultam; técnico consulta apenas sua OS atribuída.
+- `POST /api/v1/work-orders/{id}/items`: proprietário ou técnico atribuído,
+  exclusivamente em `EM_MANUTENCAO`. Corpo: `id` (UUID estável para retry),
+  `version` da OS, `type` (`SERVICE`/`PART`), `partId` (somente para peça),
+  `description`, `quantity` positiva (até três casas), `unitPrice` não negativo
+  (até duas casas). O custo da peça é obtido do catálogo pelo servidor.
+- `DELETE /api/v1/work-orders/{id}/items/{itemId}?version=N`: mesmas permissões
+  e estado; remove o item e, se peça, devolve sua quantidade com movimento `RETURN`.
+- Inclusão/remoção retornam a lista ativa e a nova `workOrderVersion`.
+
+A operação trava a OS antes de conferir versão e atribuição. A baixa utiliza
+`UPDATE parts ... WHERE quantity_on_hand >= :quantity OR allow_negative_stock`.
+Saldo, `EXIT`, item, custo histórico, versão da OS, projeção de serviços/peças,
+auditoria e outbox participam da **mesma transação** do executor autorizado.
+Falha em qualquer etapa desfaz tudo. Estoque insuficiente retorna
+`422 INSUFFICIENT_STOCK`. Negativo depende da preferência explícita da empresa;
+na ausência de configuração, fica proibido. A remoção usa o custo histórico do
+item, gera uma única devolução e recalcula a evidência para a transição `PRONTA`.
+
+O UUID do item funciona como chave idempotente: repetir a inclusão com os mesmos
+dados não consome novamente nem incrementa a versão. Reutilizá-lo com dados
+diferentes retorna `409`. Repetir após remover não reativa o item. Repetir a
+remoção não devolve o estoque duas vezes. A identidade e a atribuição continuam
+sendo verificadas nas repetições. O frontend conserva o UUID em falhas de rede e
+atualiza a versão da OS após cada alteração.
+
+### Base da dependência US-040
+
+O catálogo de peças ainda não existia. Esta entrega inclui o recorte necessário:
+`GET /api/v1/parts` para perfis com `inventory:read` e `POST /api/v1/parts` para o
+proprietário (`inventory:write`). Cadastro recebe `sku`, `name`, `unit`, `cost`,
+`salePrice`, `quantity` inicial e `minQuantity`. SKU é normalizado para maiúsculas
+e único por empresa. Saldo inicial positivo gera `ENTRY` na mesma transação;
+não há alteração livre do saldo. Edição/inativação do catálogo e novas entradas
+ou ajustes após o cadastro continuam como evolução das US-040/US-041.
+
+Na tela da OS, **Serviços e peças → Ver itens da OS** permite consultar os itens,
+registrar serviços, selecionar peças com saldo, informar preço/quantidade e
+remover itens. O proprietário também pode cadastrar a peça com saldo inicial
+nesse painel. Atendentes e ordens fora de manutenção têm consulta somente.
+O total mostrado corresponde aos itens executados, não a pagamentos ou orçamento.
+
+### Validação
+
+`WorkOrderItemsT6T7IntegrationTest` usa PostgreSQL real e cobre T6 (baixa e
+reconciliação do livro-razão, insuficiência sem persistência, falha posterior à
+baixa e rollback de devolução), T7 (duas OS concorrentes para a última unidade:
+exatamente um `201` e um `422`), idempotência, quantidades fracionárias, estoque
+negativo configurável, serviços e liberação de `PRONTA`, versão, atribuição,
+perfis e peça de outra empresa. Os testes do painel Angular verificam retry com
+UUID estável, remoção com versão atual, consulta somente e estoque insuficiente.
+
+```bash
+./mvnw -Dtest=WorkOrderItemsT6T7IntegrationTest,WorkOrderT4IntegrationTest,WorkOrderDiagnosisIntegrationTest,ArchitectureTest test
+```
+
+## US-025 — Anexos e fotos da OS
+
+A migration `V32` adiciona `work_order_attachments`: apenas metadados, checksum
+SHA-256, referência privada no S3, autor e data. RLS obrigatório e FK composta
+impedem referências a OS de outras empresas. Os bytes não ficam no PostgreSQL.
+O nome original é sanitizado (sem diretórios/caracteres de controle, até 180
+caracteres), e a chave usa UUID gerado pelo servidor:
+`tenants/{tenantId}/work-orders/{orderId}/{uuid}.{jpg|png|pdf}`.
+
+### API
+
+- `GET /api/v1/work-orders/{id}/attachments`: lista os metadados, sem chaves S3
+  nem URLs permanentes. Proprietário e atendente consultam suas OS; técnico,
+  somente as atribuídas a ele.
+- `POST /api/v1/work-orders/{id}/attachments`: multipart com o campo `file`;
+  `uploadId` UUID opcional permite retry idempotente. Os três perfis têm
+  `workorder:attach`, e o técnico continua limitado à atribuição. Retorna `201`
+  com os metadados e `Location` do endpoint de link temporário.
+- `GET /api/v1/attachments/{id}/download-url`: confere novamente empresa,
+  vínculo e atribuição antes de assinar. Retorna `url` e `expiresAt`, com
+  `Cache-Control: no-store`. A assinatura SigV4 do SDK AWS dura **300 segundos**;
+  `Content-Disposition: attachment`, MIME e cache são fixados pelo servidor.
+  As URLs assinadas não são registradas em auditoria nem logs.
+
+### Validação e limites
+
+O arquivo recebido deve ter **até 10 MiB (10.485.760 bytes)**, ser não vazio e
+ter extensão, MIME declarado e tipo detectado pelos bytes concordantes. O Apache
+Tika recebe apenas os bytes, sem o nome fornecido pelo cliente. Tipos aceitos:
+JPEG (`.jpg`/`.jpeg`), PNG, WebP e PDF. Executável disfarçado de `.jpg`, MIME falso,
+conteúdo truncado/corrompido e tipos fora da lista retornam `422`.
+
+Imagens são decodificadas e regravadas somente a partir dos pixels, eliminando
+EXIF/GPS e conteúdo anexado. Há limite de 20 megapixels antes da decodificação
+para conter imagens comprimidas desproporcionais. JPEG permanece JPEG;
+PNG e WebP são gravados como PNG. O nome usado no download tem extensão coerente
+com o conteúdo armazenado. O arquivo processado também deve caber em 10 MiB.
+PDFs passam pelo PDFBox e são regravados; documentos criptografados, sem páginas,
+com JavaScript, ações executáveis, links com protocolos inseguros ou arquivos
+incorporados são rejeitados. Links HTTP, HTTPS e e-mail são aceitos.
+O processamento limita a travessia a 100 mil objetos. Isto não representa uma
+varredura antivírus; ClamAV/GuardDuty continuam na evolução prevista do projeto.
+
+Há **20 anexos por OS**: a operação trava a OS antes de conferir a quantidade e
+persistir. A tabela também restringe os slots a 1–20 com unicidade por empresa/OS.
+Dois uploads para o último slot produzem um `201` e um `409`, sem ultrapassar 20.
+Excesso de tamanho retorna `413`; falta do campo `file`, `400`.
+
+O painel Angular envia `uploadId` estável enquanto o mesmo arquivo aguarda
+confirmação. Repetir os mesmos bytes/nome com esse identificador retorna o anexo
+existente, inclusive quando a OS já atingiu 20. Reutilizar a chave com outros dados
+retorna `409`. O checksum do arquivo original controla retry; o checksum exposto
+corresponde ao conteúdo processado efetivamente gravado.
+
+### Consistência entre banco e S3
+
+O `PUT` privado é feito após a autorização e antes do commit de metadados e
+auditoria. Um rollback conhecido dispara `DeleteObject` compensatório, também
+quando um timeout do PUT pode ter ocorrido após a aceitação pelo S3. Falha no
+armazenamento não publica metadados. Não há transação distribuída entre S3 e
+PostgreSQL: encerramento abrupto do processo, resultado de commit desconhecido
+ou falha na compensação podem deixar objetos órfãos. A falha de compensação é
+registrada somente pela chave técnica. A operação deve reconciliar periodicamente
+objetos antigos com `storage_key` no banco, sem remover objetos recentes ou
+referenciados. A retenção por data de entrega pertence à política de ciclo de
+vida do produto; o template não expira indiscriminadamente anexos válidos.
+
+### Configuração do S3 privado
+
+Sem bucket configurado, a aplicação continua funcionando e a consulta de anexos
+continua disponível; upload e emissão de links retornam `503` com mensagem de
+configuração. Não existe fallback público nem gravação silenciosa no disco.
+
+O template [`infra/attachments-s3.yaml`](infra/attachments-s3.yaml) cria um bucket
+com os quatro bloqueios de acesso público, propriedade `BucketOwnerEnforced`,
+criptografia SSE-S3/AES256 e política que exige TLS. O bucket é preservado se a
+stack for removida. O template também disponibiliza uma política IAM de execução
+para ler a configuração de privacidade e executar `PutObject`, `GetObject` e
+`DeleteObject` somente no prefixo de anexos.
+
+Provisionamento, executado pelo responsável pela conta AWS:
+
+```bash
+aws cloudformation deploy \
+  --template-file docs/infra/attachments-s3.yaml \
+  --stack-name fixflow-attachments \
+  --region sa-east-1 \
+  --capabilities CAPABILITY_IAM
+aws cloudformation describe-stacks \
+  --stack-name fixflow-attachments \
+  --region sa-east-1 \
+  --query 'Stacks[0].Outputs'
+```
+
+Anexe `RuntimePolicyArn` à role IAM da aplicação e configure:
+
+```text
+ATTACHMENTS_ENABLED=true
+S3_BUCKET=<BucketName retornado pela stack>
+S3_REGION=sa-east-1
+```
+
+O SDK usa a cadeia padrão de credenciais AWS; prefira role da aplicação. Em
+desenvolvimento, um perfil AWS já configurado pode ser selecionado por
+`AWS_PROFILE`, sem colocar chaves no repositório. O Compose deste repositório está preparado para desenvolvimento com LocalStack.
+Em AWS, configure essas variáveis na workload sem endpoints locais ou credenciais
+fictícias; as credenciais devem ser provisionadas pelo ambiente de execução. O adaptador verifica os quatro bloqueios públicos antes
+de upload e assinatura, envia SSE-S3 e checksum SHA-256 e nunca define ACL pública.
+A opção S3 desabilitada é o padrão até existir um bucket privado provisionado.
+
+Referências de implementação: [URLs pré-assinadas no SDK AWS Java](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/examples-s3-presign.html),
+[Apache Tika](https://tika.apache.org/) e [PDFBox 3](https://pdfbox.apache.org/3.0/migration.html).
+
+### Testes
+
+- `AttachmentValidatorT12Test`: executável com JPEG falso, divergência de MIME,
+  arquivos vazios/corrompidos, limite exato de 10 MiB, sanitização, re-encode de
+  JPEG/PNG/WebP, PDF válido e PDF com scripts.
+- `S3FileStorageTest`: cliente S3 simulado com presigner real; verifica SSE-S3,
+  checksum, ausência de ACL pública, recusa de bucket sem bloqueios e URL SigV4
+  com `X-Amz-Expires=300` e cabeçalhos fixos.
+- `WorkOrderAttachmentsT12IntegrationTest`: PostgreSQL real e storage simulado;
+  cobre T12 antes de qualquer gravação externa, limites, concorrência pelo 20º
+  slot, retry idempotente, isolamento, atribuição do técnico, acesso de atendente,
+  erro no storage e compensação após rollback de auditoria.
+- Painel Angular: listagem, link solicitado sob demanda, upload multipart sem
+  sobrescrever o boundary, retry com UUID estável, limite de tamanho/quantidade
+  e apresentação de erro de validação do backend.
+
+Os testes não dependem de bucket nem usam credenciais AWS reais. A validação
+contra um bucket real deve ocorrer depois do provisionamento.
+
+```bash
+./mvnw -Dtest=AttachmentValidatorT12Test,S3FileStorageTest,WorkOrderAttachmentsT12IntegrationTest,ArchitectureTest,RolePermissionsTest test
+```
+
+## S3 local com LocalStack e Docker Compose
+
+O Compose inclui `localstack` e `localstack-gateway`. Para subir somente o
+armazenamento (preservando os processos locais de backend/frontend):
+
+```bash
+docker compose up -d localstack-gateway
+```
+
+O gateway inicia o LocalStack como dependência. Em ambiente Podman, o comando
+equivalente é `podman-compose up -d localstack-gateway`.
+O bucket `fixflow-attachments` é inicializado por
+`infra/localstack/ready.d/10-attachments.sh`, com bloqueio público, propriedade
+do bucket e SSE-S3. O hook é idempotente. A imagem Community não persiste os objetos sozinha. O wrapper
+`infra/localstack/entrypoint.sh` salva os objetos no volume
+`fixflow_localstack_data` antes de encerrar o runtime; o hook restaura esse
+snapshot no próximo início. O healthcheck só libera a aplicação após criar o
+bucket e restaurar os arquivos. A preservação foi projetada para parada/reinício
+normais do container; encerramento forçado ou falha do host pode perder uploads
+posteriores ao último snapshot. Isso é uma limitação do emulador local, não uma
+configuração de armazenamento para produção.
+
+Foi fixada a imagem Community `localstack/localstack:4.5`, já disponível neste
+ambiente, para desenvolvimento local sem autenticação de conta LocalStack.
+A porta publicada fica em `127.0.0.1:4566`. O serviço S3 original só é acessível
+pela rede dos containers; a porta publicada passa por Nginx e exige assinatura.
+Essa camada é necessária porque a imagem Community usada não aplica os bloqueios
+de ACL a requisições anônimas. `S3_SKIP_SIGNATURE_VALIDATION=0` faz o LocalStack
+conferir a assinatura e a expiração dos URLs; o gateway não registra query strings.
+A configuração local não equivale à autorização IAM de uma conta AWS real.
+
+Para o backend executado no host:
+
+```bash
+cd backend/fixflow
+./mvnw spring-boot:run -Dspring-boot.run.profiles=localstack
+```
+
+O perfil `application-localstack.properties` habilita anexos e configura o endpoint
+`http://localhost:4566`, path-style e credenciais fictícias `test/test`. A
+configuração local ignorada pelo Git deste ambiente também foi preparada para
+esse endpoint; um backend que já estava rodando deve ser reiniciado para reler
+as propriedades e incorporar as classes novas.
+
+Quando a aplicação roda no Compose, o cliente utiliza
+`http://localstack-gateway:4566`, enquanto o presigner utiliza
+`http://localhost:4566` para produzir URLs acessíveis ao navegador. O host da URL
+assinada não pode ser substituído depois de assinar: ele faz parte da assinatura.
+`S3_ENDPOINT` e `S3_PUBLIC_ENDPOINT` permitem configurar esses endereços
+separadamente. `S3_PATH_STYLE=true` evita subdomínios de bucket não resolvíveis
+na rede dos containers. `S3_ACCESS_KEY`/`S3_SECRET_KEY` são fictícias neste Compose.
+Sem endpoints/credenciais explícitos, o adaptador mantém o comportamento AWS
+original, com o provedor padrão de credenciais.
+
+Teste real, com os containers em execução:
+
+```bash
+cd backend/fixflow
+LOCALSTACK_TEST=true ./mvnw -Dtest=LocalStackS3IntegrationTest test
+```
+
+O teste envia um PNG ao bucket inicializado, baixa os mesmos bytes por uma URL
+assinada de 300 segundos, verifica MIME/disposição e rejeição de acesso anônimo
+e de assinatura adulterada. Apaga o objeto de teste ao concluir. Por padrão,
+essa classe é ignorada na suíte, e o perfil `integration-test` continua usando
+storage simulado. O gateway resolve o endereço interno do LocalStack dinamicamente, usando o DNS
+do container, para continuar funcionando quando o runtime muda de IP após reiniciar.
+O teste real aceita apenas endpoints de loopback e credenciais
+fictícias; não se conecta à AWS.
+
+Referências: [S3 no LocalStack](https://docs.localstack.cloud/aws/services/s3/)
+e [inicialização por hooks](https://docs.localstack.cloud/aws/capabilities/config/initialization-hooks/).

@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Bucket privado para anexos da OS FixFlow e politica IAM da aplicacao.
+Resources:
+  AttachmentBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      Tags:
+        - Key: Application
+          Value: FixFlow
+        - Key: Purpose
+          Value: WorkOrderAttachments
+  AttachmentBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AttachmentBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: RequireTLS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt AttachmentBucket.Arn
+              - !Sub '${AttachmentBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+  AttachmentRuntimePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Upload, compensacao e downloads assinados dos anexos FixFlow.
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: VerifyPrivateBucket
+            Effect: Allow
+            Action: s3:GetBucketPublicAccessBlock
+            Resource: !GetAtt AttachmentBucket.Arn
+          - Sid: WorkOrderObjects
+            Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:DeleteObject
+            Resource: !Sub '${AttachmentBucket.Arn}/tenants/*/work-orders/*'
+Outputs:
+  BucketName:
+    Value: !Ref AttachmentBucket
+  Region:
+    Value: !Ref AWS::Region
+  RuntimePolicyArn:
+    Value: !Ref AttachmentRuntimePolicy

@@ -1,0 +1,121 @@
+:host {
+  display: block;
+  margin: 20px 0;
+}
+.items-panel {
+  padding: 24px;
+}
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.section-heading h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.section-heading p,
+.item-hint {
+  color: #98a6bd;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.section-heading p {
+  margin: 6px 0 0;
+}
+#order-items-content {
+  margin-top: 24px;
+}
+fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  margin: 24px 0 0;
+}
+legend {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+.item-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.item-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+}
+.wide-field {
+  grid-column: span 2;
+}
+input,
+select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+small {
+  display: block;
+  color: #98a6bd;
+  margin-top: 5px;
+  font-size: 11px;
+}
+td {
+  vertical-align: middle;
+}
+.items-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #323a4c;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.items-total strong {
+  color: #b9aafa;
+}
+.items-empty {
+  padding: 24px;
+  text-align: center;
+  border: 1px dashed #323a4c;
+  border-radius: 10px;
+  color: #98a6bd;
+}
+.items-empty h3 {
+  font-size: 14px;
+  color: #d9e1ee;
+}
+.items-empty p {
+  font-size: 12px;
+}
+.part-registration {
+  border-top: 1px solid #323a4c;
+  margin-top: 24px;
+  padding-top: 18px;
+}
+summary {
+  cursor: pointer;
+  color: #b9aafa;
+  font-size: 12px;
+}
+@media (max-width: 650px) {
+  .items-panel {
+    padding: 18px;
+  }
+  .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .item-fields {
+    grid-template-columns: 1fr;
+  }
+  .wide-field {
+    grid-column: auto;
+  }
+}
