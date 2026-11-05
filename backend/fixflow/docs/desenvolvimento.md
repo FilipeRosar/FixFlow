@@ -535,3 +535,35 @@ usa a base real `work_orders` existente e não cria dados nem protocolos fictíc
 Interface: clique no nome do cliente para abrir
 `/inicio/clientes/{customerId}/historico`, com filtros, datas, status, paginação
 e atalho para os equipamentos do cliente.
+
+## Exportação e anonimização do cliente (US-013)
+
+Somente OWNER possui `customer:privacy`. Endpoints:
+
+- `GET /api/v1/customers/{id}/export`: arquivo JSON, `Content-Disposition:
+  attachment` e `Cache-Control: no-store`, com versão do formato, data de
+  exportação, cadastro, contatos, equipamentos (inclusive excluídos logicamente)
+  e todas as OS. Sem paginação para não omitir registros. Gera `CUSTOMER_EXPORTED`
+  na auditoria. Whitelist dos campos evita exportar credenciais ou dados de outros clientes.
+- `POST /api/v1/customers/{id}/anonymize`, corpo `{"confirmed":true}`: retorna 204.
+  Exige confirmação explícita e bloqueia com 409 se qualquer OS não estiver em
+  ENTREGUE/CANCELADA. Define nome `Cliente anonimizado`, remove documento e
+  contatos, limpa marca/modelo/série/descrição dos equipamentos e retira cliente
+  e equipamentos dos cadastros ativos. Mantém IDs, vínculos, categoria, datas e
+  OS sem alterações. `anonymized_at` marca a ação. Repetir a operação é idempotente.
+
+Mutações e `CUSTOMER_ANONYMIZED` são atômicos: falha na auditoria reverte todos
+os campos e contatos. Auditoria guarda ator, tenant, cliente, ação e data, sem
+copiar o conteúdo pessoal removido. V25 impede reintroduzir dados nos registros
+anonimizados e protege a regra de OS aberta no banco. Locks do cliente serializam
+anonimização com novos vínculos de OS/equipamentos/contatos. Histórico continua
+disponível pelo ID, com os campos anonimizados. Exportação e anonimização também
+aceitam clientes excluídos logicamente, sem expor outro tenant.
+
+Na página de histórico, o proprietário pode baixar o JSON e confirmar a ação
+permanente. Após anonimizar, o histórico permanece acessível e a ação fica desabilitada.
+Não há tabelas financeiras implementadas ainda; nenhuma tabela de OS ou financeira
+é alterada pela anonimização. A exportação cobre os dados hoje existentes. Novos
+campos pessoais e módulos financeiros deverão integrar sua política de retenção,
+exportação e remoção. Cópias já baixadas e backups seguem seu ciclo de retenção,
+fora da alteração transacional do cadastro.

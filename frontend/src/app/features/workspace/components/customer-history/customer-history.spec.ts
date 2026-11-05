@@ -1,3 +1,5 @@
+import { signal } from '@angular/core';
+import { SessionService } from '../../../../core/auth/data-access/session.service';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -66,6 +68,14 @@ describe('Customer history', () => {
       element: fixture.nativeElement as HTMLElement,
     };
   }
+  it('shows the privacy actions to the owner on the customer history', () => {
+    TestBed.overrideProvider(SessionService, {
+      useValue: { session: signal({ role: 'OWNER' }).asReadonly() },
+    });
+    const { element } = setup();
+    expect(element.textContent).toContain('Exportar JSON');
+    expect(element.textContent).toContain('Anonimizar dados');
+  });
   it('displays OS and equipment with dates, status and soft deletion indication', () => {
     const { element } = setup();
     expect(element.textContent).toContain('Ana Silva');

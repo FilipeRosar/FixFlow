@@ -1,4 +1,6 @@
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { SessionService } from '../../../../core/auth/data-access/session.service';
+import { CustomerPrivacyPanel } from '../customer-privacy/customer-privacy';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
@@ -22,14 +24,16 @@ interface HistoryPage {
   size: number;
   sort: string;
   workOrdersVisible: boolean;
+  anonymized?: boolean;
 }
 @Component({
   selector: 'app-customer-history',
-  imports: [DatePipe, FormsModule, RouterLink],
+  imports: [DatePipe, FormsModule, RouterLink, CustomerPrivacyPanel],
   templateUrl: './customer-history.html',
   styleUrls: ['../customers/customers.css', './customer-history.css'],
 })
 export class CustomerHistoryPanel implements OnInit {
+  protected readonly canManagePrivacy = inject(SessionService).session()?.role === 'OWNER';
   private readonly http = inject(HttpClient);
   private readonly route = inject(ActivatedRoute);
   private readonly destroy = inject(DestroyRef);
