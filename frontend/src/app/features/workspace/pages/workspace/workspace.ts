@@ -1,3 +1,4 @@
+import { CustomersPanel } from '../../components/customers/customers';
 import { toSignal } from '@angular/core/rxjs-interop';
 import {
   CompanySettingsPanel,
@@ -13,7 +14,7 @@ import { Membership } from '../../../../core/auth/dto/session';
 
 @Component({
   selector: 'app-workspace',
-  imports: [RouterLink, FormsModule, CompanySettingsPanel],
+  imports: [RouterLink, FormsModule, CompanySettingsPanel, CustomersPanel],
   templateUrl: './workspace.html',
   styleUrl: './workspace.css',
 })
@@ -23,6 +24,10 @@ export class Workspace implements OnInit {
   protected readonly session = this.sessions.session;
   protected readonly companyName = signal('');
   protected readonly companyLogo = signal<string | null>(null);
+  protected readonly customersPage = toSignal(
+    inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'customers')),
+    { initialValue: false },
+  );
   protected readonly settingsPage = toSignal(
     inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'settings')),
     { initialValue: false },
@@ -147,7 +152,9 @@ export class Workspace implements OnInit {
           this.status.set(
             error.error?.code === 'PLAN_LIMIT_REACHED'
               ? 'Limite de usuários do plano atingido. Faça upgrade do plano para continuar criando.'
-              : error.status === 409 ? 'E-mail já cadastrado.' : 'Confira os dados e tente novamente.',
+              : error.status === 409
+                ? 'E-mail já cadastrado.'
+                : 'Confira os dados e tente novamente.',
           ),
       });
   }

@@ -462,3 +462,25 @@ valida permissão e consome quota na mesma transação da inserção; falhas rev
 a contagem. O callback deve usar a transação corrente, sem abrir outra transação.
 A janela é o mês calendário de America/Sao_Paulo. Exclusões/cancelamentos não
 restituem quota. Nenhuma checagem de plano é aplicada em consultas.
+
+## Clientes e contatos (US-010)
+
+Migration V21 cria `customers`, `customer_contacts` e a base de persistência
+`work_orders` (vínculo com cliente e estado; abertura de OS permanece na US-020).
+Todas têm RLS obrigatório e chaves compostas impedem vínculos entre empresas.
+
+API autenticada no tenant selecionado: `GET/POST /api/v1/customers` e
+`GET/PUT/DELETE /api/v1/customers/{id}`. Owner/Atendente podem escrever; Técnico
+pode consultar. `q` busca nome sem diferenciar maiúsculas e telefone/documento
+normalizados para dígitos. `page` começa em zero, `size` vai de 1 a 100 (padrão
+20), com ordenação estável por nome e ID. Resposta contém `content`,
+`totalElements`, `page` e `size`. PUT substitui os dados e a lista de contatos
+(até 20, tipos PHONE/WHATSAPP/EMAIL). Documento é opcional; nome é obrigatório.
+
+DELETE marca `deleted_at`, preservando os dados e contatos. Clientes excluídos
+somem das consultas e retornam 404 em leitura/edição/exclusão. OS em qualquer
+estado além de ENTREGUE/CANCELADA bloqueiam exclusão com 409 e mensagem na tela.
+Triggers e locks de cliente protegem a regra também contra inserção concorrente
+de OS. O futuro módulo de OS deve reutilizar `work_orders` e o serviço de quota
+US-006, mantendo a inserção na mesma transação. Mutações de cliente geram auditoria
+sem nome, documento ou contatos no payload. Interface: `/inicio/clientes`.
