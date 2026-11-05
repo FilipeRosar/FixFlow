@@ -1,0 +1,125 @@
+<section class="card timeline-panel" aria-labelledby="timeline-heading">
+  <div class="timeline-heading">
+    <div class="timeline-title">
+      <span class="timeline-icon" aria-hidden="true">◷</span>
+      <div>
+        <h2 id="timeline-heading">Timeline da OS</h2>
+        <p>Cada etapa e registro, do recebimento à entrega.</p>
+      </div>
+    </div>
+    <button
+      type="button"
+      (click)="open.set(!open())"
+      [attr.aria-expanded]="open()"
+      aria-controls="order-timeline-content"
+    >
+      {{ open() ? 'Recolher histórico' : 'Ver histórico' }}
+    </button>
+  </div>
+  @if (open()) {
+    <div id="order-timeline-content" [attr.aria-busy]="loading()">
+      <div class="timeline-toolbar">
+        <span>Mais recentes primeiro</span
+        ><button type="button" (click)="load()" [disabled]="loading()">Atualizar histórico</button>
+      </div>
+      @if (loading()) {
+        <p class="timeline-feedback" role="status">Carregando histórico da OS…</p>
+      } @else if (error()) {
+        <div class="error" role="alert">
+          <p>{{ error() }}</p>
+          <button type="button" (click)="load()">Tentar novamente</button>
+        </div>
+      } @else {
+        <ol class="timeline-events" aria-label="Eventos da ordem de serviço">
+          @for (entry of data().content; track entry.id) {
+            <li class="timeline-event" [class.transition-event]="!!entry.toStatus">
+              <span class="event-dot" aria-hidden="true"></span>
+              <article>
+                <div class="event-heading">
+                  <h3>{{ label(entry.eventType) }}</h3>
+                  <time [attr.datetime]="entry.occurredAt">{{
+                    entry.occurredAt | date: 'dd/MM/yyyy · HH:mm:ss'
+                  }}</time>
+                </div>
+                <p class="event-actor">
+                  <span class="actor-avatar" aria-hidden="true">{{
+                    entry.actorName.slice(0, 1).toUpperCase()
+                  }}</span
+                  ><strong>{{ entry.actorName }}</strong>
+                  @if (entry.origin === 'CUSTOMER') {
+                    <span class="origin-label">Cliente</span>
+                  } @else if (entry.origin === 'SYSTEM') {
+                    <span class="origin-label">Automático</span>
+                  }
+                </p>
+                @if (entry.toStatus) {
+                  <div class="event-states">
+                    @if (entry.fromStatus) {
+                      <span>{{ status(entry.fromStatus) }}</span
+                      ><span class="state-arrow" aria-hidden="true">→</span>
+                    }
+                    <strong>{{ status(entry.toStatus) }}</strong>
+                  </div>
+                }
+                @if (entry.details.technicianName) {
+                  <p class="event-detail">
+                    Responsável: <strong>{{ entry.details.technicianName }}</strong>
+                  </p>
+                }
+                @if (entry.details.revision) {
+                  <p class="event-detail">Revisão {{ entry.details.revision }} do diagnóstico.</p>
+                }
+                @if (entry.details.description) {
+                  <p class="event-detail">
+                    {{ entry.details.itemType === 'PART' ? 'Peça' : 'Serviço' }}:
+                    <strong>{{ entry.details.description }}</strong>
+                    @if (entry.details.quantity) {
+                      <span> · Quantidade: {{ entry.details.quantity }}</span>
+                    }
+                  </p>
+                }
+                @if (entry.details.filename) {
+                  <p class="event-detail">{{ entry.details.filename }}</p>
+                }
+                @if (entry.reason) {
+                  <div class="event-reason">
+                    <span>Motivo</span>
+                    <p>{{ entry.reason }}</p>
+                  </div>
+                } @else if (entry.eventType === 'WORK_ORDER_STATUS_CHANGED') {
+                  <p class="reason-missing">Motivo não informado.</p>
+                }
+              </article>
+            </li>
+          } @empty {
+            <li class="timeline-empty">
+              <h3>Nenhum evento registrado</h3>
+              <p>As mudanças de etapa e os registros deste atendimento aparecerão aqui.</p>
+            </li>
+          }
+        </ol>
+        <div class="timeline-pagination">
+          <span>{{ data().totalElements }} registros · Página {{ data().page + 1 }}</span>
+          <div>
+            <button
+              type="button"
+              (click)="load(data().page - 1)"
+              [disabled]="loading() || data().page === 0"
+            >
+              Anterior</button
+            ><button
+              type="button"
+              (click)="load(data().page + 1)"
+              [disabled]="loading() || (data().page + 1) * data().size >= data().totalElements"
+            >
+              Próxima
+            </button>
+          </div>
+        </div>
+        <p class="timeline-footnote">
+          Os registros preservam o histórico do atendimento e não podem ser editados.
+        </p>
+      }
+    </div>
+  }
+</section>

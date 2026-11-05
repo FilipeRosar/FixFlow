@@ -54,7 +54,10 @@
         }
       </article>
     </div>
-    <app-work-order-attachments [orderId]="item.id" />
+    <app-work-order-attachments
+      [orderId]="item.id"
+      (changed)="timelineRevision.set(timelineRevision() + 1)"
+    />
     <app-work-order-items
       [order]="item"
       [blocked]="changing() || assigning() || diagnosing()"
@@ -305,6 +308,11 @@
         </fieldset>
       </form>
     }
+    <app-work-order-timeline
+      [orderId]="item.id"
+      [version]="item.version"
+      [revision]="timelineRevision()"
+    />
   } @else {
     <a class="back-link" routerLink="/inicio/clientes">← Voltar para clientes</a>
     <h1 id="order-heading">Consultar ordem de serviço</h1>

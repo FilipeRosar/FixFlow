@@ -1043,3 +1043,71 @@ fictícias; não se conecta à AWS.
 
 Referências: [S3 no LocalStack](https://docs.localstack.cloud/aws/services/s3/)
 e [inicialização por hooks](https://docs.localstack.cloud/aws/capabilities/config/initialization-hooks/).
+
+## US-026 — Timeline imutável da OS
+
+`GET /api/v1/work-orders/{orderId}/timeline?page=0&size=20` retorna `content`,
+`totalElements`, `page` e `size`. Cada registro contém `id`, `eventType`, `actorId`,
+`actorName`, `occurredAt`, `origin`, `fromStatus`, `toStatus`, `reason` e `details`.
+A consulta aceita até 100 registros por página e ordena do mais recente para o
+mais antigo, com sequência de inserção como desempate estável. Proprietário e
+atendente consultam a OS da empresa; técnico consulta apenas as OS atribuídas
+a ele. O bloqueio compartilhado da OS serializa a autorização com reatribuições
+e mantém contagem e página consistentes com as operações da aplicação.
+
+A migration `V33` cria `work_order_timeline`, com RLS obrigatório, FK composta por
+empresa/OS e acesso **somente SELECT** para `fixflow_runtime`. A aplicação não
+recebe INSERT, UPDATE, DELETE ou acesso à sequência da timeline. Não existem
+endpoints de inclusão, edição ou exclusão manual; métodos HTTP não suportados
+retornam `405`. O histórico só é escrito pelos triggers das fontes autorizadas,
+na mesma transação da operação de negócio:
+
+- `work_order_status_history`: abertura e todas as mudanças de estado, incluindo
+  origem, estado anterior/destino e motivo original;
+- `audit_log`: atribuição de técnico, revisão de diagnóstico, adição/remoção de
+  item e upload de anexo.
+
+Criação e alteração de estado não são copiadas novamente da auditoria, evitando
+duplicatas. A geração de link de download continua registrada na auditoria,
+sem transformar consultas de arquivos em eventos de negócio da timeline.
+Nenhum dado é obtido do outbox de notificações, que pode conter tokens privados.
+
+Nome do autor, nome do técnico atribuído, descrição/quantidade do item e nome do
+arquivo são **snapshots gravados na inclusão do evento**. Renomear uma conta ou
+alterar dados de cadastro posteriormente não reescreve o histórico. Motivo sem
+conteúdo fica nulo; a interface informa quando uma transição não teve motivo,
+sem inventar justificativas. A identidade original continua disponível pelo UUID.
+Atores automáticos/públicos têm rótulo explícito de Sistema/Cliente; nomes que já
+não podem ser resolvidos são apresentados como Usuário indisponível.
+
+A projeção recebe somente um conjunto explícito de campos seguros por tipo de
+evento. Tokens, URLs assinadas, chaves de storage e JSON arbitrário da auditoria
+não são expostos pela timeline. Os helpers SECURITY DEFINER têm search_path
+restrito, exigem contexto da empresa e não podem ser executados diretamente pela
+role da aplicação. Falha/rollback da operação também desfaz o registro na timeline.
+O proprietário administrativo do banco conserva a capacidade de manutenção e
+expurgo; exclusão administrativa da OS remove sua projeção por cascade.
+
+A migration também importa as transições e os eventos já existentes, tenant por
+tenant, preservando suas datas e motivos. Os nomes de registros legados refletem
+os cadastros disponíveis **na migração**, pois nomes anteriores não registrados
+não podem ser recuperados; a partir daí os snapshots ficam preservados. A policy
+temporária que permite ao migrator enumerar empresas é removida antes do commit.
+
+Na tela de detalhes, **Timeline da OS → Ver histórico** oferece usuário, data/hora,
+etapas e motivos, detalhes dos eventos, paginação, atualização e nova tentativa
+em falha. Uma timeline aberta é atualizada após mudanças de versão da OS e após
+upload de anexo. Textos são renderizados como texto, sem HTML do usuário e sem
+controles de edição do histórico.
+
+`WorkOrderTimelineIntegrationTest` cobre eventos reais, ausência de duplicatas,
+snapshots após renomear usuário/item, permissões de banco e ausência de endpoint
+de escrita, técnico atribuído/reatribuído, isolamento entre empresas, rollback
+após inserção do histórico, payload seguro, itens/anexos e paginação. Os testes
+Angular cobrem motivo literal, conteúdo HTML escapado, autor/data/etapas,
+paginação, atualização por versão/anexo, cancelamento de requisição obsoleta e
+recuperação de erro.
+
+```bash
+./mvnw -Dtest=WorkOrderTimelineIntegrationTest,WorkOrderT4IntegrationTest,WorkOrderDiagnosisIntegrationTest,WorkOrderItemsT6T7IntegrationTest,WorkOrderAttachmentsT12IntegrationTest,ArchitectureTest test
+```

@@ -1,0 +1,249 @@
+:host {
+  display: block;
+  margin: 24px 0;
+}
+.timeline-panel {
+  padding: 24px;
+}
+.timeline-heading,
+.timeline-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.timeline-heading {
+  justify-content: space-between;
+  gap: 20px;
+}
+.timeline-title h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.timeline-title p {
+  margin: 6px 0 0;
+  color: #98a6bd;
+  font-size: 12px;
+}
+.timeline-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #a59aff26;
+  background: #a59aff12;
+  color: #b8a9f3;
+  border-radius: 12px;
+  font-size: 26px;
+  flex-shrink: 0;
+}
+#order-timeline-content {
+  margin-top: 24px;
+}
+.timeline-toolbar,
+.timeline-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 11px;
+  color: #98a6bd;
+}
+.timeline-toolbar {
+  padding-bottom: 22px;
+}
+.timeline-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.timeline-event {
+  position: relative;
+  padding: 0 0 24px 32px;
+}
+.timeline-event:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 0;
+  left: 6px;
+  width: 1px;
+  background: #343b50;
+}
+.event-dot {
+  position: absolute;
+  top: 5px;
+  left: 1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #848eb0;
+  border: 3px solid #252c3a;
+  box-sizing: border-box;
+}
+.transition-event .event-dot {
+  background: #c1acf8;
+  border-color: #504365;
+  box-shadow: 0 0 0 4px #a59aff0b;
+}
+.timeline-event article {
+  padding: 18px 20px;
+  border: 1px solid #30394b;
+  border-radius: 12px;
+  background: linear-gradient(130deg, #1e2533, #181d27);
+}
+.event-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.event-heading h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e0e7f5;
+}
+.event-heading time {
+  font-size: 10px;
+  color: #98a6bd;
+  white-space: nowrap;
+}
+.event-actor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 13px 0;
+  font-size: 11px;
+  color: #b4c0d5;
+}
+.event-actor strong {
+  font-weight: 450;
+}
+.actor-avatar {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: #30304b;
+  color: #c5b7ed;
+  font-size: 10px;
+}
+.origin-label {
+  font-size: 9px;
+  color: #9daac0;
+  border: 1px solid #3b4458;
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+.event-states {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+}
+.event-states > span:not(.state-arrow),
+.event-states strong {
+  padding: 5px 8px;
+  border: 1px solid #354057;
+  border-radius: 6px;
+  color: #aebdd4;
+  background: #263044;
+}
+.event-states strong {
+  color: #c9b8f5;
+  border-color: #514366;
+  background: #a59aff0b;
+  font-weight: 500;
+}
+.state-arrow {
+  color: #7e8da7;
+}
+.event-detail {
+  font-size: 12px;
+  color: #adbad0;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.event-detail strong {
+  color: #d6dff0;
+  font-weight: 500;
+}
+.event-reason {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-left: 2px solid #a59aff70;
+  border-radius: 0 6px 6px 0;
+  background: #a59aff08;
+}
+.event-reason > span {
+  color: #9f92c8;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.event-reason p {
+  color: #c7cfe0;
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.reason-missing {
+  margin: 12px 0 0;
+  color: #8997ae;
+  font-size: 11px;
+}
+.timeline-pagination {
+  border-top: 1px solid #30394b;
+  padding-top: 18px;
+}
+.timeline-pagination > div {
+  display: flex;
+  gap: 8px;
+}
+.timeline-footnote {
+  font-size: 10px;
+  color: #8391a8;
+  margin: 18px 0 0;
+}
+.timeline-feedback,
+.timeline-empty {
+  padding: 28px;
+  text-align: center;
+  color: #98a6bd;
+  font-size: 12px;
+}
+.timeline-empty {
+  border: 1px dashed #343d50;
+  border-radius: 10px;
+}
+.timeline-empty h3 {
+  margin: 0 0 8px;
+  color: #d8e1f0;
+  font-size: 14px;
+}
+@media (max-width: 650px) {
+  .timeline-panel {
+    padding: 18px;
+  }
+  .timeline-heading,
+  .event-heading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .event-heading {
+    gap: 7px;
+  }
+  .timeline-event {
+    padding-left: 23px;
+  }
+  .timeline-event article {
+    padding: 15px;
+  }
+  .timeline-pagination {
+    flex-wrap: wrap;
+  }
+}
