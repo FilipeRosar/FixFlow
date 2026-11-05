@@ -35,8 +35,7 @@ public class JdbcCustomerHistory implements CustomerHistory {
             boolean equipment = permissions.contains("equipment:read");
             if ((type.equals("WORK_ORDER") && !orders) || (type.equals("EQUIPMENT") && !equipment))
                 throw new AccessDeniedException("Acesso ao histórico não autorizado.");
-            var customers = jdbc.query("SELECT name FROM public.customers WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL",
-                    (rs, row) -> rs.getString("name"), tenant, customerId);
+            var customers = jdbc.queryForList("SELECT name, anonymized_at FROM public.customers WHERE tenant_id = ? AND id = ? AND (deleted_at IS NULL OR anonymized_at IS NOT NULL)", tenant, customerId);
             if (customers.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Cliente não encontrado.");
             var selects = new java.util.ArrayList<String>();
             var args = new java.util.ArrayList<Object>();
@@ -66,7 +65,7 @@ public class JdbcCustomerHistory implements CustomerHistory {
                     (rs, row) -> new CustomerHistoryEntry(rs.getObject("id", UUID.class), rs.getString("type"),
                             rs.getTimestamp("created_at").toInstant(), rs.getString("title"), rs.getString("status"),
                             rs.getString("serial_number"), rs.getBoolean("deleted")), args.toArray());
-            return new Page(customerId, customers.getFirst(), content, total, page, size, sort, orders);
+            return new Page(customerId, (String) customers.getFirst().get("name"), content, total, page, size, sort, orders, customers.getFirst().get("anonymized_at") != null);
         });
     }
 }

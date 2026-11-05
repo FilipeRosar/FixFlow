@@ -6,7 +6,7 @@ public final class RolePermissions {
     private RolePermissions() { }
     public static Set<String> forRole(String role) {
         return switch (role) {
-            case "OWNER" -> Set.of("tenant:manage", "user:manage", "customer:read", "customer:write",
+            case "OWNER" -> Set.of("tenant:manage", "user:manage", "customer:read", "customer:write", "customer:privacy",
                     "equipment:read", "equipment:write", "equipment:write_limited", "workorder:create",
                     "workorder:read", "workorder:read_assigned", "workorder:assign", "workorder:diagnose",
                     "workorder:execute", "quote:create", "quote:draft", "quote:send", "quote:manual_approve",

@@ -171,4 +171,11 @@
       </div>
     }
   </div>
+  @if (canManagePrivacy && data(); as history) {
+    <app-customer-privacy
+      [customerId]="history.customerId"
+      [anonymized]="history.anonymized ?? false"
+      (changed)="load(0)"
+    />
+  }
 </section>
