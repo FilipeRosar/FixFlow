@@ -36,6 +36,14 @@ export const routes: Routes = [
       import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
   },
   {
+    path: 'inicio/clientes/:customerId/historico',
+    title: 'Histórico do cliente — FixFlow',
+    data: { page: 'customers', history: true },
+    canActivate: [sessionGuard],
+    loadComponent: () =>
+      import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
+  },
+  {
     path: 'inicio/clientes',
     title: 'Clientes — FixFlow',
     data: { page: 'customers' },

@@ -197,7 +197,9 @@
           settingsPage()
             ? 'Configurações'
             : customersPage()
-              ? 'Clientes'
+              ? historyPage()
+                ? 'Histórico do cliente'
+                : 'Clientes'
               : equipmentPage()
                 ? 'Equipamentos'
                 : 'Visão geral'
@@ -208,6 +210,8 @@
     <div class="operation-content">
       @if (equipmentPage()) {
         <app-equipment />
+      } @else if (historyPage()) {
+        <app-customer-history />
       } @else if (customersPage()) {
         <app-customers />
       } @else if (settingsPage()) {
