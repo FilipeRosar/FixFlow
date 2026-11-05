@@ -37,7 +37,7 @@ describe('Operational workspace', () => {
     expect(
       [...page.querySelectorAll('.metric > strong')].every((el) => el.textContent === '—'),
     ).toBe(true);
-    expect(page.querySelectorAll('.operation-nav button:disabled')).toHaveLength(5);
+    expect(page.querySelectorAll('.operation-nav button:disabled')).toHaveLength(4);
     expect(page.querySelector('.orders-empty')?.textContent).toContain('próxima etapa');
     expect(page.querySelector('.profile')?.textContent).toContain('Proprietário');
   });

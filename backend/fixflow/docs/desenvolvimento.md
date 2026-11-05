@@ -364,3 +364,84 @@ Escritas de usuários com Bearer dispensam CSRF, pois o cookie refresh não aute
 essas rotas. Autenticação Basic dos testes mantém a exigência de CSRF.
 
 Validação: `./mvnw -Dtest=UserManagementT5IntegrationTest,ArchitectureTest test`.
+
+## Configurações da empresa (US-005)
+
+Referências: documento técnico, seções **5** (RBAC), **11.5** (arquivos), **12.2**
+(módulo tenants), **16.2** (API), **17.4** (validade padrão de 7 dias) e **19.3**
+(estoque negativo e concorrência). A tela fica em **Configurações** (`/inicio/configuracoes`), no menu lateral
+para o Owner, em uma página independente da Visão Geral. O logo salvo também aparece no menu e é carregado novamente após login.
+
+### Contrato
+
+`GET /api/v1/tenant` e `PUT /api/v1/tenant` exigem JWT e `tenant:manage` (Owner).
+O tenant vem exclusivamente da identidade autenticada; body, query e headers de
+identificação não selecionam outra empresa. PUT recebe e devolve o documento inteiro:
+
+```json
+{
+  "logoDataUrl": null,
+  "warrantyTerms": "Condições de garantia da empresa.",
+  "quoteValidityDays": 7,
+  "allowNegativeStock": false
+}
+```
+
+`null` remove o logo; texto vazio remove os termos. Empresas novas e existentes sem
+configuração explícita recebem termos vazios, validade de **7 dias** e estoque
+negativo **bloqueado**. Limites adotados para esta US: validade inteira de **1 a 365
+dias**, termos de até **10.000 caracteres**, logo PNG/JPEG de até **512 KiB** e
+**2048 × 2048 pixels** (também limitado após reprocessamento). Dados inválidos retornam
+`400`, ausência de autenticação `401`, perfil sem permissão `403`. PUT com Bearer
+dispensa CSRF, como a gestão de usuários; cookies refresh não autenticam esta rota.
+
+As migrations V18/V19 criam configurações separadas por tenant com FORCE RLS.
+O estado final guarda **somente a referência privada do logo**, nunca o arquivo no
+PostgreSQL. Identidades e dados da empresa continuam em módulos diferentes.
+Preferências e evento `TENANT_SETTINGS_UPDATED` são gravados atomicamente; falha na
+auditoria desfaz a mudança e remove o novo arquivo enviado.
+
+### Arquivos privados
+
+A porta `FileStorage` fornece armazenamento privado por tenant. O adaptador de
+desenvolvimento usa volume local em `FILE_STORAGE_ROOT` (padrão `./storage`);
+o Compose monta `fixflow_private_files` em `/app/storage` para sobreviver à recriação
+do container. Não exponha essa pasta pelo servidor web. A imagem é validada por
+formato declarado e leitor de imagem, decodificada e regravada como PNG sem EXIF/GPS.
+Chaves são geradas pelo servidor: `tenants/{tenantId}/logos/{uuid}.png`; o adaptador
+recusa chaves de outro tenant e caminhos livres. As imagens são devolvidas como data
+URL apenas pelas respostas autenticadas de configurações/seleção de oficina.
+Nenhuma URL pública permanente é criada. Logos substituídos ficam privados para
+preservar futuras referências de documentos; retenção/limpeza deve considerar essas
+referências. Em produção, o adaptador S3 privado e URLs temporárias da seção 11.5
+continuam sendo a integração de infraestrutura a implementar, atrás desta porta.
+
+### Aplicação das regras
+
+`TenantPolicies.quoteDefaults(tenantId, issuedAt)` consulta os valores **persistidos**
+e retorna um snapshot imutável com `validUntil`, termos e logo. A validade é calculada
+por dias completos a partir da emissão. A criação/envio do orçamento deverá guardar
+esse snapshot; alterações posteriores na empresa não recalculam versões enviadas.
+
+`TenantPolicies.remainingStock(tenantId, balance, quantity)` consulta a configuração
+persistida, exige quantidade positiva e rejeita saldo resultante negativo, exceto
+quando a opção estiver habilitada. `InsufficientStockException` corresponde a
+`422 / INSUFFICIENT_STOCK` na API.
+
+Os módulos de orçamento, documentos e estoque **ainda não estão implementados**.
+Essas políticas estão exercitadas contra o PostgreSQL e prontas para esses consumidores;
+não há endpoints fictícios de emissão ou consumo. Ao implementar a baixa real, use o
+UPDATE condicional da seção 19.3 e grave movimento/item na mesma transação: o cálculo
+isolado de saldo não substitui a proteção contra concorrência. Como o executor abre
+`REQUIRES_NEW`, não use esta chamada como operação de escrita ou lock de estoque.
+
+### Validação
+
+```bash
+./mvnw -Dtest=CompanySettingsIntegrationTest,ArchitectureTest,TenantSelectionIntegrationTest test
+```
+
+Cobertura: defaults, round-trip, isolamento entre empresas, Owner/Atendente/Técnico,
+suspensão, validação, logo privado/removível, auditoria/rollback e efeitos da alteração
+persistida sobre validade, termos e saldo permitido. O frontend verifica edição,
+validação, salvamento, descarte e recuperação de falhas.

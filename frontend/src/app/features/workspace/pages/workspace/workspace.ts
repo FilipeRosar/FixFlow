@@ -1,14 +1,19 @@
+import { toSignal } from '@angular/core/rxjs-interop';
+import {
+  CompanySettingsPanel,
+  CompanySettings,
+} from '../../components/company-settings/company-settings';
 import { FormsModule } from '@angular/forms';
 import { Component, HostListener, OnInit, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
-import { finalize } from 'rxjs';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { finalize, map } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
 import { SessionService } from '../../../../core/auth/data-access/session.service';
 import { Membership } from '../../../../core/auth/dto/session';
 
 @Component({
   selector: 'app-workspace',
-  imports: [RouterLink, FormsModule],
+  imports: [RouterLink, FormsModule, CompanySettingsPanel],
   templateUrl: './workspace.html',
   styleUrl: './workspace.css',
 })
@@ -17,12 +22,24 @@ export class Workspace implements OnInit {
   private readonly router = inject(Router);
   protected readonly session = this.sessions.session;
   protected readonly companyName = signal('');
+  protected readonly companyLogo = signal<string | null>(null);
+  protected readonly settingsPage = toSignal(
+    inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'settings')),
+    { initialValue: false },
+  );
+  protected applyCompanySettings(settings: CompanySettings): void {
+    this.companyLogo.set(settings.logoDataUrl);
+  }
+
   protected readonly sidebarCollapsed = signal(false);
   ngOnInit(): void {
     const session = this.session();
     if (!session) return;
     this.http.get<Membership>(`/api/oficinas/${session.tenantId}/selecao`).subscribe({
-      next: (membership) => this.companyName.set(membership.companyName),
+      next: (membership) => {
+        this.companyName.set(membership.companyName);
+        this.companyLogo.set(membership.logoDataUrl ?? null);
+      },
       error: () =>
         this.status.set(
           'Não foi possível carregar o nome da empresa. Tente verificar o acesso novamente.',
@@ -177,6 +194,7 @@ export class Workspace implements OnInit {
     this.http.get<Membership>(`/api/oficinas/${session.tenantId}/selecao`).subscribe({
       next: (membership) => {
         this.companyName.set(membership.companyName);
+        this.companyLogo.set(membership.logoDataUrl ?? null);
         this.status.set('Acesso à empresa confirmado.');
         this.pending.set(false);
       },

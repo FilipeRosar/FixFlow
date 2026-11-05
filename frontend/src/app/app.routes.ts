@@ -28,6 +28,14 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/pages/recovery/recovery').then((m) => m.Recovery),
   },
   {
+    path: 'inicio/configuracoes',
+    title: 'Configurações da empresa — FixFlow',
+    data: { page: 'settings', requiredRole: 'OWNER' },
+    canActivate: [sessionGuard],
+    loadComponent: () =>
+      import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
+  },
+  {
     path: 'inicio',
     title: 'Minha empresa — FixFlow',
     canActivate: [sessionGuard],

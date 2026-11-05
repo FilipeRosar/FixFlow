@@ -37,6 +37,7 @@ services:
       SPRING_FLYWAY_URL: jdbc:postgresql://postgres:5432/fixflow
       SPRING_FLYWAY_USER: ${DB_MIGRATOR_USERNAME:-fixflow_migrator}
       SPRING_FLYWAY_PASSWORD: ${DB_MIGRATOR_PASSWORD}
+      FILE_STORAGE_ROOT: /app/storage
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -44,6 +45,8 @@ services:
       SMTP_AUTH: ${SMTP_AUTH:-false}
       SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
       MAIL_FROM: ${MAIL_FROM:-noreply@fixflow.local}
+    volumes:
+      - fixflow_private_files:/app/storage
     ports:
       - "8080:8080"
     depends_on:
@@ -54,3 +57,4 @@ services:
 
 volumes:
   fixflow_postgres_data:
+  fixflow_private_files:
