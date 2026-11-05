@@ -90,6 +90,13 @@ public class ApiExceptionHandler {
                 .body(ProblemDetail.forStatusAndDetail(exception.getStatusCode(), exception.getReason()));
     }
 
+    @ExceptionHandler(br.com.fixflow.modules.tenants.domain.InsufficientStockException.class)
+    public ResponseEntity<ProblemDetail> handleInsufficientStock() {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, "Estoque insuficiente.");
+        problem.setProperty("code", "INSUFFICIENT_STOCK");
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT).body(problem);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnexpected(
             Exception exception,

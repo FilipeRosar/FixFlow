@@ -1,0 +1,154 @@
+<section class="settings-panel" aria-labelledby="settings-heading" [attr.aria-busy]="loading()">
+  <header>
+    <span class="settings-symbol" aria-hidden="true">⚙</span>
+    <div>
+      <span class="eyebrow">Do seu jeito</span>
+      <h2 id="settings-heading">Configurações da empresa</h2>
+      <p>Identidade e preferências para o dia a dia da sua assistência.</p>
+    </div>
+  </header>
+  @if (loading()) {
+    <p class="loading" role="status">Carregando suas preferências…</p>
+  } @else if (!loaded()) {
+    <div class="loading">
+      <p role="alert">{{ message() }}</p>
+      <button type="button" class="secondary" (click)="load()">Tentar novamente</button>
+    </div>
+  } @else {
+    <form #settingsForm="ngForm" (ngSubmit)="settingsForm.valid && save()">
+      <fieldset [disabled]="saving()">
+        <div class="settings-section identity-section">
+          <div class="section-copy">
+            <span class="step">01</span>
+            <h3>Identidade da empresa</h3>
+            <p>Seu logo aparece no menu da assistência.</p>
+          </div>
+          <div class="logo-editor">
+            <div class="logo-preview">
+              @if (settings.logoDataUrl) {
+                <img [src]="settings.logoDataUrl" alt="Prévia do logo da empresa" />
+              } @else {
+                <span aria-hidden="true">＋</span>
+              }
+            </div>
+            <div>
+              <label class="secondary upload-button" [class.disabled]="saving() || readingLogo()"
+                >{{ readingLogo() ? 'Lendo imagem…' : 'Escolher logo'
+                }}<input
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  (change)="chooseLogo($event)"
+                  [disabled]="readingLogo()"
+              /></label>
+              @if (settings.logoDataUrl) {
+                <button
+                  type="button"
+                  class="text-button"
+                  [disabled]="readingLogo()"
+                  (click)="settings.logoDataUrl = null"
+                >
+                  Remover
+                </button>
+              }
+              <small>PNG ou JPEG · até 512 KB<br />Máximo de 2048 × 2048 pixels</small>
+            </div>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="section-copy">
+            <span class="step">02</span>
+            <h3>Orçamentos e garantia</h3>
+            <p>Defina o prazo e os termos padrão da sua empresa.</p>
+          </div>
+          <div class="settings-fields">
+            <label for="quote-validity"
+              >Validade do orçamento
+              <div class="number-field">
+                <input
+                  id="quote-validity"
+                  name="quoteValidityDays"
+                  type="number"
+                  min="1"
+                  max="365"
+                  step="1"
+                  required
+                  pattern="[0-9]+"
+                  [(ngModel)]="settings.quoteValidityDays"
+                /><span>dias</span>
+              </div></label
+            >
+            <p class="field-help">
+              De 1 a 365 dias. O prazo se aplica aos novos orçamentos; os já enviados mantêm sua
+              validade.
+            </p>
+            <label for="warranty-terms"
+              >Termos de garantia<textarea
+                id="warranty-terms"
+                name="warrantyTerms"
+                rows="5"
+                maxlength="10000"
+                [(ngModel)]="settings.warrantyTerms"
+                placeholder="Descreva as condições, a cobertura e as orientações de garantia…"
+              ></textarea>
+            </label>
+            <div class="terms-hint">
+              <span>Texto padrão para novos documentos.</span
+              ><span>{{ settings.warrantyTerms.length }} / 10.000</span>
+            </div>
+          </div>
+        </div>
+        <div class="settings-section stock-section">
+          <div class="section-copy">
+            <span class="step">03</span>
+            <h3>Controle de estoque</h3>
+            <p>Escolha como lidar com peças ainda não disponíveis.</p>
+          </div>
+          <div class="stock-option">
+            <label class="switch-label" for="negative-stock"
+              ><span
+                ><strong>Permitir estoque negativo</strong
+                ><small>Permite consumir uma peça mesmo sem saldo suficiente.</small></span
+              ><input
+                class="switch-input"
+                id="negative-stock"
+                name="allowNegativeStock"
+                type="checkbox"
+                [(ngModel)]="settings.allowNegativeStock" /><span
+                class="switch-track"
+                aria-hidden="true"
+              ></span
+            ></label>
+            <p class="stock-note" [class.allowed]="settings.allowNegativeStock">
+              {{
+                settings.allowNegativeStock
+                  ? 'Ativado: o saldo poderá ficar abaixo de zero.'
+                  : 'Proteção ativa: consumo sem saldo suficiente é bloqueado.'
+              }}
+            </p>
+          </div>
+        </div>
+      </fieldset>
+      <footer>
+        <p role="status" aria-live="polite" [class.error]="failed()">
+          {{ message() || 'As preferências são exclusivas desta empresa.' }}
+        </p>
+        <div>
+          <button
+            type="button"
+            class="secondary"
+            [disabled]="saving() || readingLogo()"
+            (click)="reset()"
+          >
+            Descartar alterações</button
+          ><button
+            type="submit"
+            class="primary"
+            [disabled]="settingsForm.invalid || saving() || readingLogo()"
+          >
+            {{ saving() ? 'Salvando…' : 'Salvar configurações' }}
+          </button>
+        </div>
+      </footer>
+    </form>
+  }
+</section>

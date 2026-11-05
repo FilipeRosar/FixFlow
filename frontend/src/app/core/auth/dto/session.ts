@@ -35,6 +35,7 @@ export interface RegisteredAccount {
   role: string;
 }
 export interface Membership {
+  logoDataUrl?: string | null;
   companyName: string;
   userId: string;
   tenantId: string;

@@ -37,7 +37,7 @@ public class SecurityConfig {
         http.authenticationProvider(provider)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .csrf(csrf -> csrf.ignoringRequestMatchers(signup,
-                        request -> request.getRequestURI().substring(request.getContextPath().length()).matches("/api/oficinas/[^/]+/usuarios(?:/.*)?")
+                        request -> request.getRequestURI().substring(request.getContextPath().length()).matches("(?:/api/oficinas/[^/]+/usuarios(?:/.*)?|/api/v1/tenant)")
                                 && request.getHeader("Authorization") != null
                                 && request.getHeader("Authorization").startsWith("Bearer "), request ->
                         (login.matches(request) || refresh.matches(request) || recovery.matches(request))
