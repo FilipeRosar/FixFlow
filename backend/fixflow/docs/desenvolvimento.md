@@ -535,3 +535,42 @@ usa a base real `work_orders` existente e não cria dados nem protocolos fictíc
 Interface: clique no nome do cliente para abrir
 `/inicio/clientes/{customerId}/historico`, com filtros, datas, status, paginação
 e atalho para os equipamentos do cliente.
+
+
+## US-020 — Abertura de ordem de serviço
+
+`POST /api/v1/work-orders` está disponível para `OWNER` e `ATTENDANT`.
+O corpo recebe `customerId`, `equipmentId`, `reportedIssue` (até 4000 caracteres),
+`receivedAccessories` (lista, até 50 itens de 150 caracteres) e `physicalCondition`
+(até 2000 caracteres). Defeito e estado físico são obrigatórios; nenhum acessório
+é representado por `[]`. Cliente e equipamento precisam estar ativos na empresa,
+e o equipamento deve pertencer ao cliente informado. Referências indisponíveis
+retornam 404; dados inválidos retornam 400.
+
+A resposta 201 contém `Location`, identificação, número, estado `RECEBIDA`, dados
+de recebimento, `openedAt` e `version: 0`. `GET /api/v1/work-orders/{id}` permite
+consultar a OS a proprietários e atendentes. A interface oferece o formulário em
+`/inicio/ordens/nova`, acessível pelo menu e pelo botão Nova ordem de serviço.
+
+A operação reutiliza `TenantLimitsService.createWorkOrder` como fronteira
+transacional autorizada: quota, contador por tenant (`INSERT ... ON CONFLICT ...
+UPDATE ... RETURNING`), OS, histórico inicial (`from_status` nulo, origem `USER`),
+auditoria `WORK_ORDER_CREATED` e outbox `WorkOrderCreated` são gravados juntos.
+Falhas revertem a operação inteira. Não há executor de tenant aninhado, pois ele
+abriria uma transação independente. RLS isola contadores e histórico; a role de
+execução só pode consultar e acrescentar histórico.
+
+A migration V26 estende a base `work_orders`, preservando os registros anteriores
+e numerando-os por empresa em ordem de criação. Os campos de recebimento ficam
+opcionais no schema para compatibilidade com esses registros legados; a API exige
+os dados completos para novas aberturas. As chaves compostas impedem referências
+entre empresas. `WorkOrderT1IntegrationTest` cobre criação, sequência por empresa,
+evento, histórico, auditoria, permissões, referências inválidas e concorrência.
+
+A consulta de OS está disponível em `/inicio/ordens/:orderId`, acessível pelo
+link da ordem no histórico do cliente. A tela carrega `GET /api/v1/work-orders/{id}`
+e apresenta os dados do recebimento, cliente, identificação do equipamento e
+status atual, com retorno ao histórico. A resposta da API inclui `customerName`,
+`equipmentLabel` e `serialNumber`; as associações usam tenant e ID, inclusive
+para registros com exclusão lógica. Falhas 403/404 e indisponibilidade da API
+são tratadas sem mostrar dados de uma consulta anterior.

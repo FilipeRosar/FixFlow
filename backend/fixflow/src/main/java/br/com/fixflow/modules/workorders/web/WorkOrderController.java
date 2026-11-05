@@ -1,0 +1,28 @@
+package br.com.fixflow.modules.workorders.web;
+
+import br.com.fixflow.modules.workorders.application.WorkOrders;
+import br.com.fixflow.modules.workorders.domain.WorkOrder;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.*;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.http.ResponseEntity;
+import java.net.URI;
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/v1/work-orders")
+public class WorkOrderController {
+    private final WorkOrders orders;
+    public WorkOrderController(WorkOrders orders) { this.orders = orders; }
+    public record OpenRequest(@NotNull UUID customerId, @NotNull UUID equipmentId,
+                              @NotBlank @Size(max = 4000) String reportedIssue,
+                              @NotNull @Size(max = 50) List<@NotBlank @Size(max = 150) String> receivedAccessories,
+                              @NotBlank @Size(max = 2000) String physicalCondition) { }
+    @PostMapping public ResponseEntity<WorkOrder> open(@Valid @RequestBody OpenRequest request) {
+        var order = orders.open(request.customerId(), request.equipmentId(), request.reportedIssue().strip(),
+                request.receivedAccessories().stream().map(String::strip).toList(), request.physicalCondition().strip());
+        return ResponseEntity.created(URI.create("/api/v1/work-orders/" + order.id())).body(order);
+    }
+    @GetMapping("/{id}") public WorkOrder get(@PathVariable UUID id) { return orders.get(id); }
+}

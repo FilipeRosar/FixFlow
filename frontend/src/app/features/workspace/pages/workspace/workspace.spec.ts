@@ -47,8 +47,8 @@ describe('Operational workspace', () => {
     expect(
       [...page.querySelectorAll('.metric > strong')].every((el) => el.textContent === '—'),
     ).toBe(true);
-    expect(page.querySelectorAll('.operation-nav button:disabled')).toHaveLength(2);
-    expect(page.querySelector('.orders-empty')?.textContent).toContain('próxima etapa');
+    expect(page.querySelectorAll('.operation-nav button:disabled')).toHaveLength(1);
+    expect(page.querySelector('.orders-empty')?.textContent).toContain('Abra uma nova ordem');
     expect(page.querySelector('.profile')?.textContent).toContain('Proprietário');
   });
   it('shows the actual company name and allows collapsing and expanding the sidebar', () => {

@@ -1,0 +1,68 @@
+<section aria-labelledby="order-heading" [attr.aria-busy]="loading()">
+  @if (order(); as item) {
+    <a class="back-link" [routerLink]="['/inicio/clientes', item.customerId, 'historico']"
+      >← Voltar ao histórico do cliente</a
+    >
+    <div class="heading page-heading">
+      <div>
+        <p class="eyebrow">CONSULTA DO ATENDIMENTO</p>
+        <h1 id="order-heading">Ordem de serviço nº {{ item.number || '—' }}</h1>
+        <p>Aberta em {{ item.openedAt | date: 'dd/MM/yyyy · HH:mm' }}</p>
+      </div>
+      <span class="order-status">{{ statusLabel(item.status) }}</span>
+    </div>
+    <div class="detail-grid">
+      <article class="card">
+        <div class="directory-heading"><h2>Cliente e equipamento</h2></div>
+        <dl>
+          <div>
+            <dt>Cliente</dt>
+            <dd>{{ item.customerName }}</dd>
+          </div>
+          <div>
+            <dt>Equipamento</dt>
+            <dd>{{ item.equipmentLabel || 'Não informado' }}</dd>
+          </div>
+          <div>
+            <dt>Número de série</dt>
+            <dd>{{ item.serialNumber || 'Não informado' }}</dd>
+          </div>
+        </dl>
+      </article>
+      <article class="card">
+        <div class="directory-heading"><h2>Defeito relatado</h2></div>
+        <p class="detail-text">{{ item.reportedIssue || 'Não informado' }}</p>
+      </article>
+      <article class="card">
+        <div class="directory-heading"><h2>Estado físico no recebimento</h2></div>
+        <p class="detail-text">{{ item.physicalCondition || 'Não informado' }}</p>
+      </article>
+      <article class="card">
+        <div class="directory-heading"><h2>Acessórios recebidos</h2></div>
+        @if (item.receivedAccessories.length) {
+          <ul class="accessories">
+            @for (accessory of item.receivedAccessories; track $index) {
+              <li>{{ accessory }}</li>
+            }
+          </ul>
+        } @else {
+          <p class="detail-text muted">Nenhum acessório registrado.</p>
+        }
+      </article>
+    </div>
+  } @else {
+    <a class="back-link" routerLink="/inicio/clientes">← Voltar para clientes</a>
+    <h1 id="order-heading">Consultar ordem de serviço</h1>
+    @if (loading()) {
+      <div class="loading-state" role="status">
+        <span class="spinner" aria-hidden="true"></span>Carregando ordem de serviço…
+      </div>
+    }
+    @if (error()) {
+      <div class="error" role="alert">
+        <p>{{ error() }}</p>
+        <button type="button" (click)="retry.next()">Tentar novamente</button>
+      </div>
+    }
+  }
+</section>

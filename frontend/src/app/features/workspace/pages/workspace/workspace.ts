@@ -1,3 +1,5 @@
+import { WorkOrderDetail } from '../../components/work-order-detail/work-order-detail';
+import { WorkOrdersPanel } from '../../components/work-orders/work-orders';
 import { CustomerHistoryPanel } from '../../components/customer-history/customer-history';
 import { EquipmentPanel } from '../../components/equipment/equipment';
 import { CustomersPanel } from '../../components/customers/customers';
@@ -17,6 +19,8 @@ import { Membership } from '../../../../core/auth/dto/session';
 @Component({
   selector: 'app-workspace',
   imports: [
+    WorkOrderDetail,
+    WorkOrdersPanel,
     RouterLink,
     FormsModule,
     CompanySettingsPanel,
@@ -33,6 +37,14 @@ export class Workspace implements OnInit {
   protected readonly session = this.sessions.session;
   protected readonly companyName = signal('');
   protected readonly companyLogo = signal<string | null>(null);
+  protected readonly orderDetailPage = toSignal(
+    inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'order-detail')),
+    { initialValue: false },
+  );
+  protected readonly ordersPage = toSignal(
+    inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'orders')),
+    { initialValue: false },
+  );
   protected readonly equipmentPage = toSignal(
     inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'equipment')),
     { initialValue: false },

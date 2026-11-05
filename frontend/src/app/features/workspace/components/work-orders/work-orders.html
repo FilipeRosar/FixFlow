@@ -1,0 +1,321 @@
+<svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <symbol id="wo-file" viewBox="0 0 24 24">
+      <path
+        d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z M14 3v6h6M8 13h8M8 17h5"
+      />
+    </symbol>
+    <symbol id="wo-user" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
+    </symbol>
+    <symbol id="wo-device" viewBox="0 0 24 24">
+      <rect x="3" y="3" width="18" height="13" rx="2" />
+      <path d="M8 21h8M12 16v5" />
+    </symbol>
+    <symbol id="wo-search" viewBox="0 0 24 24">
+      <circle cx="10" cy="10" r="6" />
+      <path d="m15 15 5 5" />
+    </symbol>
+    <symbol id="wo-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></symbol>
+    <symbol id="wo-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5" /></symbol>
+  </defs>
+</svg>
+<section aria-labelledby="work-orders-heading">
+  <div class="heading page-heading">
+    <div>
+      <p class="eyebrow">ATENDIMENTO / NOVA ORDEM</p>
+      <h1 id="work-orders-heading">Tudo começa com uma boa entrada.</h1>
+      <p>Abra uma ordem de serviço e cuide de cada detalhe do recebimento.</p>
+    </div>
+    <span class="entry-badge"><span></span> Novo atendimento</span>
+  </div>
+  @if (!canCreate) {
+    <p role="alert" class="error">
+      A abertura de OS está disponível para proprietários e atendentes.
+    </p>
+  } @else if (result(); as order) {
+    <div class="card success-card">
+      <span class="success-icon"
+        ><svg class="icon" aria-hidden="true"><use href="#wo-check" /></svg
+      ></span>
+      <p class="eyebrow">RECEBIMENTO REGISTRADO</p>
+      <h2>Pronto para o próximo passo.</h2>
+      <p role="status" class="success-message">
+        OS nº {{ order.number }} aberta. Estado: {{ order.status }}.
+      </p>
+      <p>Os detalhes da entrada já estão salvos no histórico deste atendimento.</p>
+      <button type="button" class="primary" (click)="another()">
+        Abrir outra OS <svg class="icon" aria-hidden="true"><use href="#wo-arrow" /></svg>
+      </button>
+    </div>
+  } @else {
+    @if (error()) {
+      <p role="alert" class="error">{{ error() }}</p>
+    }
+    <form #form="ngForm" class="opening-layout" (ngSubmit)="open()">
+      <div class="form-panels">
+        <fieldset class="card opening-card" [disabled]="saving()">
+          <legend class="sr-only">01 · Cliente</legend>
+          <div class="section-top">
+            <span class="section-symbol"
+              ><svg class="icon" aria-hidden="true"><use href="#wo-user" /></svg
+            ></span>
+            <div>
+              <span class="step">01 / CLIENTE</span>
+              <h2>Quem está trazendo o equipamento?</h2>
+            </div>
+            <span class="completion" [class.done]="customerId" aria-hidden="true">
+              @if (customerId) {
+                ✓
+              } @else {
+                01
+              }
+            </span>
+          </div>
+          <div class="section-body">
+            <div class="lookup-row">
+              <label
+                >Buscar cliente<span class="search-input"
+                  ><svg class="icon" aria-hidden="true"><use href="#wo-search" /></svg
+                  ><input
+                    name="query"
+                    [(ngModel)]="query"
+                    (ngModelChange)="customerQueryChanged()"
+                    maxlength="150"
+                    placeholder="Nome, documento ou contato" /></span></label
+              ><button
+                type="button"
+                class="secondary"
+                (click)="findCustomers()"
+                [disabled]="loading()"
+              >
+                {{ loading() ? 'Buscando…' : 'Buscar' }}
+              </button>
+            </div>
+            <label
+              >Cliente <span class="required">*</span
+              ><select
+                name="customerId"
+                [(ngModel)]="customerId"
+                (ngModelChange)="selectCustomer()"
+                required
+              >
+                <option value="">Selecione o cliente nos resultados da busca</option>
+                @for (customer of customers(); track customer.id) {
+                  <option [value]="customer.id">{{ customer.name }}</option>
+                }
+              </select></label
+            >
+            <p class="customer-search-status" role="status" aria-live="polite">
+              @if (loading()) {
+                Buscando clientes…
+              } @else if (customersSearched() && customerTotal() === 0) {
+                Nenhum cliente encontrado. Tente outro nome, documento ou contato.
+              } @else if (customersSearched()) {
+                {{ customerTotal() }} cliente(s) encontrado(s). Selecione na lista acima.
+              }
+            </p>
+            <div class="lookup-footer">
+              <a routerLink="/inicio/clientes">＋ Cadastrar cliente</a>
+              <div class="pager">
+                <button
+                  type="button"
+                  aria-label="Clientes anteriores"
+                  (click)="findCustomers(customerPage - 1)"
+                  [disabled]="loading() || customerPage === 0"
+                >
+                  ←</button
+                ><span>Página {{ customerPage + 1 }}</span
+                ><button
+                  type="button"
+                  aria-label="Próximos clientes"
+                  (click)="findCustomers(customerPage + 1)"
+                  [disabled]="loading() || (customerPage + 1) * 10 >= customerTotal()"
+                >
+                  →
+                </button>
+              </div>
+            </div>
+          </div>
+        </fieldset>
+        <fieldset class="card opening-card" [disabled]="saving()">
+          <legend class="sr-only">02 · Equipamento</legend>
+          <div class="section-top">
+            <span class="section-symbol blue"
+              ><svg class="icon" aria-hidden="true"><use href="#wo-device" /></svg
+            ></span>
+            <div>
+              <span class="step">02 / EQUIPAMENTO</span>
+              <h2>Qual aparelho vamos receber?</h2>
+            </div>
+            <span class="completion" [class.done]="equipmentId" aria-hidden="true">
+              @if (equipmentId) {
+                ✓
+              } @else {
+                02
+              }
+            </span>
+          </div>
+          <div class="section-body">
+            @if (customerId) {
+              <div class="lookup-row">
+                <label
+                  >Buscar por número de série<span class="search-input"
+                    ><svg class="icon" aria-hidden="true"><use href="#wo-search" /></svg
+                    ><input
+                      name="serial"
+                      [(ngModel)]="serial"
+                      maxlength="150"
+                      placeholder="Digite o número de série" /></span></label
+                ><button type="button" class="secondary" (click)="findEquipment()">Buscar</button>
+              </div>
+              <label
+                >Equipamento <span class="required">*</span
+                ><select name="equipmentId" [(ngModel)]="equipmentId" required>
+                  <option value="">Selecione um equipamento do cliente</option>
+                  @for (item of equipment(); track item.id) {
+                    <option [value]="item.id">
+                      {{ item.brand }} {{ item.model }} · {{ item.serialNumber }}
+                    </option>
+                  }
+                </select></label
+              >
+              <div class="lookup-footer">
+                <a routerLink="/inicio/equipamentos">＋ Cadastrar equipamento</a>
+                <div class="pager">
+                  <button
+                    type="button"
+                    aria-label="Equipamentos anteriores"
+                    (click)="findEquipment(equipmentPage - 1)"
+                    [disabled]="equipmentPage === 0"
+                  >
+                    ←</button
+                  ><span>Página {{ equipmentPage + 1 }}</span
+                  ><button
+                    type="button"
+                    aria-label="Próximos equipamentos"
+                    (click)="findEquipment(equipmentPage + 1)"
+                    [disabled]="(equipmentPage + 1) * 10 >= equipmentTotal()"
+                  >
+                    →
+                  </button>
+                </div>
+              </div>
+            } @else {
+              <div class="waiting-state">
+                <span class="device-outline"
+                  ><svg class="icon" aria-hidden="true"><use href="#wo-device" /></svg
+                ></span>
+                <div>
+                  <h3>Primeiro, selecione o cliente</h3>
+                  <p>Os equipamentos vinculados a ele vão aparecer aqui.</p>
+                </div>
+              </div>
+            }
+          </div>
+        </fieldset>
+        <fieldset class="card opening-card" [disabled]="saving()">
+          <legend class="sr-only">03 · Recebimento</legend>
+          <div class="section-top">
+            <span class="section-symbol amber"
+              ><svg class="icon" aria-hidden="true"><use href="#wo-file" /></svg
+            ></span>
+            <div>
+              <span class="step">03 / RECEBIMENTO</span>
+              <h2>Os detalhes fazem a diferença.</h2>
+            </div>
+            <span
+              class="completion"
+              [class.done]="issue.trim() && condition.trim()"
+              aria-hidden="true"
+            >
+              @if (issue.trim() && condition.trim()) {
+                ✓
+              } @else {
+                03
+              }
+            </span>
+          </div>
+          <div class="section-body reception-fields">
+            <label class="full-width"
+              >Defeito relatado <span class="required">*</span
+              ><textarea
+                name="issue"
+                [(ngModel)]="issue"
+                required
+                maxlength="4000"
+                rows="4"
+                placeholder="O que o cliente percebeu? Ex.: não liga após uma queda de energia."
+              ></textarea
+              ><small>Descreva o problema nas palavras do cliente.</small></label
+            >
+            <label
+              >Estado físico <span class="required">*</span
+              ><textarea
+                name="condition"
+                [(ngModel)]="condition"
+                required
+                maxlength="2000"
+                rows="4"
+                placeholder="Ex.: riscos na tampa, tela sem trincas…"
+              ></textarea
+              ><small>Registre marcas e condições visíveis na entrada.</small></label
+            >
+            <label
+              >Acessórios recebidos <span class="optional">Opcional</span
+              ><textarea
+                name="accessories"
+                [(ngModel)]="accessories"
+                rows="4"
+                placeholder="Carregador&#10;Capa protetora&#10;Cabo USB"
+              ></textarea
+              ><small>Um acessório por linha. Sem acessórios? Deixe vazio.</small></label
+            >
+          </div>
+        </fieldset>
+      </div>
+      <aside class="order-summary" aria-labelledby="summary-heading">
+        <div class="summary-top">
+          <span class="section-symbol"
+            ><svg class="icon" aria-hidden="true"><use href="#wo-file" /></svg
+          ></span>
+          <p class="eyebrow">NOVA ORDEM DE SERVIÇO</p>
+          <h2 id="summary-heading">Tudo certo para receber?</h2>
+          <p>Confira os dados antes de abrir o atendimento.</p>
+        </div>
+        <div class="summary-checks">
+          <div [class.ready]="customerId">
+            <span>{{ customerId ? '✓' : '1' }}</span>
+            <p>Cliente selecionado</p>
+          </div>
+          <div [class.ready]="equipmentId">
+            <span>{{ equipmentId ? '✓' : '2' }}</span>
+            <p>Equipamento identificado</p>
+          </div>
+          <div [class.ready]="issue.trim() && condition.trim()">
+            <span>{{ issue.trim() && condition.trim() ? '✓' : '3' }}</span>
+            <p>Recebimento detalhado</p>
+          </div>
+        </div>
+        <div class="initial-status">
+          <span>Status inicial</span><strong><i></i> Recebida</strong>
+        </div>
+        <div class="summary-action">
+          <button
+            class="primary"
+            type="submit"
+            [disabled]="
+              form.invalid || saving() || !equipmentId || !issue.trim() || !condition.trim()
+            "
+          >
+            {{ saving() ? 'Abrindo…' : 'Abrir ordem de serviço'
+            }}<svg class="icon" aria-hidden="true"><use href="#wo-arrow" /></svg>
+          </button>
+          <p>O número da OS será gerado ao confirmar a abertura.</p>
+        </div>
+        <a class="back-link" routerLink="/inicio">← Voltar à visão geral</a>
+      </aside>
+    </form>
+  }
+</section>

@@ -106,7 +106,15 @@
                   }}</time>
                 </div>
                 <div class="entry-heading">
-                  <h3>{{ entry.title }}</h3>
+                  <h3>
+                    @if (entry.type === 'WORK_ORDER') {
+                      <a class="order-link" [routerLink]="['/inicio/ordens', entry.id]"
+                        >{{ entry.title }} <span aria-hidden="true">↗</span></a
+                      >
+                    } @else {
+                      {{ entry.title }}
+                    }
+                  </h3>
                   @if (entry.type === 'WORK_ORDER') {
                     <span
                       class="status-badge"

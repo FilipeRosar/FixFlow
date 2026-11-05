@@ -90,10 +90,22 @@
       <a
         title="Visão geral"
         class="nav-item"
-        [class.active]="!settingsPage() && !customersPage() && !equipmentPage()"
+        [class.active]="
+          !settingsPage() &&
+          !customersPage() &&
+          !equipmentPage() &&
+          !ordersPage() &&
+          !orderDetailPage()
+        "
         routerLink="/inicio"
         [attr.aria-current]="
-          !settingsPage() && !customersPage() && !equipmentPage() ? 'page' : null
+          !settingsPage() &&
+          !customersPage() &&
+          !equipmentPage() &&
+          !ordersPage() &&
+          !orderDetailPage()
+            ? 'page'
+            : null
         "
         (click)="closeMenu()"
         ><svg class="icon" aria-hidden="true"><use href="#op-dashboard" /></svg
@@ -101,7 +113,18 @@
       >
       @for (item of upcoming; track item.label) {
         @if ((item.icon !== 'finance' && item.icon !== 'settings') || session()?.role === 'OWNER') {
-          @if (item.icon === 'settings') {
+          @if (item.icon === 'orders' && session()?.role !== 'TECHNICIAN') {
+            <a
+              class="nav-item"
+              routerLink="/inicio/ordens/nova"
+              [class.active]="ordersPage()"
+              [attr.aria-current]="ordersPage() ? 'page' : null"
+              (click)="closeMenu()"
+              title="Abrir OS"
+              ><svg class="icon" aria-hidden="true"><use href="#op-orders" /></svg
+              ><span>Abrir OS</span></a
+            >
+          } @else if (item.icon === 'settings') {
             <a
               class="nav-item"
               [class.active]="settingsPage()"
@@ -202,13 +225,21 @@
                 : 'Clientes'
               : equipmentPage()
                 ? 'Equipamentos'
-                : 'Visão geral'
+                : ordersPage()
+                  ? 'Abrir OS'
+                  : orderDetailPage()
+                    ? 'Consultar OS'
+                    : 'Visão geral'
         }}</strong>
       </div>
       <span class="development"><span aria-hidden="true">●</span> Em desenvolvimento</span>
     </header>
     <div class="operation-content">
-      @if (equipmentPage()) {
+      @if (orderDetailPage()) {
+        <app-work-order-detail />
+      } @else if (ordersPage()) {
+        <app-work-orders />
+      } @else if (equipmentPage()) {
         <app-equipment />
       } @else if (historyPage()) {
         <app-customer-history />
@@ -232,11 +263,11 @@
             <h1>Bom trabalho.<span class="spark" aria-hidden="true">✦</span></h1>
             <p>Tudo o que sua assistência precisa, no mesmo fluxo.</p>
           </div>
-          <div class="new-order">
-            <button class="primary" type="button" disabled aria-describedby="new-order-hint">
-              <span aria-hidden="true">＋</span> Nova ordem de serviço</button
-            ><small id="new-order-hint">Disponível em uma próxima etapa</small>
-          </div>
+          @if (session()?.role === 'OWNER' || session()?.role === 'ATTENDANT') {
+            <div class="new-order">
+              <a class="primary" routerLink="/inicio/ordens/nova">＋ Nova ordem de serviço</a>
+            </div>
+          }
         </div>
         @if (session()?.role === 'OWNER') {
           <section class="panel user-management" aria-labelledby="users-heading">
@@ -526,7 +557,7 @@
           <div class="orders-empty">
             <svg class="icon empty-icon" aria-hidden="true"><use href="#op-orders" /></svg>
             <h3>O próximo passo é organizar seus atendimentos</h3>
-            <p>O cadastro de ordens de serviço será disponibilizado em uma próxima etapa.</p>
+            <p>Abra uma nova ordem de serviço para registrar a entrada de um equipamento.</p>
           </div>
         </section>
         <div class="activity-grid">

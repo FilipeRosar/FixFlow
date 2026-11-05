@@ -187,3 +187,20 @@
     padding-inline: 18px;
   }
 }
+
+.order-link {
+  color: #c7b8f8;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.order-link:hover {
+  text-decoration: underline;
+  color: #e0d4ff;
+}
+.order-link:focus-visible {
+  outline: 2px solid #baa8ff;
+  outline-offset: 4px;
+  border-radius: 3px;
+}
