@@ -84,6 +84,23 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(problem);
     }
 
+    @ExceptionHandler(br.com.fixflow.modules.workorders.domain.InvalidStateTransitionException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidTransition(br.com.fixflow.modules.workorders.domain.InvalidStateTransitionException exception) {
+        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+        problem.setProperty("code", "INVALID_STATE_TRANSITION");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
+    }
+    @ExceptionHandler(br.com.fixflow.modules.workorders.domain.WorkOrderVersionConflictException.class)
+    public ResponseEntity<ProblemDetail> handleWorkOrderVersion(br.com.fixflow.modules.workorders.domain.WorkOrderVersionConflictException exception) {
+        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+        problem.setProperty("code", "WORK_ORDER_VERSION_CONFLICT");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
+    }
+    @ExceptionHandler(br.com.fixflow.modules.workorders.domain.WorkOrderTransitionDeniedException.class)
+    public ResponseEntity<ProblemDetail> handleTransitionDenied() {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Alteração de estado não autorizada."));
+    }
+
     @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
     public ResponseEntity<ProblemDetail> handleStatus(org.springframework.web.server.ResponseStatusException exception) {
         return ResponseEntity.status(exception.getStatusCode())

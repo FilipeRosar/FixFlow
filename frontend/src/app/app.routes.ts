@@ -28,6 +28,22 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/pages/recovery/recovery').then((m) => m.Recovery),
   },
   {
+    path: 'inicio/ordens/nova',
+    title: 'Abrir OS — FixFlow',
+    data: { page: 'orders' },
+    canActivate: [sessionGuard],
+    loadComponent: () =>
+      import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
+  },
+  {
+    path: 'inicio/ordens/:orderId',
+    title: 'Consultar OS — FixFlow',
+    data: { page: 'order-detail' },
+    canActivate: [sessionGuard],
+    loadComponent: () =>
+      import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
+  },
+  {
     path: 'inicio/equipamentos',
     title: 'Equipamentos — FixFlow',
     data: { page: 'equipment' },

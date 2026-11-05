@@ -78,6 +78,7 @@ describe('Customer history', () => {
   });
   it('displays OS and equipment with dates, status and soft deletion indication', () => {
     const { element } = setup();
+    expect(element.querySelector('.order-link')?.getAttribute('href')).toBe('/inicio/ordens/order');
     expect(element.textContent).toContain('Ana Silva');
     expect(element.textContent).toContain('Entregue');
     expect(element.textContent).toContain('Samsung Galaxy');

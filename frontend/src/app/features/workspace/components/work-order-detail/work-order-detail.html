@@ -1,0 +1,165 @@
+<section aria-labelledby="order-heading" [attr.aria-busy]="loading()">
+  @if (order(); as item) {
+    <a class="back-link" [routerLink]="['/inicio/clientes', item.customerId, 'historico']"
+      >← Voltar ao histórico do cliente</a
+    >
+    <div class="heading page-heading">
+      <div>
+        <p class="eyebrow">CONSULTA DO ATENDIMENTO</p>
+        <h1 id="order-heading">Ordem de serviço nº {{ item.number || '—' }}</h1>
+        <p>Aberta em {{ item.openedAt | date: 'dd/MM/yyyy · HH:mm' }}</p>
+      </div>
+      <span class="order-status">{{ statusLabel(item.status) }}</span>
+    </div>
+    <div class="detail-grid">
+      <article class="card">
+        <div class="directory-heading"><h2>Cliente e equipamento</h2></div>
+        <dl>
+          <div>
+            <dt>Cliente</dt>
+            <dd>{{ item.customerName }}</dd>
+          </div>
+          <div>
+            <dt>Equipamento</dt>
+            <dd>{{ item.equipmentLabel || 'Não informado' }}</dd>
+          </div>
+          <div>
+            <dt>Número de série</dt>
+            <dd>{{ item.serialNumber || 'Não informado' }}</dd>
+          </div>
+        </dl>
+      </article>
+      <article class="card">
+        <div class="directory-heading"><h2>Defeito relatado</h2></div>
+        <p class="detail-text">{{ item.reportedIssue || 'Não informado' }}</p>
+      </article>
+      <article class="card">
+        <div class="directory-heading"><h2>Estado físico no recebimento</h2></div>
+        <p class="detail-text">{{ item.physicalCondition || 'Não informado' }}</p>
+      </article>
+      <article class="card">
+        <div class="directory-heading"><h2>Acessórios recebidos</h2></div>
+        @if (item.receivedAccessories.length) {
+          <ul class="accessories">
+            @for (accessory of item.receivedAccessories; track $index) {
+              <li>{{ accessory }}</li>
+            }
+          </ul>
+        } @else {
+          <p class="detail-text muted">Nenhum acessório registrado.</p>
+        }
+      </article>
+    </div>
+    <section class="card status-editor" aria-labelledby="technician-heading">
+      <div class="directory-heading"><h2 id="technician-heading">Técnico responsável</h2></div>
+      <div class="technician-content">
+        <p class="technician-current">{{ item.technicianName || 'Nenhum técnico atribuído' }}</p>
+        @if (canAssign && item.status !== 'ENTREGUE' && item.status !== 'CANCELADA') {
+          <form class="technician-form" (ngSubmit)="assignTechnician()">
+            <label
+              >Técnico<select
+                name="technicianId"
+                [(ngModel)]="selectedTechnician"
+                (focus)="loadTechnicians()"
+                (click)="loadTechnicians()"
+                [disabled]="assigning() || changing()"
+                required
+              >
+                <option value="">
+                  {{ techniciansLoading() ? 'Carregando técnicos…' : 'Selecione um técnico' }}
+                </option>
+
+                @for (technician of technicians(); track technician.userId) {
+                  <option [value]="technician.userId">{{ technician.fullName }}</option>
+                }
+              </select></label
+            >
+            <button
+              class="primary"
+              type="submit"
+              [disabled]="
+                !selectedTechnician ||
+                selectedTechnician === item.technicianId ||
+                assigning() ||
+                changing()
+              "
+            >
+              {{ assigning() ? 'Atribuindo…' : 'Atribuir técnico' }}
+            </button>
+          </form>
+          <p class="assignment-hint">
+            Selecione um técnico ativo da empresa antes de iniciar o diagnóstico. O proprietário
+            também pode assumir o atendimento.
+          </p>
+          @if (techniciansLoaded && !techniciansLoading() && !technicians().length) {
+            <p role="status" class="assignment-hint">Nenhum técnico ativo disponível na empresa.</p>
+          }
+        }
+        @if (assignmentNotice()) {
+          <p role="status" class="notice">{{ assignmentNotice() }}</p>
+        }
+        @if (assignmentError()) {
+          <p role="alert" class="error">{{ assignmentError() }}</p>
+        }
+      </div>
+    </section>
+    @if (transitionNotice()) {
+      <p class="notice transition-message" role="status">{{ transitionNotice() }}</p>
+    }
+    @if (transitionError()) {
+      <p class="error transition-message" role="alert">{{ transitionError() }}</p>
+    }
+    @if (targets(item.status).length) {
+      <form class="card status-editor" (ngSubmit)="changeStatus()">
+        <div class="directory-heading">
+          <div><h2>Próxima etapa do atendimento</h2></div>
+        </div>
+        <fieldset [disabled]="changing() || assigning()">
+          <label
+            >Alterar estado para<select name="target" [(ngModel)]="target" required>
+              <option value="">Selecione a próxima etapa</option>
+              @for (status of targets(item.status); track status) {
+                <option [value]="status">{{ statusLabel(status) }}</option>
+              }
+            </select></label
+          >
+          <label
+            >Motivo ou justificativa<textarea
+              name="reason"
+              [(ngModel)]="reason"
+              maxlength="2000"
+              rows="3"
+              placeholder="Obrigatório para cancelar, declarar sem reparo ou aprovar manualmente."
+            ></textarea>
+          </label>
+          @if (role === 'OWNER' && item.status === 'PRONTA' && target === 'ENTREGUE') {
+            <label class="override"
+              ><input type="checkbox" name="paymentOverride" [(ngModel)]="paymentOverride" />
+              Autorizar entrega com pagamento pendente (exige justificativa)</label
+            >
+          }
+          <div class="status-actions">
+            <p>Os requisitos da próxima etapa serão conferidos ao confirmar.</p>
+            <button class="primary" type="submit" [disabled]="!target || changing()">
+              {{ changing() ? 'Atualizando…' : 'Confirmar transição' }}
+            </button>
+          </div>
+        </fieldset>
+      </form>
+    }
+  } @else {
+    <a class="back-link" routerLink="/inicio/clientes">← Voltar para clientes</a>
+    <h1 id="order-heading">Consultar ordem de serviço</h1>
+    @if (loading()) {
+      <div class="loading-state" role="status">
+        <span class="spinner" aria-hidden="true"></span>Carregando ordem de serviço…
+      </div>
+    }
+    @if (error()) {
+      <div class="error" role="alert">
+        <p>{{ error() }}</p>
+        <button type="button" (click)="retry.next()">Tentar novamente</button>
+      </div>
+    }
+  }
+</section>
