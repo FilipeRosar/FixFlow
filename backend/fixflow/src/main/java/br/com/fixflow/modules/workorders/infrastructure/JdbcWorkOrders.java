@@ -38,12 +38,40 @@ public class JdbcWorkOrders implements WorkOrders {
         if (tenant == null) throw new InsufficientAuthenticationException("Selecione uma empresa.");
         return tenant;
     }
-    private WorkOrder read(UUID tenant, UUID id) {
-        var rows = jdbc.query("SELECT w.*, c.name AS customer_name, concat_ws(' ', nullif(e.brand, ''), e.model) AS equipment_label, e.serial_number, f.technician_id, t.full_name AS technician_name FROM public.work_orders w JOIN public.customers c ON c.tenant_id = w.tenant_id AND c.id = w.customer_id LEFT JOIN public.equipment e ON e.tenant_id = w.tenant_id AND e.id = w.equipment_id LEFT JOIN public.work_order_transition_facts f ON f.tenant_id = w.tenant_id AND f.work_order_id = w.id LEFT JOIN public.work_order_team(w.tenant_id) t ON t.user_id = f.technician_id WHERE w.tenant_id = ? AND w.id = ?", (rs, row) ->
-                new WorkOrder(rs.getObject("id", UUID.class), rs.getLong("number"), rs.getObject("customer_id", UUID.class),
+    private static final String SELECT = "SELECT w.*, c.name AS customer_name, concat_ws(' ', nullif(e.brand, ''), e.model) AS equipment_label, e.serial_number, f.technician_id, t.full_name AS technician_name FROM public.work_orders w JOIN public.customers c ON c.tenant_id = w.tenant_id AND c.id = w.customer_id LEFT JOIN public.equipment e ON e.tenant_id = w.tenant_id AND e.id = w.equipment_id LEFT JOIN public.work_order_transition_facts f ON f.tenant_id = w.tenant_id AND f.work_order_id = w.id LEFT JOIN public.work_order_team(w.tenant_id) t ON t.user_id = f.technician_id";
+    private WorkOrder mapOrder(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new WorkOrder(rs.getObject("id", UUID.class), rs.getLong("number"), rs.getObject("customer_id", UUID.class),
                         rs.getObject("equipment_id", UUID.class), rs.getString("status"), rs.getString("reported_issue"),
                         mapper.readTree(rs.getString("received_accessories")).valueStream().map(n -> n.asText()).toList(),
-                        rs.getString("physical_condition"), rs.getTimestamp("created_at").toInstant(), rs.getInt("version"), rs.getString("customer_name"), rs.getString("equipment_label"), rs.getString("serial_number"), rs.getObject("technician_id", UUID.class), rs.getString("technician_name")), tenant, id);
+                        rs.getString("physical_condition"), rs.getTimestamp("created_at").toInstant(), rs.getInt("version"), rs.getString("customer_name"), rs.getString("equipment_label"), rs.getString("serial_number"), rs.getObject("technician_id", UUID.class), rs.getString("technician_name"));
+    }
+    @Override public Page search(UUID technicianId, String status, boolean openOnly, int page, int size) {
+        if (page < 0 || page > 1000000 || size < 1 || size > 100)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Paginação inválida.");
+        if (status != null && !status.isBlank()) {
+            try { WorkOrderStatus.valueOf(status); }
+            catch (IllegalArgumentException exception) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Estado inválido."); }
+        }
+        return tenants.execute(tenant(), m -> {
+            UUID filter = technicianId;
+            var permissions = RolePermissions.forRole(m.role().name());
+            if (!permissions.contains("workorder:read")) {
+                if (!permissions.contains("workorder:read_assigned")) throw new AccessDeniedException("Consulta de OS não autorizada.");
+                if (filter != null && !filter.equals(m.userId())) throw new AccessDeniedException("Consulta restrita às OS atribuídas a você.");
+                filter = m.userId();
+            }
+            var args = new java.util.ArrayList<Object>(); args.add(m.tenantId());
+            String where = " WHERE w.tenant_id = ?";
+            if (filter != null) { where += " AND f.technician_id = ?"; args.add(filter); }
+            if (status != null && !status.isBlank()) { where += " AND w.status = ?"; args.add(status); }
+            if (openOnly) where += " AND w.status NOT IN ('ENTREGUE', 'CANCELADA')";
+            long total = jdbc.queryForObject("SELECT count(*) FROM public.work_orders w LEFT JOIN public.work_order_transition_facts f ON f.tenant_id = w.tenant_id AND f.work_order_id = w.id" + where, Long.class, args.toArray());
+            args.add(size); args.add(page * size);
+            return new Page(jdbc.query(SELECT + where + " ORDER BY w.created_at DESC, w.id DESC LIMIT ? OFFSET ?", (rs, row) -> mapOrder(rs), args.toArray()), total, page, size);
+        });
+    }
+    private WorkOrder read(UUID tenant, UUID id) {
+        var rows = jdbc.query(SELECT + " WHERE w.tenant_id = ? AND w.id = ?", (rs, row) -> mapOrder(rs), tenant, id);
         if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "OS não encontrada.");
         return rows.getFirst();
     }

@@ -95,7 +95,8 @@
           !customersPage() &&
           !equipmentPage() &&
           !ordersPage() &&
-          !orderDetailPage()
+          !orderDetailPage() &&
+          !queuePage()
         "
         routerLink="/inicio"
         [attr.aria-current]="
@@ -103,7 +104,8 @@
           !customersPage() &&
           !equipmentPage() &&
           !ordersPage() &&
-          !orderDetailPage()
+          !orderDetailPage() &&
+          !queuePage()
             ? 'page'
             : null
         "
@@ -111,8 +113,21 @@
         ><svg class="icon" aria-hidden="true"><use href="#op-dashboard" /></svg
         ><span>Visão geral</span></a
       >
+      <a
+        class="nav-item"
+        routerLink="/inicio/ordens"
+        [class.active]="queuePage()"
+        [attr.aria-current]="queuePage() ? 'page' : null"
+        (click)="closeMenu()"
+        [title]="session()?.role === 'TECHNICIAN' ? 'Minha fila' : 'Ordens de serviço'"
+        ><svg class="icon" aria-hidden="true"><use href="#op-orders" /></svg
+        ><span>{{ session()?.role === 'TECHNICIAN' ? 'Minha fila' : 'Ordens de serviço' }}</span></a
+      >
       @for (item of upcoming; track item.label) {
-        @if ((item.icon !== 'finance' && item.icon !== 'settings') || session()?.role === 'OWNER') {
+        @if (
+          ((item.icon !== 'finance' && item.icon !== 'settings') || session()?.role === 'OWNER') &&
+          (item.icon !== 'orders' || session()?.role !== 'TECHNICIAN')
+        ) {
           @if (item.icon === 'orders' && session()?.role !== 'TECHNICIAN') {
             <a
               class="nav-item"
@@ -229,13 +244,19 @@
                   ? 'Abrir OS'
                   : orderDetailPage()
                     ? 'Consultar OS'
-                    : 'Visão geral'
+                    : queuePage()
+                      ? session()?.role === 'TECHNICIAN'
+                        ? 'Minha fila'
+                        : 'Ordens de serviço'
+                      : 'Visão geral'
         }}</strong>
       </div>
       <span class="development"><span aria-hidden="true">●</span> Em desenvolvimento</span>
     </header>
     <div class="operation-content">
-      @if (orderDetailPage()) {
+      @if (queuePage()) {
+        <app-work-order-queue />
+      } @else if (orderDetailPage()) {
         <app-work-order-detail />
       } @else if (ordersPage()) {
         <app-work-orders />

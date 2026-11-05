@@ -1,0 +1,137 @@
+<section aria-labelledby="queue-heading">
+  <div class="heading page-heading">
+    <div>
+      <p class="eyebrow">ATENDIMENTOS / FILA DE TRABALHO</p>
+      <h1 id="queue-heading">{{ technician ? 'Minha fila' : 'Ordens de serviço' }}</h1>
+      <p>
+        {{
+          technician
+            ? 'Os atendimentos atribuídos a você, em um só lugar.'
+            : 'Acompanhe os atendimentos e organize a distribuição da equipe.'
+        }}
+      </p>
+    </div>
+    @if (!technician) {
+      <a class="new-order-link" routerLink="/inicio/ordens/nova">＋ Abrir OS</a>
+    }
+  </div>
+  <div class="card">
+    <div class="directory-heading">
+      <div>
+        <h2>{{ technician ? 'Meus atendimentos' : 'Atendimentos da empresa' }}</h2>
+        <span class="count">{{ data().totalElements }}</span>
+      </div>
+      <span class="directory-note">Mais recentes primeiro</span>
+    </div>
+    <div class="queue-filters">
+      @if (!technician) {
+        <label
+          >Técnico responsável<select
+            name="technicianId"
+            [(ngModel)]="technicianId"
+            (ngModelChange)="load(0)"
+          >
+            <option value="">Todos os técnicos e OS sem atribuição</option>
+            @for (member of team(); track member.userId) {
+              <option [value]="member.userId">{{ member.fullName }}</option>
+            }
+          </select></label
+        >
+      }
+      <label
+        >Estado<select name="status" [(ngModel)]="status" (ngModelChange)="filter()">
+          <option value="">Todos os estados</option>
+          @for (item of statuses; track item.value) {
+            <option [value]="item.value">{{ item.label }}</option>
+          }
+        </select></label
+      >
+      <label class="open-only"
+        ><input type="checkbox" name="openOnly" [(ngModel)]="openOnly" (ngModelChange)="load(0)" />
+        Somente em andamento</label
+      >
+    </div>
+    @if (teamError()) {
+      <div class="error" role="alert">
+        {{ teamError() }} <button type="button" (click)="loadTeam()">Tentar novamente</button>
+      </div>
+    }
+    @if (error()) {
+      <div class="error" role="alert">
+        {{ error() }} <button type="button" (click)="load(data().page)">Tentar novamente</button>
+      </div>
+    }
+    @if (loading()) {
+      <div class="loading-state" role="status">
+        <span class="spinner" aria-hidden="true"></span>Carregando atendimentos…
+      </div>
+    } @else if (!error()) {
+      <div class="table-scroll">
+        <table>
+          <caption class="sr-only">
+            {{
+              technician ? 'Ordens atribuídas a você' : 'Ordens de serviço da empresa'
+            }}
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Ordem / abertura</th>
+              <th scope="col">Cliente / equipamento</th>
+              <th scope="col">Técnico</th>
+              <th scope="col">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (item of data().content; track item.id) {
+              <tr>
+                <td>
+                  <a class="order-link" [routerLink]="['/inicio/ordens', item.id]"
+                    >OS nº {{ item.number || '—' }} ↗</a
+                  ><small>{{ item.openedAt | date: 'dd/MM/yyyy · HH:mm' }}</small>
+                </td>
+                <td>
+                  <strong>{{ item.customerName }}</strong
+                  ><small>{{ item.equipmentLabel || 'Equipamento não informado' }}</small>
+                </td>
+                <td>{{ item.technicianName || 'Sem técnico atribuído' }}</td>
+                <td>
+                  <span class="queue-status">{{ statusLabel(item.status) }}</span>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (!data().content.length) {
+        <div class="empty-state">
+          <h3>Nenhuma OS encontrada.</h3>
+          <p>
+            {{
+              technician
+                ? 'Não há ordens atribuídas a você com os filtros selecionados.'
+                : 'Ajuste os filtros ou abra uma nova ordem de serviço.'
+            }}
+          </p>
+        </div>
+      }
+    }
+    <div class="pagination">
+      <span>{{ data().totalElements }} ordens · Página {{ data().page + 1 }}</span>
+      <div class="actions">
+        <button
+          type="button"
+          (click)="load(data().page - 1)"
+          [disabled]="loading() || data().page === 0"
+        >
+          Anterior</button
+        ><button
+          type="button"
+          (click)="load(data().page + 1)"
+          [disabled]="loading() || (data().page + 1) * data().size >= data().totalElements"
+        >
+          Próxima
+        </button>
+      </div>
+    </div>
+  </div>
+</section>

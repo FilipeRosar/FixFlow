@@ -36,6 +36,14 @@ export const routes: Routes = [
       import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
   },
   {
+    path: 'inicio/ordens',
+    title: 'Fila de OS — FixFlow',
+    data: { page: 'queue' },
+    canActivate: [sessionGuard],
+    loadComponent: () =>
+      import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
+  },
+  {
     path: 'inicio/ordens/:orderId',
     title: 'Consultar OS — FixFlow',
     data: { page: 'order-detail' },

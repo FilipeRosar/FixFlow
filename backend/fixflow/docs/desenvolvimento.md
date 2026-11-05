@@ -702,3 +702,32 @@ técnico ou de outra empresa é rejeitado. A lista e o guard verificam tanto o
 vínculo quanto o status global do usuário. A consulta retorna `technicianId` e
 `technicianName`. Após atribuir, a interface usa a nova versão para iniciar o
 diagnóstico. O técnico não pode se autoatribuir por este endpoint.
+
+
+## US-022 — Atribuir técnico e minha fila
+
+A atribuição permanece em `PATCH /api/v1/work-orders/{id}/technician`, restrita a
+OWNER/ATTENDANT, com técnico ativo da mesma empresa, versão, auditoria e outbox.
+`GET /api/v1/work-orders` lista as OS com paginação (`page=0`, `size=20`, máximo
+100), `technicianId`, `status` e `openOnly=true`. Por padrão exclui ENTREGUE e
+CANCELADA; `openOnly=false` inclui encerradas. Ordena por criação decrescente e
+ID decrescente para desempate. Retorna `content`, `totalElements`, `page` e `size`.
+
+RBAC é aplicado antes de consultar conteúdo ou totais: OWNER/ATTENDANT, com
+`workorder:read`, podem consultar todas as OS da empresa e filtrar por técnico.
+TECHNICIAN, com `workorder:read_assigned`, recebe obrigatoriamente o filtro da
+própria identidade autenticada. Pedir outro `technicianId` retorna 403; omitir o
+parâmetro jamais amplia o escopo. Filtros de estado, encerradas ou paginação
+mantêm essa restrição. OS sem atribuição ou atribuída a outro técnico não aparece.
+Reatribuição remove o acesso do técnico anterior tanto na fila quanto na consulta
+e transições da OS. Totais também são calculados sobre o escopo autorizado.
+O histórico do cliente continua sem expor OS aos técnicos; sua entrada de consulta
+às OS atribuídas é a fila. A migration V29 adiciona os índices da listagem.
+
+A interface `/inicio/ordens` exibe **Minha fila** para técnicos e **Ordens de
+serviço** para proprietário/atendente, com estado, paginação, opção de incluir
+encerradas e links para consulta. Somente proprietário/atendente recebem o filtro
+de técnico e o atalho de abertura. Requisições anteriores são canceladas ao trocar
+filtros. Estados sem resultados, carregamento e erros têm mensagens próprias.
+`WorkOrderQueueIntegrationTest` verifica escopo obrigatório, filtro explícito de
+outro técnico, totais, paginação, reatribuição, permissões e isolamento entre tenants.
