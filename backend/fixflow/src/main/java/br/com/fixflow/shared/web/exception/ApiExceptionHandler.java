@@ -138,6 +138,13 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Selecione um arquivo para enviar."));
     }
 
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ProblemDetail> handleUnsupportedMethod(org.springframework.web.HttpRequestMethodNotSupportedException exception) {
+        var response = ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED);
+        if (exception.getSupportedMethods() != null) response.header("Allow", String.join(", ", exception.getSupportedMethods()));
+        return response.body(ProblemDetail.forStatusAndDetail(HttpStatus.METHOD_NOT_ALLOWED, "Método não permitido para este recurso."));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnexpected(
             Exception exception,

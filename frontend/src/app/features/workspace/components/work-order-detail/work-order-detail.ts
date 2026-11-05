@@ -1,3 +1,4 @@
+import { WorkOrderTimelinePanel } from '../work-order-timeline/work-order-timeline';
 import { WorkOrderAttachmentsPanel } from '../work-order-attachments/work-order-attachments';
 import { WorkOrderItemsPanel } from '../work-order-items/work-order-items';
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
@@ -38,13 +39,21 @@ interface WorkOrder {
 }
 @Component({
   selector: 'app-work-order-detail',
-  imports: [DatePipe, RouterLink, FormsModule, WorkOrderItemsPanel, WorkOrderAttachmentsPanel],
+  imports: [
+    DatePipe,
+    RouterLink,
+    FormsModule,
+    WorkOrderItemsPanel,
+    WorkOrderAttachmentsPanel,
+    WorkOrderTimelinePanel,
+  ],
   templateUrl: './work-order-detail.html',
   styleUrls: ['../customers/customers.css', './work-order-detail.css'],
 })
 export class WorkOrderDetail implements OnInit {
   private readonly http = inject(HttpClient);
   protected readonly role = inject(SessionService).session()?.role;
+  protected readonly timelineRevision = signal(0);
   protected readonly itemsSaving = signal(false);
   protected updateItemsVersion(version: number): void {
     this.order.update((order) =>

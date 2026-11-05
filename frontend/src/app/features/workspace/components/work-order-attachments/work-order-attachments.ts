@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, input, signal } from '@angular/core';
+import { Component, DestroyRef, inject, input, output, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -21,6 +21,7 @@ interface Download {
 })
 export class WorkOrderAttachmentsPanel {
   readonly orderId = input.required<string>();
+  readonly changed = output<void>();
   private readonly http = inject(HttpClient);
   private readonly destroy = inject(DestroyRef);
   protected readonly open = signal(false);
@@ -109,6 +110,7 @@ export class WorkOrderAttachmentsPanel {
           this.uploadId = '';
           fileInput.value = '';
           this.notice.set('Arquivo anexado à ordem de serviço.');
+          this.changed.emit();
         },
         error: (error) => {
           this.uploading.set(false);
