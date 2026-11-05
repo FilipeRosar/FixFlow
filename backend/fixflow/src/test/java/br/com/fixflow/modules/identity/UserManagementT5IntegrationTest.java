@@ -27,6 +27,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class UserManagementT5IntegrationTest {
     @RestController
     static class Probes {
+        @Autowired br.com.fixflow.modules.tenants.application.TenantLimitsService limits;
+        @PostMapping("/api/oficinas/{tenant}/quota-probe")
+        String quota(@PathVariable UUID tenant, @RequestParam(defaultValue = "false") boolean fail) {
+            return limits.createWorkOrder(tenant, () -> {
+                if (fail) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "rollback");
+                return "ok";
+            });
+        }
         @PostMapping("/api/v1/work-orders") String createOrder() { return "ok"; }
         @GetMapping("/api/v1/dashboard/summary") String finance() { return "ok"; }
     }
@@ -76,7 +84,45 @@ class UserManagementT5IntegrationTest {
             if (row.get("userId").asText().equals(id.toString())) return login(row.get("email").asText(), "initial-password");
         throw new AssertionError("Missing user");
     }
+    private void plan(String value) {
+        var ds = new DriverManagerDataSource(environment.getRequiredProperty("spring.flyway.url"),
+                environment.getRequiredProperty("spring.flyway.user"), environment.getRequiredProperty("spring.flyway.password"));
+        var jdbc = new JdbcTemplate(ds);
+        new TransactionTemplate(new DataSourceTransactionManager(ds)).executeWithoutResult(tx -> {
+            jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, fixture.tenantA.toString());
+            jdbc.update("UPDATE tenants SET plan = ? WHERE id = ?", value, fixture.tenantA);
+        });
+    }
+    @Test void orderQuotaRollsBackFailuresAndAllowsUpgrade() throws Exception {
+        String endpoint = "/api/oficinas/" + fixture.tenantA + "/quota-probe";
+        mvc.perform(post(endpoint + "?fail=true").header("Authorization", "Bearer " + owner))
+                .andExpect(status().isBadRequest());
+        for (int i = 0; i < 100; i++)
+            mvc.perform(post(endpoint).header("Authorization", "Bearer " + owner)).andExpect(status().isOk());
+        mvc.perform(post(endpoint).header("Authorization", "Bearer " + owner))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PLAN_LIMIT_REACHED"));
+        mvc.perform(get(url).header("Authorization", "Bearer " + owner)).andExpect(status().isOk());
+        plan("PROFESSIONAL");
+        mvc.perform(post(endpoint).header("Authorization", "Bearer " + owner)).andExpect(status().isOk());
+    }
+    @Test void limitsCreationButPreservesReadingAndDeactivation() throws Exception {
+        UUID user = create("ATTENDANT");
+        mvc.perform(post(url).header("Authorization", "Bearer " + owner).contentType("application/json")
+                .content(mapper.writeValueAsString(Map.of("fullName", "Extra", "email", UUID.randomUUID() + "@example.invalid",
+                        "password", "initial-password", "role", "TECHNICIAN"))))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PLAN_LIMIT_REACHED"))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("upgrade")));
+        mvc.perform(get(url).header("Authorization", "Bearer " + owner)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+        mvc.perform(delete(url + "/" + user).header("Authorization", "Bearer " + owner)).andExpect(status().isNoContent());
+        create("TECHNICIAN");
+        plan("PROFESSIONAL");
+        create("ATTENDANT");
+        plan("STARTER");
+        mvc.perform(get(url).header("Authorization", "Bearer " + owner)).andExpect(status().isOk());
+    }
     @Test void t5DeniesTechnicianOrderCreationAndAttendantFinancialAccess() throws Exception {
+        plan("PROFESSIONAL");
         var tech = tokenFor(create("TECHNICIAN"));
         var attendant = tokenFor(create("ATTENDANT"));
         mvc.perform(post("/api/v1/work-orders").header("Authorization", "Bearer " + tech)

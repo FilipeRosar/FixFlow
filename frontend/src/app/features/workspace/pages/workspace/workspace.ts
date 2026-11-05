@@ -145,7 +145,9 @@ export class Workspace implements OnInit {
         },
         error: (error) =>
           this.status.set(
-            error.status === 409 ? 'E-mail já cadastrado.' : 'Confira os dados e tente novamente.',
+            error.error?.code === 'PLAN_LIMIT_REACHED'
+              ? 'Limite de usuários do plano atingido. Faça upgrade do plano para continuar criando.'
+              : error.status === 409 ? 'E-mail já cadastrado.' : 'Confira os dados e tente novamente.',
           ),
       });
   }

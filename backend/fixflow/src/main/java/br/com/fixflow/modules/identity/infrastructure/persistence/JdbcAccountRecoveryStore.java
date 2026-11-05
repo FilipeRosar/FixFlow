@@ -8,6 +8,7 @@ import java.util.Optional;
 public class JdbcAccountRecoveryStore implements AccountRecoveryStore {
     private final JdbcTemplate jdbc;
     public JdbcAccountRecoveryStore(JdbcTemplate jdbc) { this.jdbc = jdbc; }
+
     @Transactional
     public Optional<String> issue(String email, String tokenHash) {
         return jdbc.query("SELECT * FROM public.auth_issue_password_reset(?, ?)", (rs, n) -> rs.getString(1), email, tokenHash).stream().findFirst();

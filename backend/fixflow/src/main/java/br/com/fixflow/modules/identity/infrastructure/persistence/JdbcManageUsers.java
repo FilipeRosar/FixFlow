@@ -52,6 +52,12 @@ public class JdbcManageUsers implements ManageUsers {
                 audit.record(member.userId(), "USER_CREATED", "USER", user.userId(), "{}");
                 return user;
             } catch (DuplicateKeyException exception) { throw new EmailAlreadyRegisteredException(); }
+            catch (org.springframework.dao.DataAccessException exception) {
+                if (exception.getMostSpecificCause() instanceof java.sql.SQLException sql
+                        && "P0001".equals(sql.getSQLState()) && sql.getMessage().contains("USER_PLAN_LIMIT"))
+                    throw new br.com.fixflow.modules.tenants.domain.PlanLimitExceededException("usuários");
+                throw exception;
+            }
         });
     }
     @Override
