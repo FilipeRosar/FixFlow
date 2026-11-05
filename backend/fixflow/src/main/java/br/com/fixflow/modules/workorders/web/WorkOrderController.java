@@ -24,5 +24,17 @@ public class WorkOrderController {
                 request.receivedAccessories().stream().map(String::strip).toList(), request.physicalCondition().strip());
         return ResponseEntity.created(URI.create("/api/v1/work-orders/" + order.id())).body(order);
     }
+    public record TransitionRequest(@NotBlank @Size(max = 30) String toStatus,
+                                    @NotNull @Min(0) Integer version, @Size(max = 2000) String reason,
+                                    Boolean paymentOverride) { }
+    @PatchMapping("/{id}/status") public WorkOrder transition(@PathVariable UUID id, @Valid @RequestBody TransitionRequest request) {
+        return orders.transition(id, request.toStatus(), request.version(),
+                request.reason() == null ? null : request.reason().strip(), Boolean.TRUE.equals(request.paymentOverride()));
+    }
+    @GetMapping("/technicians") public List<WorkOrders.Technician> technicians() { return orders.technicians(); }
+    public record AssignTechnicianRequest(@NotNull UUID technicianId, @NotNull @Min(0) Integer version) { }
+    @PatchMapping("/{id}/technician") public WorkOrder assignTechnician(@PathVariable UUID id, @Valid @RequestBody AssignTechnicianRequest request) {
+        return orders.assignTechnician(id, request.technicianId(), request.version());
+    }
     @GetMapping("/{id}") public WorkOrder get(@PathVariable UUID id) { return orders.get(id); }
 }

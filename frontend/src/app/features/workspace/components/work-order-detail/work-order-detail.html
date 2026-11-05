@@ -50,6 +50,103 @@
         }
       </article>
     </div>
+    <section class="card status-editor" aria-labelledby="technician-heading">
+      <div class="directory-heading"><h2 id="technician-heading">Técnico responsável</h2></div>
+      <div class="technician-content">
+        <p class="technician-current">{{ item.technicianName || 'Nenhum técnico atribuído' }}</p>
+        @if (canAssign && item.status !== 'ENTREGUE' && item.status !== 'CANCELADA') {
+          <form class="technician-form" (ngSubmit)="assignTechnician()">
+            <label
+              >Técnico<select
+                name="technicianId"
+                [(ngModel)]="selectedTechnician"
+                (focus)="loadTechnicians()"
+                (click)="loadTechnicians()"
+                [disabled]="assigning() || changing()"
+                required
+              >
+                <option value="">
+                  {{ techniciansLoading() ? 'Carregando técnicos…' : 'Selecione um técnico' }}
+                </option>
+
+                @for (technician of technicians(); track technician.userId) {
+                  <option [value]="technician.userId">{{ technician.fullName }}</option>
+                }
+              </select></label
+            >
+            <button
+              class="primary"
+              type="submit"
+              [disabled]="
+                !selectedTechnician ||
+                selectedTechnician === item.technicianId ||
+                assigning() ||
+                changing()
+              "
+            >
+              {{ assigning() ? 'Atribuindo…' : 'Atribuir técnico' }}
+            </button>
+          </form>
+          <p class="assignment-hint">
+            Selecione um técnico ativo da empresa antes de iniciar o diagnóstico. O proprietário
+            também pode assumir o atendimento.
+          </p>
+          @if (techniciansLoaded && !techniciansLoading() && !technicians().length) {
+            <p role="status" class="assignment-hint">Nenhum técnico ativo disponível na empresa.</p>
+          }
+        }
+        @if (assignmentNotice()) {
+          <p role="status" class="notice">{{ assignmentNotice() }}</p>
+        }
+        @if (assignmentError()) {
+          <p role="alert" class="error">{{ assignmentError() }}</p>
+        }
+      </div>
+    </section>
+    @if (transitionNotice()) {
+      <p class="notice transition-message" role="status">{{ transitionNotice() }}</p>
+    }
+    @if (transitionError()) {
+      <p class="error transition-message" role="alert">{{ transitionError() }}</p>
+    }
+    @if (targets(item.status).length) {
+      <form class="card status-editor" (ngSubmit)="changeStatus()">
+        <div class="directory-heading">
+          <div><h2>Próxima etapa do atendimento</h2></div>
+        </div>
+        <fieldset [disabled]="changing() || assigning()">
+          <label
+            >Alterar estado para<select name="target" [(ngModel)]="target" required>
+              <option value="">Selecione a próxima etapa</option>
+              @for (status of targets(item.status); track status) {
+                <option [value]="status">{{ statusLabel(status) }}</option>
+              }
+            </select></label
+          >
+          <label
+            >Motivo ou justificativa<textarea
+              name="reason"
+              [(ngModel)]="reason"
+              maxlength="2000"
+              rows="3"
+              placeholder="Obrigatório para cancelar, declarar sem reparo ou aprovar manualmente."
+            ></textarea>
+          </label>
+          @if (role === 'OWNER' && item.status === 'PRONTA' && target === 'ENTREGUE') {
+            <label class="override"
+              ><input type="checkbox" name="paymentOverride" [(ngModel)]="paymentOverride" />
+              Autorizar entrega com pagamento pendente (exige justificativa)</label
+            >
+          }
+          <div class="status-actions">
+            <p>Os requisitos da próxima etapa serão conferidos ao confirmar.</p>
+            <button class="primary" type="submit" [disabled]="!target || changing()">
+              {{ changing() ? 'Atualizando…' : 'Confirmar transição' }}
+            </button>
+          </div>
+        </fieldset>
+      </form>
+    }
   } @else {
     <a class="back-link" routerLink="/inicio/clientes">← Voltar para clientes</a>
     <h1 id="order-heading">Consultar ordem de serviço</h1>

@@ -574,3 +574,100 @@ status atual, com retorno ao histórico. A resposta da API inclui `customerName`
 `equipmentLabel` e `serialNumber`; as associações usam tenant e ID, inclusive
 para registros com exclusão lógica. Falhas 403/404 e indisponibilidade da API
 são tratadas sem mostrar dados de uma consulta anterior.
+
+
+## US-021 — Máquina de estados da OS
+
+`PATCH /api/v1/work-orders/{id}/status` recebe:
+
+```json
+{
+  "toStatus": "EM_DIAGNOSTICO",
+  "version": 0,
+  "reason": null,
+  "paymentOverride": false
+}
+```
+
+`version` é obrigatório e deve ser o valor retornado pela consulta da OS. O
+endpoint autoriza o vínculo atual, bloqueia a linha da OS e atualiza com
+`WHERE version = ?`, incrementando a versão. Assim, duas requisições com a mesma
+versão têm apenas um vencedor. Requisições antigas retornam 409 com
+`WORK_ORDER_VERSION_CONFLICT`. A persistência usa JDBC, portanto aplica a
+comparação de versão explicitamente em vez de uma anotação JPA `@Version`.
+
+A classe de domínio `WorkOrderStateMachine` centraliza a tabela da seção 14,
+as permissões e os guards. Aresta inexistente, estado terminal ou pré-condição
+não satisfeita retorna 409 `INVALID_STATE_TRANSITION`; falta de permissão retorna
+403; OS de outro tenant ou inexistente retorna 404. Apenas proprietário e técnico
+atribuído executam etapas técnicas. Proprietário e atendente executam as etapas
+de recepção. Aprovação manual exige justificativa. O contexto de domínio
+`CUSTOMER` é restrito a aprovar/rejeitar: não pode ser escolhido pelo endpoint
+autenticado e sua integração com link público pertence ao módulo de orçamento.
+
+Cancelamento segue a linha “estados pré-manutenção” da tabela 14.2: RECEBIDA,
+EM_DIAGNOSTICO, AGUARDANDO_ORCAMENTO, AGUARDANDO_APROVACAO, APROVADA,
+ORCAMENTO_REJEITADO e SEM_REPARO. Exige motivo e ausência de início de manutenção
+ou consumo de peças. O diagrama 14.1 mostra apenas os quatro primeiros casos;
+a implementação segue a regra mais abrangente da tabela. ENTREGUE e CANCELADA
+não permitem saída nem repetição do mesmo estado.
+
+Cada alteração grava histórico com origem USER, ator, motivo, estados anterior e
+novo, auditoria `WORK_ORDER_STATUS_CHANGED` e o evento especificado na seção 14.
+A volta de ORCAMENTO_REJEITADO para AGUARDANDO_ORCAMENTO não tem evento definido
+na tabela, mas continua sendo auditada. Falhas na outbox revertem status, versão,
+histórico e auditoria. Entrega define data e, em reparos prontos, prazo de garantia.
+Uma exceção de pagamento só pode ser autorizada pelo proprietário, com motivo,
+e fica registrada no histórico/auditoria/evento.
+
+### Contrato de integração dos guards
+
+Os módulos de atribuição, diagnóstico, orçamento, execução, estoque e pagamentos
+ainda precisam fornecer seus dados de negócio. A migration V27 cria a projeção
+interna `work_order_transition_facts` para esse contrato. Ela **não é editável por
+endpoint nem por flags do PATCH**. Cada módulo deve gravar sua evidência na mesma
+transação da operação real, bloqueando primeiro a OS e depois a projeção. A
+máquina não fabrica diagnósticos, itens, pagamentos ou baixas para liberar etapas.
+Ausência de evidência bloqueia a transição com 409. Não há valores iniciais que
+considerem pagamento quitado ou taxa de diagnóstico registrada automaticamente.
+A taxa, mesmo isenta, deve ter registro explícito. Garantia usa os dias gravados
+pela operação de negócio (zero significa sem prazo adicional).
+
+A projeção armazena técnico (FK de vínculo por tenant, validado como ativo e com
+papel técnico/proprietário), diagnóstico, referência e versão do orçamento, itens,
+total, validade e decisão, serviços, consumo/baixa de peças, quitação, registro de
+taxa, peça faltante e início de manutenção. Revisão revoga token e limpa a referência
+ao orçamento anterior, incrementando sua versão; um novo envio exige nova evidência.
+Envio gera token aleatório de 256 bits: só o hash SHA-256 fica na projeção; o token
+original segue no evento QuoteSent para o consumidor de notificação, sem auditoria
+ou logs. Aprovação, rejeição, cancelamento, revisão e entrega revogam o token.
+A API pública de orçamento e o consumo desse token não fazem parte desta US.
+
+A tela de consulta oferece transições por perfil, justificativa e exceção de
+pagamento para o proprietário. A lista mostra as arestas possíveis; o servidor
+verifica as pré-condições ao confirmar. Conflito de versão recarrega a consulta.
+
+Validação: `WorkOrderStateMachineTest` cobre os 144 pares de estados, as 22
+arestas permitidas, papéis e guards; `WorkOrderT4IntegrationTest` verifica o caso
+T4 RECEBIDA → EM_MANUTENCAO, ciclo completo, efeitos, revisão de token, isolamento,
+concorrência e rollback após falha de outbox. As evidências dos módulos futuros
+são provisionadas diretamente pelas fixtures de teste, sem endpoints de bypass.
+
+
+### Atribuição de técnico na consulta da OS
+
+O painel **Técnico responsável** permite que proprietário e atendente atribuam um
+usuário ativo de papel `TECHNICIAN` ou `OWNER` da mesma empresa. A lista usa
+`GET /api/v1/work-orders/technicians` e expõe somente `userId` e `fullName`.
+A migration V28 oferece uma função restrita ao tenant para esses dados, sem
+conceder leitura da tabela global `users` à role de execução.
+
+`PATCH /api/v1/work-orders/{id}/technician` recebe `technicianId` e `version`.
+A atribuição atualiza a projeção dos guards, incrementa a versão da OS e grava
+`WORK_ORDER_TECHNICIAN_ASSIGNED` na auditoria e `WorkOrderTechnicianAssigned` na
+outbox na mesma transação. Preserva diagnóstico e demais evidências existentes.
+OS encerradas não aceitam atribuição; técnico inexistente, suspenso, sem papel
+técnico ou de outra empresa é rejeitado. A lista e o guard verificam tanto o
+vínculo quanto o status global do usuário. A consulta retorna `technicianId` e
+`technicianName`. Após atribuir, a interface usa a nova versão para iniciar o
+diagnóstico. O técnico não pode se autoatribuir por este endpoint.
