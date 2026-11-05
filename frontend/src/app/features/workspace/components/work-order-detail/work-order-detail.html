@@ -1,8 +1,12 @@
 <section aria-labelledby="order-heading" [attr.aria-busy]="loading()">
   @if (order(); as item) {
-    <a class="back-link" [routerLink]="['/inicio/clientes', item.customerId, 'historico']"
-      >← Voltar ao histórico do cliente</a
-    >
+    @if (role === 'TECHNICIAN') {
+      <a class="back-link" routerLink="/inicio/ordens">← Voltar à minha fila</a>
+    } @else {
+      <a class="back-link" [routerLink]="['/inicio/clientes', item.customerId, 'historico']"
+        >← Voltar ao histórico do cliente</a
+      >
+    }
     <div class="heading page-heading">
       <div>
         <p class="eyebrow">CONSULTA DO ATENDIMENTO</p>

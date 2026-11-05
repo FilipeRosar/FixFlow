@@ -31,6 +31,11 @@ public class WorkOrderController {
         return orders.transition(id, request.toStatus(), request.version(),
                 request.reason() == null ? null : request.reason().strip(), Boolean.TRUE.equals(request.paymentOverride()));
     }
+    @GetMapping public WorkOrders.Page search(@RequestParam(required = false) UUID technicianId,
+            @RequestParam(required = false) String status, @RequestParam(defaultValue = "true") boolean openOnly,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return orders.search(technicianId, status, openOnly, page, size);
+    }
     @GetMapping("/technicians") public List<WorkOrders.Technician> technicians() { return orders.technicians(); }
     public record AssignTechnicianRequest(@NotNull UUID technicianId, @NotNull @Min(0) Integer version) { }
     @PatchMapping("/{id}/technician") public WorkOrder assignTechnician(@PathVariable UUID id, @Valid @RequestBody AssignTechnicianRequest request) {

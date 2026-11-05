@@ -226,6 +226,9 @@ describe('Work order details', () => {
       .flush({ ...order, technicianId: 'technician', technicianName: 'João Técnico' });
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('select[name="technicianId"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.back-link').getAttribute('href')).toBe(
+      '/inicio/ordens',
+    );
     expect(fixture.nativeElement.textContent).toContain('João Técnico');
   });
 });

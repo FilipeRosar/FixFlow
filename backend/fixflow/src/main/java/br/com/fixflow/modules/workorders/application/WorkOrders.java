@@ -7,6 +7,8 @@ import java.util.UUID;
 public interface WorkOrders {
     WorkOrder open(UUID customerId, UUID equipmentId, String reportedIssue, List<String> receivedAccessories, String physicalCondition);
     WorkOrder get(UUID id);
+    record Page(List<WorkOrder> content, long totalElements, int page, int size) { }
+    Page search(UUID technicianId, String status, boolean openOnly, int page, int size);
     record Technician(UUID userId, String fullName) { }
     List<Technician> technicians();
     WorkOrder assignTechnician(UUID id, UUID technicianId, int version);
