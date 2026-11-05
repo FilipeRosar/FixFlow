@@ -54,6 +54,66 @@
         }
       </article>
     </div>
+    @if (item.status === 'ENTREGUE') {
+      <section class="card delivery-receipt" aria-labelledby="delivery-heading">
+        <div class="delivery-receipt-heading">
+          <div>
+            <p class="eyebrow">ATENDIMENTO ENCERRADO</p>
+            <h2 id="delivery-heading">Entrega e garantia</h2>
+          </div>
+          <span class="delivery-confirmed">✓ Entregue</span>
+        </div>
+        <dl class="delivery-summary">
+          <div>
+            <dt>Entregue em</dt>
+            <dd>
+              {{
+                item.deliveredAt
+                  ? (item.deliveredAt | date: 'dd/MM/yyyy · HH:mm')
+                  : 'Data não registrada'
+              }}
+            </dd>
+          </div>
+          <div>
+            <dt>Responsável pela entrega</dt>
+            <dd>{{ item.deliveredByName || 'Não registrado' }}</dd>
+          </div>
+          <div>
+            <dt>Prazo adicional</dt>
+            <dd>
+              {{
+                item.warrantyDays ? item.warrantyDays + ' dias' : 'Sem prazo adicional registrado'
+              }}
+            </dd>
+          </div>
+          <div>
+            <dt>Garantia até</dt>
+            <dd>
+              {{
+                item.warrantyUntil
+                  ? (item.warrantyUntil | date: 'dd/MM/yyyy')
+                  : 'Sem vencimento adicional'
+              }}
+            </dd>
+          </div>
+        </dl>
+        @if (item.deliveryPaymentOverride) {
+          <div class="delivery-exception">
+            <strong>Entrega autorizada com pagamento pendente</strong>
+            <p>{{ item.deliveryReason }}</p>
+          </div>
+        }
+        @if (item.warrantyTerms) {
+          <details class="delivery-terms">
+            <summary>Termos registrados na entrega</summary>
+            <p>{{ item.warrantyTerms }}</p>
+          </details>
+        }
+        <p class="delivery-terminal-note">
+          Esta ordem foi encerrada. A entrega e a garantia ficam preservadas no histórico.
+        </p>
+      </section>
+    }
     <app-work-order-attachments
       [orderId]="item.id"
       (changed)="timelineRevision.set(timelineRevision() + 1)"
@@ -271,7 +331,7 @@
       <p class="error transition-message" role="alert">{{ transitionError() }}</p>
     }
     @if (targets(item.status).length) {
-      <form class="card status-editor" (ngSubmit)="changeStatus()">
+      <form class="card status-editor" #statusForm="ngForm" (ngSubmit)="changeStatus()">
         <div class="directory-heading">
           <div><h2>Próxima etapa do atendimento</h2></div>
         </div>
@@ -284,16 +344,46 @@
               }
             </select></label
           >
+          @if (target === 'ENTREGUE') {
+            <div class="delivery-confirmation">
+              <h3>Confirmar entrega do equipamento</h3>
+              <p>A OS será encerrada e não poderá ser reaberta.</p>
+              <span class="payment-evidence" [class.settled]="item.paymentSettled">{{
+                item.paymentSettled ? '✓ Quitação registrada' : 'Quitação ainda não registrada'
+              }}</span>
+              @if (!item.paymentSettled) {
+                <p>A entrega requer quitação ou autorização justificada do proprietário.</p>
+              }
+              @if (item.status === 'PRONTA') {
+                <label
+                  >Prazo adicional de garantia (dias)<input
+                    name="warrantyDays"
+                    type="number"
+                    [(ngModel)]="warrantyDays"
+                    required
+                    min="0"
+                    max="3650"
+                    step="1"
+                  /><small>Informe 0 para não registrar um prazo adicional.</small></label
+                >
+              } @else {
+                <p>Devolução sem reparo: não será registrado prazo adicional de garantia.</p>
+              }
+            </div>
+          }
           <label
             >Motivo ou justificativa<textarea
               name="reason"
               [(ngModel)]="reason"
               maxlength="2000"
+              [required]="
+                target === 'ENTREGUE' && role === 'OWNER' && paymentOverride && !item.paymentSettled
+              "
               rows="3"
               placeholder="Obrigatório para cancelar, declarar sem reparo ou aprovar manualmente."
             ></textarea>
           </label>
-          @if (role === 'OWNER' && item.status === 'PRONTA' && target === 'ENTREGUE') {
+          @if (role === 'OWNER' && target === 'ENTREGUE' && !item.paymentSettled) {
             <label class="override"
               ><input type="checkbox" name="paymentOverride" [(ngModel)]="paymentOverride" />
               Autorizar entrega com pagamento pendente (exige justificativa)</label
@@ -301,8 +391,23 @@
           }
           <div class="status-actions">
             <p>Os requisitos da próxima etapa serão conferidos ao confirmar.</p>
-            <button class="primary" type="submit" [disabled]="!target || changing()">
-              {{ changing() ? 'Atualizando…' : 'Confirmar transição' }}
+            <button
+              class="primary"
+              type="submit"
+              [disabled]="
+                !target ||
+                changing() ||
+                statusForm.invalid ||
+                (target === 'ENTREGUE' && !canConfirmDelivery(item))
+              "
+            >
+              {{
+                changing()
+                  ? 'Atualizando…'
+                  : target === 'ENTREGUE'
+                    ? 'Confirmar entrega'
+                    : 'Confirmar transição'
+              }}
             </button>
           </div>
         </fieldset>

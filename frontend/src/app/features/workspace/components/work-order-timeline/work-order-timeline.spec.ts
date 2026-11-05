@@ -109,4 +109,22 @@ describe('Work order timeline', () => {
     http.expectOne((r) => r.url.endsWith('/timeline')).flush(response());
     fixture.detectChanges();
   });
+  it('identifies the delivery payment exception and additional warranty in the timeline', () => {
+    const { fixture, request, page } = setup();
+    request.flush(
+      response([
+        {
+          ...entry,
+          toStatus: 'ENTREGUE',
+          details: { paymentOverride: true, warrantyDays: 90, warrantyUntil: '2027-02-03' },
+        },
+      ]),
+    );
+    fixture.detectChanges();
+    expect(page.querySelector('.event-payment-exception')?.textContent).toContain(
+      'pagamento pendente',
+    );
+    expect(page.textContent).toContain('90 dias');
+    expect(page.textContent).toContain('03/02/2027');
+  });
 });

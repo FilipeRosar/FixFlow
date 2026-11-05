@@ -31,6 +31,12 @@ public class WorkOrderController {
         return orders.transition(id, request.toStatus(), request.version(),
                 request.reason() == null ? null : request.reason().strip(), Boolean.TRUE.equals(request.paymentOverride()));
     }
+    public record DeliveryRequest(@NotNull @Min(0) Integer version, @NotNull @DecimalMin("0") @DecimalMax("3650") @Digits(integer = 4, fraction = 0) java.math.BigDecimal warrantyDays,
+                                  @Size(max = 2000) String reason, Boolean paymentOverride) { }
+    @PostMapping("/{id}/deliver") public WorkOrder deliver(@PathVariable UUID id, @Valid @RequestBody DeliveryRequest request) {
+        return orders.deliver(id, request.version(), request.warrantyDays().intValueExact(), request.reason() == null ? null : request.reason().strip(),
+                Boolean.TRUE.equals(request.paymentOverride()));
+    }
     @GetMapping public WorkOrders.Page search(@RequestParam(required = false) UUID technicianId,
             @RequestParam(required = false) String status, @RequestParam(defaultValue = "true") boolean openOnly,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {

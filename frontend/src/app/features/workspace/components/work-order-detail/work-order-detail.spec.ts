@@ -267,12 +267,10 @@ describe('Work order details', () => {
     http.expectOne('/api/v1/work-orders/order/diagnosis').flush([first]);
     component['findings'] = 'Fonte em curto';
     component['saveDiagnosis']();
-    http
-      .expectOne('/api/v1/work-orders/order/diagnosis')
-      .flush({
-        diagnosis: { ...first, id: 'diagnosis-2', revision: 2, findings: 'Fonte em curto' },
-        workOrderVersion: 4,
-      });
+    http.expectOne('/api/v1/work-orders/order/diagnosis').flush({
+      diagnosis: { ...first, id: 'diagnosis-2', revision: 2, findings: 'Fonte em curto' },
+      workOrderVersion: 4,
+    });
     expect(component['diagnosisHistory']().map((item) => item.revision)).toEqual([2, 1]);
     component['target'] = 'AGUARDANDO_ORCAMENTO';
     component['changeStatus']();
@@ -336,5 +334,124 @@ describe('Work order details', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Revisão 1');
     expect(fixture.nativeElement.textContent).toContain('Solução');
+  });
+  function deliverySetup(paid: boolean, role = 'OWNER', state = 'PRONTA') {
+    TestBed.overrideProvider(SessionService, { useValue: { session: signal({ role }) } });
+    const fixture = TestBed.createComponent(WorkOrderDetail);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    const data = {
+      ...order,
+      status: state,
+      paymentSettled: paid,
+      deliveredAt: state === 'ENTREGUE' ? '2026-11-05T15:00:00Z' : null,
+      warrantyDays: state === 'ENTREGUE' ? 90 : null,
+      warrantyUntil: state === 'ENTREGUE' ? '2027-02-03' : null,
+      deliveredByName: 'Ana',
+      warrantyTerms: 'Termos originais',
+      deliveryPaymentOverride: false,
+      deliveryReason: null,
+    };
+    http.expectOne('/api/v1/work-orders/order').flush(data);
+    fixture.detectChanges();
+    return {
+      fixture,
+      http,
+      component: fixture.componentInstance,
+      data,
+      page: fixture.nativeElement as HTMLElement,
+    };
+  }
+  it('confirms a paid delivery through the dedicated endpoint and shows the warranty receipt', () => {
+    const { fixture, http, component, data, page } = deliverySetup(true);
+    component['target'] = 'ENTREGUE';
+    component['warrantyDays'] = 90;
+    component['changeStatus']();
+    component['changeStatus']();
+    const request = http.expectOne('/api/v1/work-orders/order/deliver');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({
+      version: 0,
+      warrantyDays: 90,
+      paymentOverride: false,
+      reason: null,
+    });
+    request.flush({
+      ...data,
+      status: 'ENTREGUE',
+      version: 1,
+      deliveredAt: '2026-11-05T15:00:00Z',
+      warrantyDays: 90,
+      warrantyUntil: '2027-02-03',
+    });
+    fixture.detectChanges();
+    expect(page.querySelector('.delivery-receipt')?.textContent).toContain('90 dias');
+    expect(page.querySelector('.delivery-receipt')?.textContent).toContain('03/02/2027');
+    expect(page.querySelector('form')).toBeNull();
+    expect(page.textContent).toContain('Entrega confirmada');
+  });
+  it('requires an explicit justified owner exception for unpaid delivery and keeps payment pending', () => {
+    const { fixture, http, component, data, page } = deliverySetup(false);
+    component['target'] = 'ENTREGUE';
+    component['changeStatus']();
+    http.expectNone('/api/v1/work-orders/order/deliver');
+    component['paymentOverride'] = true;
+    component['changeStatus']();
+    http.expectNone('/api/v1/work-orders/order/deliver');
+    component['reason'] = ' Cobrança posterior autorizada ';
+    component['changeStatus']();
+    const request = http.expectOne('/api/v1/work-orders/order/deliver');
+    expect(request.request.body.paymentOverride).toBe(true);
+    expect(request.request.body.reason).toBe('Cobrança posterior autorizada');
+    request.flush({
+      ...data,
+      status: 'ENTREGUE',
+      version: 1,
+      deliveryPaymentOverride: true,
+      deliveryReason: 'Cobrança posterior autorizada',
+      warrantyDays: 0,
+    });
+    fixture.detectChanges();
+    expect(page.querySelector('.delivery-exception')?.textContent).toContain('pagamento pendente');
+    expect(page.querySelector('.delivery-exception')?.textContent).toContain(
+      'Cobrança posterior autorizada',
+    );
+  });
+  it('does not offer or accept an attendant payment override', () => {
+    const { fixture, http, component, page } = deliverySetup(false, 'ATTENDANT');
+    component['target'] = 'ENTREGUE';
+    fixture.detectChanges();
+    expect(page.querySelector('.override')).toBeNull();
+    component['paymentOverride'] = true;
+    component['reason'] = 'Tentativa';
+    component['changeStatus']();
+    http.expectNone('/api/v1/work-orders/order/deliver');
+    expect(page.querySelector<HTMLButtonElement>('.status-actions button')?.disabled).toBe(true);
+  });
+  it('keeps a delivered order terminal and displays the stored terms', () => {
+    const { component, page } = deliverySetup(true, 'OWNER', 'ENTREGUE');
+    expect(component['targets']('ENTREGUE')).toEqual([]);
+    expect(page.querySelector('form')).toBeNull();
+    expect(page.querySelector('.delivery-terms')?.textContent).toContain('Termos originais');
+    expect(page.querySelector('.delivery-receipt')?.textContent).toContain('Ana');
+  });
+  it('rejects fractional or out-of-range warranty periods before requesting delivery', () => {
+    const { component, http } = deliverySetup(true);
+    component['target'] = 'ENTREGUE';
+    for (const days of [-1, 1.5, 3651]) {
+      component['warrantyDays'] = days;
+      component['changeStatus']();
+    }
+    http.expectNone('/api/v1/work-orders/order/deliver');
+    expect(component['transitionError']()).toContain('dias inteiros');
+  });
+  it('returns an unrepaired order with no additional warranty period', () => {
+    const { component, http, data } = deliverySetup(true, 'OWNER', 'SEM_REPARO');
+    component['target'] = 'ENTREGUE';
+    component['warrantyDays'] = 90;
+    component['changeStatus']();
+    const request = http.expectOne('/api/v1/work-orders/order/deliver');
+    expect(request.request.body.warrantyDays).toBe(0);
+    request.flush({ ...data, status: 'ENTREGUE', version: 1, warrantyDays: 0 });
   });
 });

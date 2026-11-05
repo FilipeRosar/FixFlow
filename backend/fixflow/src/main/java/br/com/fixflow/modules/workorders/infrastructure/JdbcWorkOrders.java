@@ -7,6 +7,7 @@ import br.com.fixflow.modules.identity.domain.RolePermissions;
 import br.com.fixflow.shared.application.audit.AuditService;
 import br.com.fixflow.shared.application.outbox.OutboxService;
 import br.com.fixflow.shared.application.tenant.AuthorizedTenantOperations;
+import br.com.fixflow.shared.application.tenant.AuthorizedMembership;
 import br.com.fixflow.shared.infrastructure.security.CurrentAuthenticatedIdentity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -38,12 +39,17 @@ public class JdbcWorkOrders implements WorkOrders {
         if (tenant == null) throw new InsufficientAuthenticationException("Selecione uma empresa.");
         return tenant;
     }
-    private static final String SELECT = "SELECT w.*, c.name AS customer_name, concat_ws(' ', nullif(e.brand, ''), e.model) AS equipment_label, e.serial_number, f.technician_id, t.full_name AS technician_name, d.id AS diagnosis_id, d.revision AS diagnosis_revision, d.findings, d.probable_cause, d.proposed_solution, d.recorded_by, d.created_at AS diagnosis_created_at, a.full_name AS diagnosis_author FROM public.work_orders w JOIN public.customers c ON c.tenant_id = w.tenant_id AND c.id = w.customer_id LEFT JOIN public.equipment e ON e.tenant_id = w.tenant_id AND e.id = w.equipment_id LEFT JOIN public.work_order_transition_facts f ON f.tenant_id = w.tenant_id AND f.work_order_id = w.id LEFT JOIN public.work_order_team(w.tenant_id) t ON t.user_id = f.technician_id LEFT JOIN LATERAL (SELECT * FROM public.work_order_diagnoses d WHERE d.tenant_id = w.tenant_id AND d.work_order_id = w.id ORDER BY d.revision DESC LIMIT 1) d ON true LEFT JOIN public.work_order_team(w.tenant_id) a ON a.user_id = d.recorded_by";
+    private static final String SELECT = "SELECT w.*, coalesce(f.payment_settled, false) AS payment_settled, c.name AS customer_name, concat_ws(' ', nullif(e.brand, ''), e.model) AS equipment_label, e.serial_number, f.technician_id, t.full_name AS technician_name, d.id AS diagnosis_id, d.revision AS diagnosis_revision, d.findings, d.probable_cause, d.proposed_solution, d.recorded_by, d.created_at AS diagnosis_created_at, a.full_name AS diagnosis_author FROM public.work_orders w JOIN public.customers c ON c.tenant_id = w.tenant_id AND c.id = w.customer_id LEFT JOIN public.equipment e ON e.tenant_id = w.tenant_id AND e.id = w.equipment_id LEFT JOIN public.work_order_transition_facts f ON f.tenant_id = w.tenant_id AND f.work_order_id = w.id LEFT JOIN public.work_order_team(w.tenant_id) t ON t.user_id = f.technician_id LEFT JOIN LATERAL (SELECT * FROM public.work_order_diagnoses d WHERE d.tenant_id = w.tenant_id AND d.work_order_id = w.id ORDER BY d.revision DESC LIMIT 1) d ON true LEFT JOIN public.work_order_team(w.tenant_id) a ON a.user_id = d.recorded_by";
     private WorkOrder mapOrder(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new WorkOrder(rs.getObject("id", UUID.class), rs.getLong("number"), rs.getObject("customer_id", UUID.class),
                         rs.getObject("equipment_id", UUID.class), rs.getString("status"), rs.getString("reported_issue"),
                         mapper.readTree(rs.getString("received_accessories")).valueStream().map(n -> n.asText()).toList(),
-                        rs.getString("physical_condition"), rs.getTimestamp("created_at").toInstant(), rs.getInt("version"), rs.getString("customer_name"), rs.getString("equipment_label"), rs.getString("serial_number"), rs.getObject("technician_id", UUID.class), rs.getString("technician_name"), rs.getObject("diagnosis_id") == null ? null : new Diagnosis(rs.getObject("diagnosis_id", UUID.class), rs.getInt("diagnosis_revision"), rs.getString("findings"), rs.getString("probable_cause"), rs.getString("proposed_solution"), rs.getObject("recorded_by", UUID.class), rs.getString("diagnosis_author"), rs.getTimestamp("diagnosis_created_at").toInstant()));
+                        rs.getString("physical_condition"), rs.getTimestamp("created_at").toInstant(), rs.getInt("version"), rs.getString("customer_name"), rs.getString("equipment_label"), rs.getString("serial_number"), rs.getObject("technician_id", UUID.class), rs.getString("technician_name"), rs.getObject("diagnosis_id") == null ? null : new Diagnosis(rs.getObject("diagnosis_id", UUID.class), rs.getInt("diagnosis_revision"), rs.getString("findings"), rs.getString("probable_cause"), rs.getString("proposed_solution"), rs.getObject("recorded_by", UUID.class), rs.getString("diagnosis_author"), rs.getTimestamp("diagnosis_created_at").toInstant()),
+                        rs.getTimestamp("ready_at") == null ? null : rs.getTimestamp("ready_at").toInstant(),
+                        rs.getTimestamp("delivered_at") == null ? null : rs.getTimestamp("delivered_at").toInstant(),
+                        rs.getObject("warranty_days", Integer.class), rs.getObject("warranty_until", java.time.LocalDate.class),
+                        rs.getBoolean("payment_settled"), rs.getBoolean("delivery_payment_override"), rs.getString("delivery_reason"),
+                        rs.getString("delivered_by_name"), rs.getString("warranty_terms"));
     }
     @Override public Page search(UUID technicianId, String status, boolean openOnly, int page, int size) {
         if (page < 0 || page > 1000000 || size < 1 || size > 100)
@@ -130,68 +136,94 @@ public class JdbcWorkOrders implements WorkOrders {
         return rows.isEmpty() ? WorkOrderFacts.empty() : rows.getFirst();
     }
     @Override public WorkOrder transition(UUID id, String toStatus, int version, String reason, boolean paymentOverride) {
-        return tenants.execute(tenant(), m -> {
-            var ids = jdbc.queryForList("SELECT id FROM public.work_orders WHERE tenant_id = ? AND id = ? FOR UPDATE", UUID.class, m.tenantId(), id);
-            if (ids.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "OS não encontrada.");
-            WorkOrder order = read(m.tenantId(), id);
-            var facts = facts(m.tenantId(), id);
-            // A technician must never inspect or mutate another technician's OS.
-            if (m.role().name().equals("TECHNICIAN") && !m.userId().equals(facts.technicianId())) throw new AccessDeniedException("OS não atribuída a este técnico.");
-            if (order.version() != version) throw new WorkOrderVersionConflictException();
-            WorkOrderStatus target;
-            try { target = WorkOrderStatus.valueOf(toStatus); }
-            catch (IllegalArgumentException exception) { throw new InvalidStateTransitionException("Estado de destino inválido."); }
-            var from = WorkOrderStatus.valueOf(order.status());
-            var transition = new WorkOrderStateMachine().validate(from, target, m.role().name(), m.userId(), facts,
-                    reason, paymentOverride, java.time.Instant.now());
-            int changed = jdbc.update("""
-                    UPDATE public.work_orders SET status = ?, version = version + 1,
-                        ready_at = CASE WHEN ? = 'PRONTA' THEN CURRENT_TIMESTAMP ELSE ready_at END,
-                        delivered_at = CASE WHEN ? = 'ENTREGUE' THEN CURRENT_TIMESTAMP ELSE delivered_at END,
-                        warranty_days = CASE WHEN ? = 'ENTREGUE' AND ? = 'PRONTA' THEN ? ELSE warranty_days END,
-                        warranty_until = CASE WHEN ? = 'ENTREGUE' AND ? = 'PRONTA'
-                            THEN (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date + ? ELSE warranty_until END
-                    WHERE tenant_id = ? AND id = ? AND version = ?
-                    """, target.name(), target.name(), target.name(), target.name(), from.name(), facts.warrantyDays(),
-                    target.name(), from.name(), facts.warrantyDays(), m.tenantId(), id, version);
-            if (changed != 1) throw new WorkOrderVersionConflictException();
-            String publicToken = null;
-            if (target == WorkOrderStatus.AGUARDANDO_APROVACAO) {
-                byte[] bytes = new byte[32]; new java.security.SecureRandom().nextBytes(bytes);
-                publicToken = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-                String hash;
-                try { hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(publicToken.getBytes(java.nio.charset.StandardCharsets.UTF_8))); }
-                catch (java.security.NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
-                jdbc.update("UPDATE public.work_order_transition_facts SET quote_status = 'SENT', quote_token_hash = ? WHERE tenant_id = ? AND work_order_id = ?", hash, m.tenantId(), id);
-            }
-            if (target == WorkOrderStatus.APROVADA || target == WorkOrderStatus.ORCAMENTO_REJEITADO) {
-                jdbc.update("UPDATE public.work_order_transition_facts SET quote_status = ?, quote_token_hash = NULL WHERE tenant_id = ? AND work_order_id = ?",
-                        target == WorkOrderStatus.APROVADA ? "APPROVED" : "REJECTED", m.tenantId(), id);
-            }
-            if (target == WorkOrderStatus.AGUARDANDO_ORCAMENTO && from != WorkOrderStatus.EM_DIAGNOSTICO) {
-                jdbc.update("""
-                        UPDATE public.work_order_transition_facts SET quote_status = 'DRAFT', quote_id = NULL,
-                            quote_version = quote_version + 1, quote_token_hash = NULL,
-                            quote_item_count = 0, quote_total = 0, quote_valid_until = NULL
-                        WHERE tenant_id = ? AND work_order_id = ?
-                        """, m.tenantId(), id);
-            }
-            if (target == WorkOrderStatus.EM_MANUTENCAO) jdbc.update("UPDATE public.work_order_transition_facts SET maintenance_started = true WHERE tenant_id = ? AND work_order_id = ?", m.tenantId(), id);
-            if (target == WorkOrderStatus.CANCELADA || target == WorkOrderStatus.ENTREGUE)
-                jdbc.update("UPDATE public.work_order_transition_facts SET quote_token_hash = NULL WHERE tenant_id = ? AND work_order_id = ?", m.tenantId(), id);
+        return tenants.execute(tenant(), m -> transition(m, id, toStatus, version, reason, paymentOverride, null));
+    }
+    @Override public WorkOrder deliver(UUID id, int version, int warrantyDays, String reason, boolean paymentOverride) {
+        if (warrantyDays < 0 || warrantyDays > 3650) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Prazo adicional deve estar entre 0 e 3650 dias.");
+        return tenants.execute(tenant(), m -> transition(m, id, "ENTREGUE", version, reason, paymentOverride, warrantyDays));
+    }
+    private WorkOrder transition(AuthorizedMembership m, UUID id, String toStatus, int version, String reason,
+                                 boolean paymentOverride, Integer requestedWarrantyDays) {
+        var ids = jdbc.queryForList("SELECT id FROM public.work_orders WHERE tenant_id = ? AND id = ? FOR UPDATE", UUID.class, m.tenantId(), id);
+        if (ids.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "OS não encontrada.");
+        WorkOrder order = read(m.tenantId(), id);
+        var facts = facts(m.tenantId(), id);
+        // A technician must never inspect or mutate another technician's OS.
+        if (m.role().name().equals("TECHNICIAN") && !m.userId().equals(facts.technicianId())) throw new AccessDeniedException("OS não atribuída a este técnico.");
+        if (order.version() != version) throw new WorkOrderVersionConflictException();
+        WorkOrderStatus target;
+        try { target = WorkOrderStatus.valueOf(toStatus); }
+        catch (IllegalArgumentException exception) { throw new InvalidStateTransitionException("Estado de destino inválido."); }
+        var from = WorkOrderStatus.valueOf(order.status());
+        var transition = new WorkOrderStateMachine().validate(from, target, m.role().name(), m.userId(), facts,
+                reason, paymentOverride, java.time.Instant.now());
+        if (requestedWarrantyDays != null && from != WorkOrderStatus.PRONTA && requestedWarrantyDays != 0)
+            throw new InvalidStateTransitionException("Devoluções sem reparo não recebem prazo adicional de garantia.");
+        int warrantyDays = from == WorkOrderStatus.PRONTA ? (requestedWarrantyDays == null ? facts.warrantyDays() : requestedWarrantyDays) : 0;
+        java.time.Instant occurredAt = jdbc.queryForObject("SELECT clock_timestamp()", (rs, row) -> rs.getTimestamp(1).toInstant());
+        java.time.LocalDate warrantyUntil = target == WorkOrderStatus.ENTREGUE ? DeliveryWarranty.until(occurredAt, warrantyDays) : null;
+        boolean exceptionUsed = target == WorkOrderStatus.ENTREGUE && paymentOverride && !facts.paymentSettled();
+        String actorName = target == WorkOrderStatus.ENTREGUE ? jdbc.queryForObject("SELECT full_name FROM public.work_order_team(?) WHERE user_id = ?", String.class, m.tenantId(), m.userId()) : null;
+        String warrantyTerms = target == WorkOrderStatus.ENTREGUE && from == WorkOrderStatus.PRONTA ?
+                jdbc.queryForObject("SELECT coalesce((SELECT warranty_terms FROM public.tenant_settings WHERE tenant_id = ?), '')", String.class, m.tenantId()) : "";
+        int changed = jdbc.update("""
+                UPDATE public.work_orders SET status = ?, version = version + 1,
+                    ready_at = CASE WHEN ? = 'PRONTA' THEN ? ELSE ready_at END,
+                    delivered_at = CASE WHEN ? = 'ENTREGUE' THEN ? ELSE delivered_at END,
+                    warranty_days = CASE WHEN ? = 'ENTREGUE' THEN ? ELSE warranty_days END,
+                    warranty_until = CASE WHEN ? = 'ENTREGUE' THEN ? ELSE warranty_until END,
+                    delivered_by = CASE WHEN ? = 'ENTREGUE' THEN ? ELSE delivered_by END,
+                    delivered_by_name = CASE WHEN ? = 'ENTREGUE' THEN ? ELSE delivered_by_name END,
+                    delivery_reason = CASE WHEN ? = 'ENTREGUE' THEN ? ELSE delivery_reason END,
+                    delivery_payment_override = CASE WHEN ? = 'ENTREGUE' THEN ? ELSE delivery_payment_override END,
+                    warranty_terms = CASE WHEN ? = 'ENTREGUE' THEN ? ELSE warranty_terms END
+                WHERE tenant_id = ? AND id = ? AND version = ?
+                """, target.name(), target.name(), java.sql.Timestamp.from(occurredAt), target.name(), java.sql.Timestamp.from(occurredAt),
+                target.name(), warrantyDays, target.name(), warrantyUntil == null ? null : java.sql.Date.valueOf(warrantyUntil),
+                target.name(), m.userId(), target.name(), actorName, target.name(), reason, target.name(), exceptionUsed,
+                target.name(), warrantyTerms, m.tenantId(), id, version);
+        if (changed != 1) throw new WorkOrderVersionConflictException();
+        String publicToken = null;
+        if (target == WorkOrderStatus.AGUARDANDO_APROVACAO) {
+            byte[] bytes = new byte[32]; new java.security.SecureRandom().nextBytes(bytes);
+            publicToken = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+            String hash;
+            try { hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(publicToken.getBytes(java.nio.charset.StandardCharsets.UTF_8))); }
+            catch (java.security.NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
+            jdbc.update("UPDATE public.work_order_transition_facts SET quote_status = 'SENT', quote_token_hash = ? WHERE tenant_id = ? AND work_order_id = ?", hash, m.tenantId(), id);
+        }
+        if (target == WorkOrderStatus.APROVADA || target == WorkOrderStatus.ORCAMENTO_REJEITADO) {
+            jdbc.update("UPDATE public.work_order_transition_facts SET quote_status = ?, quote_token_hash = NULL WHERE tenant_id = ? AND work_order_id = ?",
+                    target == WorkOrderStatus.APROVADA ? "APPROVED" : "REJECTED", m.tenantId(), id);
+        }
+        if (target == WorkOrderStatus.AGUARDANDO_ORCAMENTO && from != WorkOrderStatus.EM_DIAGNOSTICO) {
             jdbc.update("""
-                    INSERT INTO public.work_order_status_history(id, tenant_id, work_order_id, from_status, to_status, changed_by, source, reason)
-                    VALUES (?, ?, ?, ?, ?, ?, 'USER', ?)
-                    """, UUID.randomUUID(), m.tenantId(), id, from.name(), target.name(), m.userId(), reason);
-            var payload = new java.util.LinkedHashMap<String, Object>();
-            payload.put("workOrderId", id); payload.put("fromStatus", from.name()); payload.put("toStatus", target.name());
-            payload.put("version", version + 1); payload.put("reason", reason); payload.put("paymentOverride", paymentOverride);
-            audit.record(m.userId(), "WORK_ORDER_STATUS_CHANGED", "WORK_ORDER", id, mapper.writeValueAsString(payload));
-            // Token is only delivered to the notification consumer, never to audit/logs.
-            if (publicToken != null) payload.put("publicToken", publicToken);
-            if (transition.eventType() != null) outbox.record("WorkOrder", id, transition.eventType(), mapper.writeValueAsString(payload));
-            return read(m.tenantId(), id);
-        });
+                    UPDATE public.work_order_transition_facts SET quote_status = 'DRAFT', quote_id = NULL,
+                        quote_version = quote_version + 1, quote_token_hash = NULL,
+                        quote_item_count = 0, quote_total = 0, quote_valid_until = NULL
+                    WHERE tenant_id = ? AND work_order_id = ?
+                    """, m.tenantId(), id);
+        }
+        if (target == WorkOrderStatus.EM_MANUTENCAO) jdbc.update("UPDATE public.work_order_transition_facts SET maintenance_started = true WHERE tenant_id = ? AND work_order_id = ?", m.tenantId(), id);
+        if (target == WorkOrderStatus.CANCELADA || target == WorkOrderStatus.ENTREGUE)
+            jdbc.update("UPDATE public.work_order_transition_facts SET quote_token_hash = NULL WHERE tenant_id = ? AND work_order_id = ?", m.tenantId(), id);
+        jdbc.update("""
+                INSERT INTO public.work_order_status_history(id, tenant_id, work_order_id, from_status, to_status, changed_by, source, reason)
+                VALUES (?, ?, ?, ?, ?, ?, 'USER', ?)
+                """, UUID.randomUUID(), m.tenantId(), id, from.name(), target.name(), m.userId(), reason);
+        var payload = new java.util.LinkedHashMap<String, Object>();
+        payload.put("workOrderId", id); payload.put("fromStatus", from.name()); payload.put("toStatus", target.name());
+        payload.put("version", version + 1); payload.put("reason", reason); payload.put("paymentOverride", exceptionUsed);
+        if (target == WorkOrderStatus.ENTREGUE) {
+            payload.put("deliveredAt", occurredAt.toString()); payload.put("warrantyDays", warrantyDays);
+            payload.put("warrantyUntil", warrantyUntil == null ? null : warrantyUntil.toString());
+        }
+        audit.record(m.userId(), "WORK_ORDER_STATUS_CHANGED", "WORK_ORDER", id, mapper.writeValueAsString(payload));
+        if (exceptionUsed) audit.record(m.userId(), "WORK_ORDER_UNPAID_DELIVERY_AUTHORIZED", "WORK_ORDER", id, mapper.writeValueAsString(payload));
+        // Token is only delivered to the notification consumer, never to audit/logs.
+        if (publicToken != null) payload.put("publicToken", publicToken);
+        if (transition.eventType() != null) outbox.record("WorkOrder", id, transition.eventType(), mapper.writeValueAsString(payload));
+        return read(m.tenantId(), id);
     }
     @Override public WorkOrder open(UUID customerId, UUID equipmentId, String issue, List<String> accessories, String condition) {
         UUID tenant = tenant();

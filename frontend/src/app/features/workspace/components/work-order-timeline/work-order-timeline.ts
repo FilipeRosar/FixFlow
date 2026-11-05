@@ -14,6 +14,9 @@ interface Entry {
   toStatus: string | null;
   reason: string | null;
   details: {
+    paymentOverride?: boolean;
+    warrantyDays?: number;
+    warrantyUntil?: string | null;
     technicianName?: string;
     revision?: number;
     description?: string;

@@ -36,6 +36,15 @@ interface WorkOrder {
   technicianId: string | null;
   technicianName: string | null;
   diagnosis: Diagnosis | null;
+  readyAt: string | null;
+  deliveredAt: string | null;
+  warrantyDays: number | null;
+  warrantyUntil: string | null;
+  paymentSettled: boolean;
+  deliveryPaymentOverride: boolean;
+  deliveryReason: string | null;
+  deliveredByName: string | null;
+  warrantyTerms: string;
 }
 @Component({
   selector: 'app-work-order-detail',
@@ -66,6 +75,13 @@ export class WorkOrderDetail implements OnInit {
   protected target = '';
   protected reason = '';
   protected paymentOverride = false;
+  protected warrantyDays = 0;
+  protected canConfirmDelivery(order: WorkOrder): boolean {
+    return (
+      !!order.paymentSettled ||
+      (this.role === 'OWNER' && this.paymentOverride && !!this.reason.trim())
+    );
+  }
   protected readonly canAssign = this.role === 'OWNER' || this.role === 'ATTENDANT';
   protected readonly technicians = signal<{ userId: string; fullName: string }[]>([]);
   protected readonly techniciansLoading = signal(false);
@@ -271,42 +287,57 @@ export class WorkOrderDetail implements OnInit {
       this.itemsSaving()
     )
       return;
+    const delivering = this.target === 'ENTREGUE';
+    const days = order.status === 'PRONTA' ? this.warrantyDays : 0;
+    if (delivering && (!Number.isInteger(days) || days < 0 || days > 3650)) {
+      this.transitionError.set('Informe um prazo adicional entre 0 e 3650 dias inteiros.');
+      return;
+    }
+    if (delivering && !this.canConfirmDelivery(order)) {
+      this.transitionError.set(
+        'A entrega exige quitação registrada ou autorização justificada do proprietário.',
+      );
+      return;
+    }
     this.changing.set(true);
     this.transitionError.set('');
     this.transitionNotice.set('');
-    this.http
-      .patch<WorkOrder>(`/api/v1/work-orders/${order.id}/status`, {
-        toStatus: this.target,
-        version: order.version,
-        reason: this.reason.trim() || null,
-        paymentOverride:
-          this.role === 'OWNER' &&
-          order.status === 'PRONTA' &&
-          this.target === 'ENTREGUE' &&
-          this.paymentOverride,
-      })
-      .pipe(takeUntilDestroyed(this.destroy))
-      .subscribe({
-        next: (updated) => {
-          this.order.set(updated);
-          this.changing.set(false);
-          this.target = '';
-          this.reason = '';
-          this.paymentOverride = false;
-          this.transitionNotice.set('Estado da OS atualizado.');
-        },
-        error: (error) => {
-          this.changing.set(false);
-          this.transitionError.set(
-            error.status === 409 && typeof error.error?.detail === 'string'
-              ? error.error.detail
-              : error.status === 403
-                ? 'Você não tem permissão para esta transição.'
-                : 'Não foi possível atualizar a OS. Tente novamente.',
-          );
-          if (error.error?.code === 'WORK_ORDER_VERSION_CONFLICT') this.retry.next();
-        },
-      });
+    const request = delivering
+      ? this.http.post<WorkOrder>(`/api/v1/work-orders/${order.id}/deliver`, {
+          version: order.version,
+          warrantyDays: days,
+          reason: this.reason.trim() || null,
+          paymentOverride: this.role === 'OWNER' && !order.paymentSettled && this.paymentOverride,
+        })
+      : this.http.patch<WorkOrder>(`/api/v1/work-orders/${order.id}/status`, {
+          toStatus: this.target,
+          version: order.version,
+          reason: this.reason.trim() || null,
+          paymentOverride: false,
+        });
+    request.pipe(takeUntilDestroyed(this.destroy)).subscribe({
+      next: (updated) => {
+        this.order.set(updated);
+        this.changing.set(false);
+        this.target = '';
+        this.reason = '';
+        this.paymentOverride = false;
+        this.transitionNotice.set(
+          delivering ? 'Entrega confirmada. A OS foi encerrada.' : 'Estado da OS atualizado.',
+        );
+      },
+      error: (error) => {
+        this.changing.set(false);
+        this.transitionError.set(
+          error.status === 409 && typeof error.error?.detail === 'string'
+            ? error.error.detail
+            : error.status === 403
+              ? 'Você não tem permissão para esta transição.'
+              : 'Não foi possível atualizar a OS. Tente novamente.',
+        );
+        if (error.error?.code === 'WORK_ORDER_VERSION_CONFLICT') this.retry.next();
+      },
+    });
   }
   private readonly route = inject(ActivatedRoute);
   private readonly destroy = inject(DestroyRef);
@@ -358,6 +389,7 @@ export class WorkOrderDetail implements OnInit {
           this.target = '';
           this.reason = '';
           this.paymentOverride = false;
+          this.warrantyDays = 0;
           this.order.set(null);
           this.loading.set(true);
           this.error.set('');

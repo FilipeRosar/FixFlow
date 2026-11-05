@@ -1111,3 +1111,86 @@ recuperação de erro.
 ```bash
 ./mvnw -Dtest=WorkOrderTimelineIntegrationTest,WorkOrderT4IntegrationTest,WorkOrderDiagnosisIntegrationTest,WorkOrderItemsT6T7IntegrationTest,WorkOrderAttachmentsT12IntegrationTest,ArchitectureTest test
 ```
+
+## US-027 — Entrega e garantia
+
+`POST /api/v1/work-orders/{id}/deliver` confirma a entrega com `version`,
+`warrantyDays` (inteiro de 0 a 3650), `reason` opcional e `paymentOverride` opcional.
+O prazo é obrigatório no endpoint dedicado. A resposta é a OS atualizada, com
+`readyAt`, `deliveredAt`, `warrantyDays`, `warrantyUntil`, `paymentSettled`,
+`deliveryPaymentOverride`, `deliveryReason`, `deliveredByName` e `warrantyTerms`.
+
+A operação reutiliza a máquina de estados e a mesma transação autorizada, sem
+abrir uma transação separada. Proprietário e atendente podem confirmar entrega;
+técnico não pode entregar, mesmo quando atribuído à OS. A OS é bloqueada antes
+de conferir estado, versão e evidências. Duas entregas concorrentes da mesma
+versão geram um sucesso e um `409`; repetir a entrega não altera datas nem gera
+um novo evento `WorkOrderDelivered`.
+
+### Pagamento e exceção
+
+Todas as entregas exigem `payment_settled=true`, inclusive devoluções de
+`SEM_REPARO` e `ORCAMENTO_REJEITADO`. A devolução sem reparo também mantém o guard
+independente de taxa de diagnóstico registrada (inclusive isenção explícita).
+Somente o Owner pode usar `paymentOverride=true`, com justificativa não vazia.
+Essa exceção não dispensa os demais guards e **não marca o pagamento como quitado**.
+
+O audit log mantém `WORK_ORDER_STATUS_CHANGED` e, quando a exceção realmente foi
+necessária, acrescenta `WORK_ORDER_UNPAID_DELIVERY_AUTHORIZED`, com autor, data,
+OS, motivo e snapshot da garantia. Se o pagamento já estava quitado, a flag
+histórica de exceção permanece falsa. A timeline da transição de entrega recebe
+`paymentOverride`, prazo e vencimento por sua projeção segura, sem duplicar o
+evento de estado. Falha na auditoria da exceção desfaz entrega, garantia,
+histórico, timeline e outbox na mesma transação.
+
+**Dependência US-050:** o registro real de pagamentos ainda não existe neste
+código. A US-027 usa a evidência server-side de quitação já estabelecida pela
+US-021 em `work_order_transition_facts`. A US-050 deverá calcular essa evidência
+com pagamentos confirmados/parciais e total aprovado, atualizando-a sob o mesmo
+bloqueio de OS. Não há endpoint ou checkbox que aceite `paymentSettled` ou
+`financialStatus` do cliente como comprovação. Na ausência da evidência, a entrega
+normal é bloqueada; a autorização justificada do proprietário continua disponível.
+Esta implementação não representa a entrega da US-050.
+
+### Datas e snapshots
+
+O instante da entrega vem de `clock_timestamp()` do PostgreSQL, obtido depois
+do bloqueio da OS. `DeliveryWarranty` calcula a data usando o calendário de
+`America/Sao_Paulo`: `data local da entrega + warrantyDays`, sem depender do relógio
+ou fuso do navegador. Zero representa ausência de **prazo adicional registrado**,
+com `warrantyUntil=null`. Devoluções sem reparo usam zero e rejeitam prazo positivo.
+
+Na confirmação são preservados o nome do responsável, o motivo da exceção e os
+termos de garantia atuais da empresa. Alterar o nome da conta ou os termos da
+empresa depois não reescreve o comprovante. O endpoint legado
+`PATCH /work-orders/{id}/status` continua usando os mesmos guards; quando usado
+para entrega de reparo, usa o prazo da projeção server-side existente.
+
+A migration `V34` adiciona esses snapshots e recupera responsável/motivo/flag de
+exceção das entregas legadas quando já registrados na timeline/auditoria. Datas
+antigas são preservadas, e termos antigos não conhecidos não são inventados.
+Um trigger impede mudar o estado de uma OS `ENTREGUE` ou reescrever seus campos
+de entrega/garantia, inclusive por UPDATE direto. Os registros financeiros
+futuros podem ser atualizados sem reabrir a OS. O estado `ENTREGUE` continua sem
+transições de saída, inclusive para ele mesmo.
+
+### Interface e validação
+
+Em **Próxima etapa → Entregue**, a tela apresenta a evidência de quitação,
+solicita o prazo adicional para serviços prontos e informa que a OS será encerrada.
+A exceção e sua justificativa só são oferecidas ao proprietário. Após confirmar,
+**Entrega e garantia** mostra data, responsável, prazo/vencimento, termos
+preservados e a exceção, se utilizada. A timeline destaca a entrega com pagamento
+pendente e o prazo adicional. Ordens entregues não oferecem nova transição.
+
+`WorkOrderDeliveryIntegrationTest` cobre entrega paga, tentativa de falsificar
+quitação, perfis, justificativa, exceção auditada, datas, prazo zero/inválido,
+devolução sem reparo, terminalidade, proteção no banco, concorrência, rollback,
+snapshots e compatibilidade do PATCH. `DeliveryWarrantyTest` cobre virada do dia
+no fuso brasileiro, anos bissextos, mudança de mês e limites. Os testes Angular
+cobrem endpoint de entrega, bloqueio sem quitação, autorização do proprietário,
+comprovante, terminalidade, dias inteiros e destaque na timeline.
+
+```bash
+./mvnw -Dtest='WorkOrder*Test,DeliveryWarrantyTest,ArchitectureTest' test
+```

@@ -247,3 +247,13 @@
     flex-wrap: wrap;
   }
 }
+
+.event-payment-exception {
+  font-size: 11px;
+  color: #dfbe90;
+  background: #dfb7780c;
+  padding: 10px 12px;
+  border: 1px solid #dfb77825;
+  border-radius: 6px;
+  line-height: 1.7;
+}
