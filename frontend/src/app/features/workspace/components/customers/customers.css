@@ -881,3 +881,11 @@ fieldset {
     transition: none !important;
   }
 }
+
+.customer-equipment-link {
+  color: inherit;
+  text-decoration: none;
+}
+.customer-equipment-link:hover strong {
+  color: #c7b8f8;
+}

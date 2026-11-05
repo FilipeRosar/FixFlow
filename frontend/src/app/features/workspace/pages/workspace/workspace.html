@@ -90,9 +90,11 @@
       <a
         title="Visão geral"
         class="nav-item"
-        [class.active]="!settingsPage() && !customersPage()"
+        [class.active]="!settingsPage() && !customersPage() && !equipmentPage()"
         routerLink="/inicio"
-        [attr.aria-current]="!settingsPage() && !customersPage() ? 'page' : null"
+        [attr.aria-current]="
+          !settingsPage() && !customersPage() && !equipmentPage() ? 'page' : null
+        "
         (click)="closeMenu()"
         ><svg class="icon" aria-hidden="true"><use href="#op-dashboard" /></svg
         ><span>Visão geral</span></a
@@ -112,6 +114,17 @@
               <svg class="icon" aria-hidden="true"><use href="#op-settings" /></svg
               ><span>Configurações</span>
             </a>
+          } @else if (item.icon === 'devices') {
+            <a
+              class="nav-item"
+              routerLink="/inicio/equipamentos"
+              [class.active]="equipmentPage()"
+              [attr.aria-current]="equipmentPage() ? 'page' : null"
+              (click)="closeMenu()"
+              title="Equipamentos"
+              ><svg class="icon" aria-hidden="true"><use href="#op-devices" /></svg
+              ><span>Equipamentos</span></a
+            >
           } @else if (item.icon === 'clients') {
             <a
               class="nav-item"
@@ -181,13 +194,21 @@
           <svg class="icon" aria-hidden="true"><use href="#op-menu" /></svg></button
         ><span>Minha empresa</span><span class="breadcrumb-divider" aria-hidden="true">/</span
         ><strong>{{
-          settingsPage() ? 'Configurações' : customersPage() ? 'Clientes' : 'Visão geral'
+          settingsPage()
+            ? 'Configurações'
+            : customersPage()
+              ? 'Clientes'
+              : equipmentPage()
+                ? 'Equipamentos'
+                : 'Visão geral'
         }}</strong>
       </div>
       <span class="development"><span aria-hidden="true">●</span> Em desenvolvimento</span>
     </header>
     <div class="operation-content">
-      @if (customersPage()) {
+      @if (equipmentPage()) {
+        <app-equipment />
+      } @else if (customersPage()) {
         <app-customers />
       } @else if (settingsPage()) {
         <div class="page-heading">

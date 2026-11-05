@@ -226,7 +226,12 @@
                           >{{ initials(customer.name) }}</span
                         >
                         <div>
-                          <strong>{{ customer.name }}</strong
+                          <a
+                            class="customer-equipment-link"
+                            routerLink="/inicio/equipamentos"
+                            [queryParams]="{ customerId: customer.id }"
+                            [attr.aria-label]="'Equipamentos de ' + customer.name"
+                            ><strong>{{ customer.name }}</strong></a
                           ><span class="customer-subtitle"
                             >{{ customer.contacts.length }}
                             {{ customer.contacts.length === 1 ? 'contato' : 'contatos' }}</span
