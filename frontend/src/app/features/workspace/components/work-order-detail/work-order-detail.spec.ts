@@ -231,4 +231,110 @@ describe('Work order details', () => {
     );
     expect(fixture.nativeElement.textContent).toContain('João Técnico');
   });
+  it('saves diagnosis revisions and uses the updated version to advance to quoting', () => {
+    const fixture = TestBed.createComponent(WorkOrderDetail);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http
+      .expectOne('/api/v1/work-orders/order')
+      .flush({ ...order, status: 'EM_DIAGNOSTICO', version: 2, diagnosis: null });
+    const component = fixture.componentInstance;
+    component['findings'] = ' Não liga ';
+    component['probableCause'] = ' Fonte danificada ';
+    component['proposedSolution'] = ' Trocar fonte ';
+    component['saveDiagnosis']();
+    component['saveDiagnosis']();
+    const request = http.expectOne('/api/v1/work-orders/order/diagnosis');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({
+      version: 2,
+      findings: 'Não liga',
+      probableCause: 'Fonte danificada',
+      proposedSolution: 'Trocar fonte',
+    });
+    const first = {
+      id: 'diagnosis-1',
+      revision: 1,
+      findings: 'Não liga',
+      probableCause: 'Fonte danificada',
+      proposedSolution: 'Trocar fonte',
+      recordedBy: 'owner',
+      recordedByName: 'João',
+      createdAt: '2026-11-05T12:00:00Z',
+    };
+    request.flush({ diagnosis: first, workOrderVersion: 3 });
+    component['showDiagnosisHistory']();
+    http.expectOne('/api/v1/work-orders/order/diagnosis').flush([first]);
+    component['findings'] = 'Fonte em curto';
+    component['saveDiagnosis']();
+    http
+      .expectOne('/api/v1/work-orders/order/diagnosis')
+      .flush({
+        diagnosis: { ...first, id: 'diagnosis-2', revision: 2, findings: 'Fonte em curto' },
+        workOrderVersion: 4,
+      });
+    expect(component['diagnosisHistory']().map((item) => item.revision)).toEqual([2, 1]);
+    component['target'] = 'AGUARDANDO_ORCAMENTO';
+    component['changeStatus']();
+    const transition = http.expectOne('/api/v1/work-orders/order/status');
+    expect(transition.request.body.version).toBe(4);
+    transition.flush({
+      ...order,
+      status: 'AGUARDANDO_ORCAMENTO',
+      version: 5,
+      diagnosis: { ...first, revision: 2, findings: 'Fonte em curto' },
+    });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('textarea[name="findings"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Fonte em curto');
+  });
+  it('requires every diagnosis field and preserves drafts when saving fails', () => {
+    const fixture = TestBed.createComponent(WorkOrderDetail);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/v1/work-orders/order').flush({ ...order, status: 'EM_DIAGNOSTICO' });
+    const component = fixture.componentInstance;
+    component['findings'] = 'Achados';
+    component['saveDiagnosis']();
+    http.expectNone('/api/v1/work-orders/order/diagnosis');
+    component['probableCause'] = 'Causa';
+    component['proposedSolution'] = 'Solução';
+    component['saveDiagnosis']();
+    http
+      .expectOne('/api/v1/work-orders/order/diagnosis')
+      .flush({}, { status: 500, statusText: 'Internal Server Error' });
+    fixture.detectChanges();
+    expect(component['findings']).toBe('Achados');
+    expect(component['order']()?.version).toBe(0);
+    expect(component['diagnosing']()).toBe(false);
+    expect(fixture.nativeElement.textContent).toContain('Não foi possível salvar o diagnóstico');
+  });
+  it('shows a read-only diagnosis to attendants and loads its revision history', () => {
+    TestBed.overrideProvider(SessionService, {
+      useValue: { session: signal({ role: 'ATTENDANT' }) },
+    });
+    const fixture = TestBed.createComponent(WorkOrderDetail);
+    fixture.detectChanges();
+    const diagnosis = {
+      id: 'diagnosis',
+      revision: 1,
+      findings: 'Achados',
+      probableCause: 'Causa',
+      proposedSolution: 'Solução',
+      recordedBy: 'technician',
+      recordedByName: 'João',
+      createdAt: '2026-11-05T12:00:00Z',
+    };
+    const http = TestBed.inject(HttpTestingController);
+    http
+      .expectOne('/api/v1/work-orders/order')
+      .flush({ ...order, status: 'EM_DIAGNOSTICO', diagnosis });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('textarea[name="findings"]')).toBeNull();
+    fixture.componentInstance['showDiagnosisHistory']();
+    http.expectOne('/api/v1/work-orders/order/diagnosis').flush([diagnosis]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Revisão 1');
+    expect(fixture.nativeElement.textContent).toContain('Solução');
+  });
 });

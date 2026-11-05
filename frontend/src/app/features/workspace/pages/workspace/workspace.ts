@@ -1,3 +1,4 @@
+import { Overview } from '../../components/overview/overview';
 import { WorkOrderQueue } from '../../components/work-order-queue/work-order-queue';
 import { WorkOrderDetail } from '../../components/work-order-detail/work-order-detail';
 import { WorkOrdersPanel } from '../../components/work-orders/work-orders';
@@ -20,6 +21,7 @@ import { Membership } from '../../../../core/auth/dto/session';
 @Component({
   selector: 'app-workspace',
   imports: [
+    Overview,
     WorkOrderQueue,
     WorkOrderDetail,
     WorkOrdersPanel,
@@ -100,33 +102,6 @@ export class Workspace implements OnInit {
     { label: 'Financeiro', icon: 'finance' },
     { label: 'Configurações', icon: 'settings' },
   ];
-  protected readonly metrics = [
-    {
-      label: 'Ordens em andamento',
-      icon: 'orders',
-      tone: 'purple',
-      hint: 'Acompanhe os reparos em execução',
-    },
-    {
-      label: 'Aguardando aprovação',
-      icon: 'clock',
-      tone: 'amber',
-      hint: 'Orçamentos que precisam de retorno',
-    },
-    {
-      label: 'Prontos para entrega',
-      icon: 'check',
-      tone: 'green',
-      hint: 'Equipamentos aguardando retirada',
-    },
-    {
-      label: 'Receita do mês',
-      icon: 'finance',
-      tone: 'blue',
-      hint: 'Visão dos pagamentos registrados',
-    },
-  ];
-
   @HostListener('document:keydown.escape')
   protected closeMenu(): void {
     this.menuOpen.set(false);

@@ -32,6 +32,11 @@ describe('Protected workspace', () => {
     expect(
       harness.routeNativeElement?.querySelector('[aria-current="page"]')?.textContent,
     ).toContain('Visão geral');
+    for (const request of TestBed.inject(HttpTestingController).match(
+      (r) => r.url === '/api/v1/work-orders',
+    )) {
+      request.flush({ content: [], totalElements: 0 });
+    }
     TestBed.inject(HttpTestingController).verify();
   });
   it('opens settings as its own page and returns to the overview', async () => {
@@ -49,14 +54,12 @@ describe('Protected workspace', () => {
     http
       .expectOne('/api/oficinas/t/selecao')
       .flush({ userId: 'u', tenantId: 't', role: 'OWNER', companyName: 'Oficina Horizonte' });
-    http
-      .expectOne('/api/v1/tenant')
-      .flush({
-        logoDataUrl: null,
-        warrantyTerms: '',
-        quoteValidityDays: 7,
-        allowNegativeStock: false,
-      });
+    http.expectOne('/api/v1/tenant').flush({
+      logoDataUrl: null,
+      warrantyTerms: '',
+      quoteValidityDays: 7,
+      allowNegativeStock: false,
+    });
     harness.detectChanges();
     expect(
       harness.routeNativeElement?.querySelector('[aria-current="page"]')?.textContent,
@@ -74,7 +77,10 @@ describe('Protected workspace', () => {
       harness.routeNativeElement?.querySelector('[aria-current="page"]')?.textContent,
     ).toContain('Visão geral');
     expect(harness.routeNativeElement?.querySelector('app-company-settings')).toBeNull();
-    expect(harness.routeNativeElement?.querySelector('.metrics')).not.toBeNull();
+    for (const request of http.match((r) => r.url === '/api/v1/work-orders')) {
+      request.flush({ content: [], totalElements: 0 });
+    }
+    harness.detectChanges();
     http.verify();
   });
   it('redirects staff away from the settings page', async () => {
@@ -95,6 +101,10 @@ describe('Protected workspace', () => {
     expect(TestBed.inject(Router).url).toBe('/inicio');
     expect(harness.routeNativeElement?.querySelector('app-company-settings')).toBeNull();
     http.expectNone('/api/v1/tenant');
+    for (const request of http.match((r) => r.url === '/api/v1/work-orders')) {
+      request.flush({ content: [], totalElements: 0 });
+    }
+    harness.detectChanges();
     http.verify();
   });
 });

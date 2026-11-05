@@ -731,3 +731,40 @@ de técnico e o atalho de abertura. Requisições anteriores são canceladas ao 
 filtros. Estados sem resultados, carregamento e erros têm mensagens próprias.
 `WorkOrderQueueIntegrationTest` verifica escopo obrigatório, filtro explícito de
 outro técnico, totais, paginação, reatribuição, permissões e isolamento entre tenants.
+
+
+## US-023 — Registrar diagnóstico
+
+Na consulta da OS, **Diagnóstico técnico** recebe achados, causa provável e
+solução proposta (todos obrigatórios, até 4000 caracteres cada). Proprietário e
+técnico atualmente atribuído podem registrar/revisar apenas em `EM_DIAGNOSTICO`.
+Atendente pode consultar; técnico sem atribuição não acessa conteúdo nem histórico.
+Cada gravação acrescenta uma revisão imutável, com autor e data, em vez de alterar
+o registro anterior. A última revisão aparece na consulta; o botão de histórico
+carrega as revisões anteriores, da mais recente à mais antiga.
+
+- `POST /api/v1/work-orders/{id}/diagnosis`: recebe `version`, `findings`,
+  `probableCause` e `proposedSolution`. Retorna 201 com `diagnosis` e
+  `workOrderVersion` atualizado.
+- `GET /api/v1/work-orders/{id}/diagnosis`: lista o histórico autorizado.
+- A resposta de consulta da OS inclui `diagnosis`, nulo enquanto não registrado.
+
+A migration V30 cria `work_order_diagnoses` com RLS, FK composta por tenant/OS,
+revisão única por OS e somente SELECT/INSERT para a role de execução. O serviço
+bloqueia primeiro a OS e valida atribuição, estado e versão. Revisão, incremento
+da versão, auditoria `WORK_ORDER_DIAGNOSIS_RECORDED` e evento `DiagnosisRecorded`
+são atômicos. Conflito de versão retorna 409 `WORK_ORDER_VERSION_CONFLICT`.
+Gravar diagnóstico não muda o estado automaticamente: o evento
+`DiagnosisCompleted` continua sendo emitido na transição para orçamento.
+
+O guard `EM_DIAGNOSTICO → AGUARDANDO_ORCAMENTO` agora deriva sua evidência da tabela
+de diagnósticos, cujos três campos são obrigatórios. A antiga coluna textual
+`work_order_transition_facts.diagnosis` deixa de ser fonte de autorização: flags
+no PATCH ou texto legado na projeção não liberam a etapa. Não há migração que
+invente causa provável ou solução para valores legados; é necessário registrar
+um diagnóstico completo pela nova operação.
+
+`WorkOrderDiagnosisIntegrationTest` verifica registro, revisão, preservação de
+histórico, autor/data, guard real, leitura por atendente, técnico atribuído,
+reatribuição, isolamento entre tenants, validação, concorrência e rollback.
+As fixtures do T4 agora fornecem diagnóstico completo na tabela canônica.

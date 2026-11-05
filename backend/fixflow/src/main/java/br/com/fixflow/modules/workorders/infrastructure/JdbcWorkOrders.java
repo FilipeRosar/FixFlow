@@ -38,12 +38,12 @@ public class JdbcWorkOrders implements WorkOrders {
         if (tenant == null) throw new InsufficientAuthenticationException("Selecione uma empresa.");
         return tenant;
     }
-    private static final String SELECT = "SELECT w.*, c.name AS customer_name, concat_ws(' ', nullif(e.brand, ''), e.model) AS equipment_label, e.serial_number, f.technician_id, t.full_name AS technician_name FROM public.work_orders w JOIN public.customers c ON c.tenant_id = w.tenant_id AND c.id = w.customer_id LEFT JOIN public.equipment e ON e.tenant_id = w.tenant_id AND e.id = w.equipment_id LEFT JOIN public.work_order_transition_facts f ON f.tenant_id = w.tenant_id AND f.work_order_id = w.id LEFT JOIN public.work_order_team(w.tenant_id) t ON t.user_id = f.technician_id";
+    private static final String SELECT = "SELECT w.*, c.name AS customer_name, concat_ws(' ', nullif(e.brand, ''), e.model) AS equipment_label, e.serial_number, f.technician_id, t.full_name AS technician_name, d.id AS diagnosis_id, d.revision AS diagnosis_revision, d.findings, d.probable_cause, d.proposed_solution, d.recorded_by, d.created_at AS diagnosis_created_at, a.full_name AS diagnosis_author FROM public.work_orders w JOIN public.customers c ON c.tenant_id = w.tenant_id AND c.id = w.customer_id LEFT JOIN public.equipment e ON e.tenant_id = w.tenant_id AND e.id = w.equipment_id LEFT JOIN public.work_order_transition_facts f ON f.tenant_id = w.tenant_id AND f.work_order_id = w.id LEFT JOIN public.work_order_team(w.tenant_id) t ON t.user_id = f.technician_id LEFT JOIN LATERAL (SELECT * FROM public.work_order_diagnoses d WHERE d.tenant_id = w.tenant_id AND d.work_order_id = w.id ORDER BY d.revision DESC LIMIT 1) d ON true LEFT JOIN public.work_order_team(w.tenant_id) a ON a.user_id = d.recorded_by";
     private WorkOrder mapOrder(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new WorkOrder(rs.getObject("id", UUID.class), rs.getLong("number"), rs.getObject("customer_id", UUID.class),
                         rs.getObject("equipment_id", UUID.class), rs.getString("status"), rs.getString("reported_issue"),
                         mapper.readTree(rs.getString("received_accessories")).valueStream().map(n -> n.asText()).toList(),
-                        rs.getString("physical_condition"), rs.getTimestamp("created_at").toInstant(), rs.getInt("version"), rs.getString("customer_name"), rs.getString("equipment_label"), rs.getString("serial_number"), rs.getObject("technician_id", UUID.class), rs.getString("technician_name"));
+                        rs.getString("physical_condition"), rs.getTimestamp("created_at").toInstant(), rs.getInt("version"), rs.getString("customer_name"), rs.getString("equipment_label"), rs.getString("serial_number"), rs.getObject("technician_id", UUID.class), rs.getString("technician_name"), rs.getObject("diagnosis_id") == null ? null : new Diagnosis(rs.getObject("diagnosis_id", UUID.class), rs.getInt("diagnosis_revision"), rs.getString("findings"), rs.getString("probable_cause"), rs.getString("proposed_solution"), rs.getObject("recorded_by", UUID.class), rs.getString("diagnosis_author"), rs.getTimestamp("diagnosis_created_at").toInstant()));
     }
     @Override public Page search(UUID technicianId, String status, boolean openOnly, int page, int size) {
         if (page < 0 || page > 1000000 || size < 1 || size > 100)
@@ -117,11 +117,11 @@ public class JdbcWorkOrders implements WorkOrders {
     }
     private WorkOrderFacts facts(UUID tenant, UUID id) {
         var rows = jdbc.query("""
-                SELECT f.*, m.user_id AS active_technician FROM public.work_order_transition_facts f
+                SELECT f.*, CASE WHEN EXISTS (SELECT 1 FROM public.work_order_diagnoses d WHERE d.tenant_id = f.tenant_id AND d.work_order_id = f.work_order_id) THEN 'registered' END AS registered_diagnosis, m.user_id AS active_technician FROM public.work_order_transition_facts f
                 LEFT JOIN public.work_order_team(f.tenant_id) m ON m.user_id = f.technician_id
                     AND m.active AND m.role IN ('TECHNICIAN', 'OWNER')
                 WHERE f.tenant_id = ? AND f.work_order_id = ? FOR UPDATE OF f
-                """, (rs, row) -> new WorkOrderFacts(rs.getObject("active_technician", UUID.class), rs.getString("diagnosis"),
+                """, (rs, row) -> new WorkOrderFacts(rs.getObject("active_technician", UUID.class), rs.getString("registered_diagnosis"),
                 rs.getObject("quote_id", UUID.class), rs.getString("quote_status"), rs.getInt("quote_item_count"),
                 rs.getBigDecimal("quote_total"), rs.getTimestamp("quote_valid_until") == null ? null : rs.getTimestamp("quote_valid_until").toInstant(),
                 rs.getInt("service_count"), rs.getBoolean("parts_consumed"), rs.getBoolean("parts_written_off"),

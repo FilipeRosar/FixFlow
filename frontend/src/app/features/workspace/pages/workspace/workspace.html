@@ -290,6 +290,7 @@
             </div>
           }
         </div>
+        <app-overview />
         @if (session()?.role === 'OWNER') {
           <section class="panel user-management" aria-labelledby="users-heading">
             <div class="users-header">
@@ -495,125 +496,11 @@
             }
           </section>
         }
-        <section class="metrics" aria-label="Indicadores da assistência">
-          @for (metric of metrics; track metric.label) {
-            @if (metric.icon !== 'finance' || session()?.role === 'OWNER') {
-              <article class="metric">
-                <div class="metric-label">
-                  <h2>{{ metric.label }}</h2>
-                  <span class="metric-icon" [class]="'metric-icon ' + metric.tone"
-                    ><svg class="icon" aria-hidden="true">
-                      <use [attr.href]="'#op-' + metric.icon" /></svg
-                  ></span>
-                </div>
-                <strong aria-label="Indicador ainda não disponível">—</strong>
-                <p>{{ metric.hint }}</p>
-              </article>
-            }
-          }
-        </section>
-        <div class="overview-grid">
-          <section class="panel" aria-labelledby="movement-heading">
-            <div class="panel-heading">
-              <div>
-                <h2 id="movement-heading">Movimento da assistência</h2>
-                <p>Entrada e conclusão de ordens nesta semana</p>
-              </div>
-              <span class="period">Últimos 7 dias</span>
-            </div>
-            <div class="empty-chart">
-              <svg class="icon empty-icon" aria-hidden="true"><use href="#op-finance" /></svg>
-              <h3>O movimento vai aparecer aqui</h3>
-              <p>
-                Este espaço reunirá as entradas e conclusões quando o módulo de ordens estiver
-                disponível.
-              </p>
-            </div>
-          </section>
-          <section class="panel" aria-labelledby="stages-heading">
-            <div class="panel-heading">
-              <div>
-                <h2 id="stages-heading">Serviços por etapa</h2>
-                <p>Uma visão do seu fluxo de trabalho</p>
-              </div>
-            </div>
-            <div class="stages-empty">
-              <div class="empty-ring">
-                <span>—<small>serviços ativos</small></span>
-              </div>
-              <div class="stage-legend">
-                <span><i class="purple"></i> Em reparo <b>—</b></span
-                ><span><i class="blue"></i> Em análise <b>—</b></span
-                ><span><i class="amber"></i> Aguardando <b>—</b></span
-                ><span><i class="green"></i> Prontos <b>—</b></span>
-              </div>
-            </div>
-          </section>
-        </div>
-        <section class="panel recent-orders" aria-labelledby="orders-heading">
-          <div class="panel-heading">
-            <div>
-              <h2 id="orders-heading">Ordens recentes</h2>
-              <p>Acompanhe os últimos atendimentos</p>
-            </div>
-            <span class="coming-soon">Em breve</span>
-          </div>
-          <div class="table-scroll">
-            <table>
-              <caption class="sr-only">
-                As ordens serão listadas quando o módulo estiver disponível.
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Ordem</th>
-                  <th scope="col">Cliente</th>
-                  <th scope="col">Aparelho / serviço</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Previsão</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <div class="orders-empty">
-            <svg class="icon empty-icon" aria-hidden="true"><use href="#op-orders" /></svg>
-            <h3>O próximo passo é organizar seus atendimentos</h3>
-            <p>Abra uma nova ordem de serviço para registrar a entrada de um equipamento.</p>
-          </div>
-        </section>
-        <div class="activity-grid">
-          <section class="panel">
-            <div class="panel-heading"><h2>Atividade recente</h2></div>
-            <div class="small-empty">
-              <span class="empty-marker" aria-hidden="true">◷</span>
-              <div>
-                <h3>A história da sua operação</h3>
-                <p>
-                  Os registros de atendimento serão reunidos aqui conforme os módulos forem
-                  disponibilizados.
-                </p>
-              </div>
-            </div>
-          </section>
-          <section class="panel">
-            <div class="panel-heading"><h2>Precisa da sua atenção</h2></div>
-            <div class="small-empty">
-              <span class="empty-marker" aria-hidden="true">◇</span>
-              <div>
-                <h3>Um lugar para as pendências</h3>
-                <p>
-                  Orçamentos, retiradas e peças terão um espaço para você acompanhar o que vem a
-                  seguir.
-                </p>
-              </div>
-            </div>
-          </section>
-        </div>
         <section class="connection-panel" aria-label="Acesso à empresa">
           <div>
             <h2>Seu ambiente de trabalho</h2>
             <p>
-              Cadastro e acesso à empresa disponíveis. Os demais módulos estão em desenvolvimento.
+              Gerencie clientes, equipamentos e ordens de serviço da sua empresa.
             </p>
           </div>
           <button

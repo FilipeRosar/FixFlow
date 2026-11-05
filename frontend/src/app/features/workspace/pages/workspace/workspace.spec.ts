@@ -27,25 +27,31 @@ describe('Operational workspace', () => {
     const fixture = TestBed.createComponent(Workspace);
     fixture.detectChanges();
     TestBed.inject(HttpTestingController).expectOne('/api/oficinas/tenant/selecao').flush(account);
+    for (const request of TestBed.inject(HttpTestingController).match(
+      (r) => r.url === '/api/v1/work-orders',
+    )) {
+      request.flush({ content: [], totalElements: 0 });
+    }
     fixture.detectChanges();
     return { fixture, page: fixture.nativeElement as HTMLElement };
   }
   it('shows upgrade feedback when user creation reaches the plan limit', () => {
     const { fixture, page } = setup();
     fixture.componentInstance['createUser']();
-    TestBed.inject(HttpTestingController).expectOne('/api/oficinas/tenant/usuarios').flush(
-      { code: 'PLAN_LIMIT_REACHED' }, { status: 409, statusText: 'Conflict' },
-    );
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/oficinas/tenant/usuarios')
+      .flush({ code: 'PLAN_LIMIT_REACHED' }, { status: 409, statusText: 'Conflict' });
     fixture.detectChanges();
     expect(page.textContent).toContain('Faça upgrade do plano');
     expect(page.textContent).not.toContain('E-mail já cadastrado.');
   });
-  it('marks the current area and future modules without making up business data', () => {
+  it('shows real empty indicators and keeps the financial indicator unavailable', () => {
     const { page } = setup();
     expect(page.querySelector('[aria-current="page"]')?.textContent).toContain('Visão geral');
     expect(page.querySelectorAll('.metric > strong')).toHaveLength(4);
     expect(
-      [...page.querySelectorAll('.metric > strong')].every((el) => el.textContent === '—'),
+      [...page.querySelectorAll('.metric > strong')].map((el) => el.textContent).join(',') ===
+        '0,0,0,—',
     ).toBe(true);
     expect(page.querySelectorAll('.operation-nav button:disabled')).toHaveLength(1);
     expect(page.querySelector('.orders-empty')?.textContent).toContain('Abra uma nova ordem');
