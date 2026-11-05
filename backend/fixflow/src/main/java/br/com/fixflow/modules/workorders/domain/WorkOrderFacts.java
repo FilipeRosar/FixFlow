@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Trusted server-side projection. Absence of evidence never satisfies a guard. */
+/** Trusted server-side facts. Diagnosis is derived from registered history, never from request flags. */
 public record WorkOrderFacts(UUID technicianId, String diagnosis, UUID quoteId, String quoteStatus,
                              int quoteItemCount, BigDecimal quoteTotal, Instant quoteValidUntil,
                              int serviceCount, boolean partsConsumed, boolean partsWrittenOff,

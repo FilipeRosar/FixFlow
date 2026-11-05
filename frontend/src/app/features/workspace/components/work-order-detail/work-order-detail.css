@@ -154,3 +154,30 @@ dd {
     grid-template-columns: 1fr;
   }
 }
+
+.diagnosis-text {
+  white-space: pre-wrap;
+  line-height: 1.8;
+}
+.diagnosis-history-actions {
+  padding: 18px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+}
+.diagnosis-history {
+  padding: 0 24px 24px;
+}
+.diagnosis-history article {
+  padding: 22px 0;
+  border-top: 1px solid var(--border);
+}
+.diagnosis-history dl {
+  padding: 12px 0 0;
+}
+.diagnosis-message {
+  margin: 20px 24px 0;
+}

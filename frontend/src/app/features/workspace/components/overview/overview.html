@@ -1,0 +1,178 @@
+<div class="overview-toolbar">
+  <div>
+    <span class="section-eyebrow">PAINEL DA OPERAÇÃO</span>
+    <p>
+      {{
+        role === 'TECHNICIAN'
+          ? 'Resumo das ordens atribuídas a você.'
+          : 'Resumo das ordens da sua assistência.'
+      }}
+    </p>
+  </div>
+  <button class="secondary" type="button" (click)="load()" [disabled]="loading()">
+    <svg class="icon" aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1" /></svg
+    >{{ loading() ? 'Atualizando…' : 'Atualizar visão geral' }}
+  </button>
+</div>
+@if (error()) {
+  <div class="overview-feedback error-feedback" role="alert">
+    <span class="feedback-icon" aria-hidden="true">!</span>
+    <h3>Não foi possível carregar o painel</h3>
+    <p>{{ error() }}</p>
+  </div>
+} @else if (loading()) {
+  <div class="overview-feedback" role="status">
+    <span class="loading-orbit" aria-hidden="true"></span>
+    <p>Carregando visão geral…</p>
+  </div>
+} @else {
+  <section
+    class="metrics"
+    [class.compact-metrics]="role !== 'OWNER'"
+    aria-label="Indicadores da assistência"
+  >
+    @for (metric of metrics(); track metric.label) {
+      <article class="metric" [attr.data-tone]="$index">
+        <div class="metric-label">
+          <h2>{{ metric.label }}</h2>
+          <span class="metric-icon"
+            ><svg class="icon" aria-hidden="true">
+              <use
+                [attr.href]="'#op-' + ($index === 0 ? 'orders' : $index === 1 ? 'clock' : 'check')"
+              /></svg
+          ></span>
+        </div>
+        <strong>{{ metric.value }}</strong>
+        <p>{{ metric.hint }}</p>
+      </article>
+    }
+    @if (role === 'OWNER') {
+      <article class="metric financial-metric">
+        <div class="metric-label">
+          <h2>Receita do mês</h2>
+          <span class="metric-icon"
+            ><svg class="icon" aria-hidden="true"><use href="#op-finance" /></svg
+          ></span>
+        </div>
+        <strong>—</strong>
+        <p><span class="soon-label">Em breve</span> Módulo financeiro</p>
+      </article>
+    }
+  </section>
+  <div class="overview-grid">
+    <section class="panel" aria-labelledby="stages-heading">
+      <div class="panel-heading">
+        <div>
+          <span class="section-eyebrow">SEU FLUXO DE TRABALHO</span>
+          <h2 id="stages-heading">Serviços por etapa</h2>
+          <p>Acompanhe a distribuição dos atendimentos</p>
+        </div>
+        <span class="total-badge">{{ active() }} <small>em aberto</small></span>
+      </div>
+      <div class="overview-stages">
+        @for (stage of stages; track stage.value) {
+          <div class="overview-stage" [attr.data-status]="stage.value">
+            <span>{{ stage.label }}</span
+            ><b>{{ counts()[stage.value] }}</b
+            ><progress
+              [value]="counts()[stage.value]"
+              [max]="active() || 1"
+              [attr.aria-label]="stage.label"
+            ></progress>
+          </div>
+        }
+      </div>
+    </section>
+    <section class="panel" aria-labelledby="attention-heading">
+      <div class="panel-heading">
+        <div>
+          <span class="section-eyebrow">PRÓXIMOS PASSOS</span>
+          <h2 id="attention-heading">Precisa da sua atenção</h2>
+        </div>
+        <span class="attention-icon" aria-hidden="true">◇</span>
+      </div>
+      <div class="overview-attention">
+        @for (stage of attention(); track stage.value) {
+          <p>
+            <span>{{ stage.label }}</span
+            ><strong>{{ counts()[stage.value] }}</strong>
+          </p>
+        } @empty {
+          <div class="attention-clear">
+            <span class="clear-icon"
+              ><svg class="icon" aria-hidden="true"><use href="#op-check" /></svg
+            ></span>
+            <h3>Tudo em dia por aqui</h3>
+            <p>Nenhuma pendência de aprovação, peças ou retirada no momento.</p>
+          </div>
+        }
+        <a routerLink="/inicio/ordens"
+          >{{ role === 'TECHNICIAN' ? 'Acessar minha fila' : 'Acompanhar ordens' }} ↗</a
+        >
+      </div>
+    </section>
+  </div>
+  <section class="panel recent-orders" aria-labelledby="orders-heading">
+    <div class="panel-heading">
+      <div>
+        <span class="section-eyebrow">ÚLTIMOS ATENDIMENTOS</span>
+        <h2 id="orders-heading">Ordens recentes</h2>
+        <p>Últimas cinco ordens abertas{{ role === 'TECHNICIAN' ? ' atribuídas a você' : '' }}</p>
+      </div>
+      <a routerLink="/inicio/ordens">Ver todas ↗</a>
+    </div>
+    @if (recent().length) {
+      <div class="table-scroll">
+        <table>
+          <caption class="sr-only">
+            Ordens mais recentes por data de abertura
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Ordem</th>
+              <th scope="col">Cliente</th>
+              <th scope="col">Equipamento</th>
+              <th scope="col">Status</th>
+              <th scope="col">Abertura</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (order of recent(); track order.id) {
+              <tr>
+                <td>
+                  <a [routerLink]="['/inicio/ordens', order.id]">OS nº {{ order.number }}</a>
+                </td>
+                <td>{{ order.customerName }}</td>
+                <td>{{ order.equipmentLabel || 'Não informado' }}</td>
+                <td>
+                  <span class="order-status" [attr.data-status]="order.status"
+                    ><i aria-hidden="true"></i>{{ label(order.status) }}</span
+                  >
+                </td>
+                <td>{{ order.openedAt | date: 'dd/MM/yyyy' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    } @else {
+      <div class="orders-empty">
+        <span class="empty-order-icon"
+          ><svg class="icon" aria-hidden="true"><use href="#op-orders" /></svg
+        ></span>
+        <h3>Nenhuma ordem de serviço por aqui</h3>
+        <p>
+          {{
+            role === 'TECHNICIAN'
+              ? 'As ordens atribuídas a você aparecerão aqui.'
+              : 'Abra uma nova ordem de serviço para registrar a entrada de um equipamento.'
+          }}
+        </p>
+        @if (role !== 'TECHNICIAN') {
+          <a routerLink="/inicio/ordens/nova">Abrir nova ordem ↗</a>
+        }
+      </div>
+    }
+  </section>
+}

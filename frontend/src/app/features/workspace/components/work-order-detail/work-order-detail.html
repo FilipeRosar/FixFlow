@@ -66,7 +66,7 @@
                 [(ngModel)]="selectedTechnician"
                 (focus)="loadTechnicians()"
                 (click)="loadTechnicians()"
-                [disabled]="assigning() || changing()"
+                [disabled]="assigning() || changing() || diagnosing()"
                 required
               >
                 <option value="">
@@ -107,6 +107,153 @@
         }
       </div>
     </section>
+    <section class="card status-editor" aria-labelledby="diagnosis-heading">
+      <div class="directory-heading">
+        <div>
+          <h2 id="diagnosis-heading">Diagnóstico técnico</h2>
+          @if (item.diagnosis) {
+            <span class="count">Revisão {{ item.diagnosis.revision }}</span>
+          }
+        </div>
+      </div>
+      @if (diagnosisNotice()) {
+        <p class="notice diagnosis-message" role="status">{{ diagnosisNotice() }}</p>
+      }
+      @if (diagnosisError()) {
+        <p class="error diagnosis-message" role="alert">{{ diagnosisError() }}</p>
+      }
+      @if (canDiagnose && item.status === 'EM_DIAGNOSTICO') {
+        <form #diagnosisForm="ngForm" (ngSubmit)="saveDiagnosis()">
+          <fieldset [disabled]="diagnosing() || changing() || assigning()">
+            <label
+              >Achados<textarea
+                name="findings"
+                [(ngModel)]="findings"
+                required
+                maxlength="4000"
+                rows="4"
+                placeholder="Descreva os testes realizados e o que foi encontrado."
+              ></textarea>
+            </label>
+            <label
+              >Causa provável<textarea
+                name="probableCause"
+                [(ngModel)]="probableCause"
+                required
+                maxlength="4000"
+                rows="3"
+                placeholder="Qual é a causa provável do defeito?"
+              ></textarea>
+            </label>
+            <label
+              >Solução proposta<textarea
+                name="proposedSolution"
+                [(ngModel)]="proposedSolution"
+                required
+                maxlength="4000"
+                rows="3"
+                placeholder="Descreva o reparo ou procedimento recomendado."
+              ></textarea>
+            </label>
+            <div class="status-actions">
+              <p>
+                Preencha os três campos e salve antes de avançar para orçamento. Cada gravação
+                preserva a revisão anterior.
+              </p>
+              <button
+                class="primary"
+                type="submit"
+                [disabled]="
+                  diagnosisForm.invalid ||
+                  !findings.trim() ||
+                  !probableCause.trim() ||
+                  !proposedSolution.trim() ||
+                  diagnosing() ||
+                  changing() ||
+                  assigning()
+                "
+              >
+                {{
+                  diagnosing()
+                    ? 'Salvando…'
+                    : item.diagnosis
+                      ? 'Salvar nova revisão'
+                      : 'Salvar diagnóstico'
+                }}
+              </button>
+            </div>
+          </fieldset>
+        </form>
+      } @else if (item.diagnosis; as diagnosis) {
+        <dl>
+          <div>
+            <dt>Achados</dt>
+            <dd class="diagnosis-text">{{ diagnosis.findings }}</dd>
+          </div>
+          <div>
+            <dt>Causa provável</dt>
+            <dd class="diagnosis-text">{{ diagnosis.probableCause }}</dd>
+          </div>
+          <div>
+            <dt>Solução proposta</dt>
+            <dd class="diagnosis-text">{{ diagnosis.proposedSolution }}</dd>
+          </div>
+        </dl>
+      } @else {
+        <p class="detail-text muted">
+          Nenhum diagnóstico registrado. O registro fica disponível ao proprietário e ao técnico
+          atribuído durante o diagnóstico.
+        </p>
+      }
+      <div class="diagnosis-history-actions">
+        @if (item.diagnosis) {
+          <span class="muted"
+            >{{ item.diagnosis.recordedByName || 'Usuário não disponível' }} ·
+            {{ item.diagnosis.createdAt | date: 'dd/MM/yyyy · HH:mm' }}</span
+          >
+        }
+        <button
+          type="button"
+          (click)="showDiagnosisHistory()"
+          [attr.aria-expanded]="historyShown()"
+        >
+          {{ historyShown() ? 'Ocultar histórico' : 'Ver histórico do diagnóstico' }}
+        </button>
+      </div>
+      @if (historyShown()) {
+        <div class="diagnosis-history">
+          @if (historyLoading()) {
+            <p role="status">Carregando histórico…</p>
+          } @else {
+            @for (revision of diagnosisHistory(); track revision.id) {
+              <article>
+                <h3>Revisão {{ revision.revision }}</h3>
+                <p class="muted">
+                  {{ revision.recordedByName || 'Usuário não disponível' }} ·
+                  {{ revision.createdAt | date: 'dd/MM/yyyy · HH:mm' }}
+                </p>
+                <dl>
+                  <div>
+                    <dt>Achados</dt>
+                    <dd class="diagnosis-text">{{ revision.findings }}</dd>
+                  </div>
+                  <div>
+                    <dt>Causa provável</dt>
+                    <dd class="diagnosis-text">{{ revision.probableCause }}</dd>
+                  </div>
+                  <div>
+                    <dt>Solução proposta</dt>
+                    <dd class="diagnosis-text">{{ revision.proposedSolution }}</dd>
+                  </div>
+                </dl>
+              </article>
+            } @empty {
+              <p class="muted">Nenhum diagnóstico registrado.</p>
+            }
+          }
+        </div>
+      }
+    </section>
     @if (transitionNotice()) {
       <p class="notice transition-message" role="status">{{ transitionNotice() }}</p>
     }
@@ -118,7 +265,7 @@
         <div class="directory-heading">
           <div><h2>Próxima etapa do atendimento</h2></div>
         </div>
-        <fieldset [disabled]="changing() || assigning()">
+        <fieldset [disabled]="changing() || assigning() || diagnosing()">
           <label
             >Alterar estado para<select name="target" [(ngModel)]="target" required>
               <option value="">Selecione a próxima etapa</option>

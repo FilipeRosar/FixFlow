@@ -6,6 +6,16 @@ import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { EMPTY, Subject, catchError, map, merge, switchMap, tap } from 'rxjs';
+interface Diagnosis {
+  id: string;
+  revision: number;
+  findings: string;
+  probableCause: string;
+  proposedSolution: string;
+  recordedBy: string;
+  recordedByName: string | null;
+  createdAt: string;
+}
 interface WorkOrder {
   id: string;
   number: number;
@@ -22,6 +32,7 @@ interface WorkOrder {
   version: number;
   technicianId: string | null;
   technicianName: string | null;
+  diagnosis: Diagnosis | null;
 }
 @Component({
   selector: 'app-work-order-detail',
@@ -74,7 +85,8 @@ export class WorkOrderDetail implements OnInit {
       !this.canAssign ||
       !this.selectedTechnician ||
       this.assigning() ||
-      this.changing()
+      this.changing() ||
+      this.diagnosing()
     )
       return;
     this.assigning.set(true);
@@ -104,6 +116,100 @@ export class WorkOrderDetail implements OnInit {
               : 'Não foi possível atribuir o técnico. Tente novamente.',
           );
           if (error.error?.code === 'WORK_ORDER_VERSION_CONFLICT') this.retry.next();
+        },
+      });
+  }
+  protected readonly canDiagnose = this.role === 'OWNER' || this.role === 'TECHNICIAN';
+  protected readonly diagnosing = signal(false);
+  protected readonly diagnosisError = signal('');
+  protected readonly diagnosisNotice = signal('');
+  protected readonly diagnosisHistory = signal<Diagnosis[]>([]);
+  protected readonly historyShown = signal(false);
+  protected readonly historyLoading = signal(false);
+  protected findings = '';
+  protected probableCause = '';
+  protected proposedSolution = '';
+  private viewRequest = 0;
+  protected saveDiagnosis(): void {
+    const order = this.order();
+    const view = this.viewRequest;
+    if (
+      !order ||
+      !this.canDiagnose ||
+      order.status !== 'EM_DIAGNOSTICO' ||
+      this.diagnosing() ||
+      this.changing() ||
+      this.assigning() ||
+      !this.findings.trim() ||
+      !this.probableCause.trim() ||
+      !this.proposedSolution.trim()
+    )
+      return;
+    this.diagnosing.set(true);
+    this.diagnosisError.set('');
+    this.diagnosisNotice.set('');
+    this.http
+      .post<{ diagnosis: Diagnosis; workOrderVersion: number }>(
+        `/api/v1/work-orders/${order.id}/diagnosis`,
+        {
+          version: order.version,
+          findings: this.findings.trim(),
+          probableCause: this.probableCause.trim(),
+          proposedSolution: this.proposedSolution.trim(),
+        },
+      )
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe({
+        next: (saved) => {
+          if (view !== this.viewRequest) return;
+          this.order.set({ ...order, version: saved.workOrderVersion, diagnosis: saved.diagnosis });
+          this.diagnosing.set(false);
+          this.diagnosisNotice.set(
+            'Diagnóstico salvo. Uma nova revisão foi adicionada ao histórico.',
+          );
+          this.transitionError.set('');
+          if (this.historyShown())
+            this.diagnosisHistory.update((history) => [saved.diagnosis, ...history]);
+        },
+        error: (error) => {
+          if (view !== this.viewRequest) return;
+          this.diagnosing.set(false);
+          this.diagnosisError.set(
+            typeof error.error?.detail === 'string' && error.status < 500
+              ? error.error.detail
+              : 'Não foi possível salvar o diagnóstico. Tente novamente.',
+          );
+          if (error.error?.code === 'WORK_ORDER_VERSION_CONFLICT') this.retry.next();
+        },
+      });
+  }
+  protected showDiagnosisHistory(): void {
+    if (this.historyShown()) {
+      this.historyShown.set(false);
+      return;
+    }
+    const order = this.order();
+    const view = this.viewRequest;
+    if (!order || this.historyLoading()) return;
+    this.historyShown.set(true);
+    this.historyLoading.set(true);
+    this.diagnosisError.set('');
+    this.http
+      .get<Diagnosis[]>(`/api/v1/work-orders/${order.id}/diagnosis`)
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe({
+        next: (history) => {
+          if (view !== this.viewRequest) return;
+          this.diagnosisHistory.set(history);
+          this.historyLoading.set(false);
+        },
+        error: () => {
+          if (view !== this.viewRequest) return;
+          this.historyLoading.set(false);
+          this.historyShown.set(false);
+          this.diagnosisError.set(
+            'Não foi possível carregar o histórico do diagnóstico. Tente novamente.',
+          );
         },
       });
   }
@@ -137,7 +243,7 @@ export class WorkOrderDetail implements OnInit {
   }
   protected changeStatus(): void {
     const order = this.order();
-    if (!order || !this.target || this.changing() || this.assigning()) return;
+    if (!order || !this.target || this.changing() || this.assigning() || this.diagnosing()) return;
     this.changing.set(true);
     this.transitionError.set('');
     this.transitionNotice.set('');
@@ -211,6 +317,13 @@ export class WorkOrderDetail implements OnInit {
             this.transitionError.set('');
             this.transitionNotice.set('');
           }
+          this.viewRequest++;
+          this.diagnosing.set(false);
+          this.historyLoading.set(false);
+          this.historyShown.set(false);
+          this.diagnosisHistory.set([]);
+          if (this.id !== id) this.diagnosisError.set('');
+          this.diagnosisNotice.set('');
           this.id = id;
           this.assigning.set(false);
           this.assignmentNotice.set('');
@@ -241,6 +354,9 @@ export class WorkOrderDetail implements OnInit {
       .subscribe((order) => {
         this.order.set(order);
         this.selectedTechnician = order.technicianId ?? '';
+        this.findings = order.diagnosis?.findings ?? '';
+        this.probableCause = order.diagnosis?.probableCause ?? '';
+        this.proposedSolution = order.diagnosis?.proposedSolution ?? '';
         this.loading.set(false);
       });
   }

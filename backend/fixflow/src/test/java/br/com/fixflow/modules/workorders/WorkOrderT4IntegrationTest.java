@@ -95,6 +95,7 @@ class WorkOrderT4IntegrationTest {
                     payment_settled, diagnostic_fee_registered, missing_part, warranty_days)
                 VALUES (?, ?, ?, 'Diagnóstico preenchido', ?, 1, 100, CURRENT_TIMESTAMP + interval '1 day', 1, true, true, 'Fonte', 90)
                 """, fixture.tenantA, id, fixture.userId, UUID.randomUUID()));
+        inTenant(fixture.tenantA, () -> admin.update("INSERT INTO work_order_diagnoses(id, tenant_id, work_order_id, revision, findings, probable_cause, proposed_solution, recorded_by) VALUES (?, ?, ?, 1, 'Achados', 'Causa', 'Solução', ?)", UUID.randomUUID(), fixture.tenantA, id, fixture.userId));
     }
     org.springframework.test.web.servlet.ResultActions transition(UUID id, String target, int version, String reason) throws Exception {
         var body = new HashMap<String, Object>(); body.put("toStatus", target); body.put("version", version); body.put("reason", reason);

@@ -47,6 +47,11 @@ describe('FixFlow navigation', () => {
     expect(page.querySelector('app-header')).toBeNull();
     expect(page.querySelector('.operation-nav')).not.toBeNull();
     expect(page.querySelectorAll('footer')).toHaveLength(1);
+    for (const request of TestBed.inject(HttpTestingController).match(
+      (r) => r.url === '/api/v1/work-orders',
+    )) {
+      request.flush({ content: [], totalElements: 0 });
+    }
     await router.navigateByUrl('/');
     await fixture.whenStable();
     expect(page.querySelector('app-header')).not.toBeNull();
