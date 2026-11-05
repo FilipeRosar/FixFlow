@@ -97,6 +97,14 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT).body(problem);
     }
 
+    @ExceptionHandler(br.com.fixflow.modules.tenants.domain.PlanLimitExceededException.class)
+    public ResponseEntity<ProblemDetail> handlePlanLimit(br.com.fixflow.modules.tenants.domain.PlanLimitExceededException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+        problem.setProperty("code", "PLAN_LIMIT_REACHED");
+        problem.setProperty("resource", exception.resource());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(problem);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnexpected(
             Exception exception,

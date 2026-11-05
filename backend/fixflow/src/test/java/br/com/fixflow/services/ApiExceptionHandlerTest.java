@@ -25,6 +25,14 @@ class ApiExceptionHandlerTest {
     }
 
     @Test
+    void planLimitReturnsUpgradeMessage() {
+        var response = handler.handlePlanLimit(new br.com.fixflow.modules.tenants.domain.PlanLimitExceededException("usuários"));
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        assertEquals("PLAN_LIMIT_REACHED", response.getBody().getProperties().get("code"));
+        assertTrue(response.getBody().getDetail().contains("upgrade"));
+    }
+
+    @Test
     void shouldReturnInternalServerErrorAsProblemDetail() {
         var response = handler.handleUnexpected(
                 new RuntimeException("Erro interno de teste"),

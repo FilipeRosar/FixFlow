@@ -30,6 +30,16 @@ describe('Operational workspace', () => {
     fixture.detectChanges();
     return { fixture, page: fixture.nativeElement as HTMLElement };
   }
+  it('shows upgrade feedback when user creation reaches the plan limit', () => {
+    const { fixture, page } = setup();
+    fixture.componentInstance['createUser']();
+    TestBed.inject(HttpTestingController).expectOne('/api/oficinas/tenant/usuarios').flush(
+      { code: 'PLAN_LIMIT_REACHED' }, { status: 409, statusText: 'Conflict' },
+    );
+    fixture.detectChanges();
+    expect(page.textContent).toContain('Faça upgrade do plano');
+    expect(page.textContent).not.toContain('E-mail já cadastrado.');
+  });
   it('marks the current area and future modules without making up business data', () => {
     const { page } = setup();
     expect(page.querySelector('[aria-current="page"]')?.textContent).toContain('Visão geral');

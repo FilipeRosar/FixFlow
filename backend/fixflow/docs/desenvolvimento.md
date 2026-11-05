@@ -445,3 +445,20 @@ Cobertura: defaults, round-trip, isolamento entre empresas, Owner/Atendente/Téc
 suspensão, validação, logo privado/removível, auditoria/rollback e efeitos da alteração
 persistida sobre validade, termos e saldo permitido. O frontend verifica edição,
 validação, salvamento, descarte e recuperação de falhas.
+
+## Limites de plano (US-006)
+
+V20 adiciona `tenants.plan`: Starter (padrão) permite 2 vínculos ativos, incluindo
+Owner, e 100 OS/mês; Professional permite 6 e 500; Business não impõe teto.
+A alteração de plano é administrativa, sem endpoint público. Vínculos suspensos
+não ocupam vaga. Reduzir o plano preserva leitura e edição dos dados existentes.
+O trigger de memberships serializa novas vagas com lock do tenant, inclusive
+para inserções diretas. A API retorna 409 com `code=PLAN_LIMIT_REACHED` e mensagem
+de upgrade, exibida na tela de usuários.
+
+O módulo de OS ainda não existe. Sua criação deve usar
+`TenantLimitsService.createWorkOrder(tenantId, () -> inserirOS())`: a operação
+valida permissão e consome quota na mesma transação da inserção; falhas revertem
+a contagem. O callback deve usar a transação corrente, sem abrir outra transação.
+A janela é o mês calendário de America/Sao_Paulo. Exclusões/cancelamentos não
+restituem quota. Nenhuma checagem de plano é aplicada em consultas.

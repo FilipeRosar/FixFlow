@@ -9,7 +9,10 @@ import org.springframework.web.bind.annotation.*;
 public class CompanySettingsController {
     private final CompanyConfiguration configuration;
     public CompanySettingsController(CompanyConfiguration configuration) { this.configuration = configuration; }
-    @GetMapping public CompanySettings get() { return configuration.load(); }
+
+    @GetMapping public CompanySettings get() {
+        return configuration.load(); }
+
     @PutMapping public CompanySettings put(@Valid @RequestBody CompanySettingsRequest request) {
         return configuration.save(new CompanySettings(request.logoDataUrl(), request.warrantyTerms(), request.quoteValidityDays(), request.allowNegativeStock()));
     }
