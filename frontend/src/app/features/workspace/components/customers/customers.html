@@ -1,0 +1,352 @@
+<svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <symbol id="cus-search" viewBox="0 0 24 24">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m16 16 4 4" />
+    </symbol>
+    <symbol id="cus-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+    <symbol id="cus-edit" viewBox="0 0 24 24">
+      <path d="m15 5 4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15l-1 5ZM13 20h7" />
+    </symbol>
+    <symbol id="cus-trash" viewBox="0 0 24 24">
+      <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5" />
+    </symbol>
+    <symbol id="cus-phone" viewBox="0 0 24 24">
+      <path d="m8 3 3 5-3 3a15 15 0 0 0 5 5l3-3 5 3c-1 6-5 6-10 3S2 10 3 6c0-2 2-3 5-3Z" />
+    </symbol>
+    <symbol id="cus-mail" viewBox="0 0 24 24">
+      <rect x="3" y="5" width="18" height="14" rx="3" />
+      <path d="m3 6 9 7 9-7" />
+    </symbol>
+    <symbol id="cus-arrow" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6" /></symbol>
+    <symbol id="cus-users" viewBox="0 0 24 24">
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M21 21v-3a6 6 0 0 0-3-5" />
+    </symbol>
+  </defs>
+</svg>
+<section aria-labelledby="customers-heading">
+  <div class="heading page-heading">
+    <div>
+      <p class="eyebrow">Relacionamento com o cliente</p>
+      <h1 id="customers-heading">Clientes</h1>
+      <p>Encontre clientes e mantenha seus contatos atualizados.</p>
+    </div>
+    @if (canWrite && !editing()) {
+      <button type="button" class="primary" (click)="edit()">
+        <svg class="icon" aria-hidden="true"><use href="#cus-plus" /></svg>Novo cliente
+      </button>
+    }
+  </div>
+  @if (error()) {
+    <p role="alert" class="error">{{ error() }}</p>
+  }
+  @if (notice()) {
+    <p role="status" class="notice">{{ notice() }}</p>
+  }
+  @if (editing()) {
+    <form class="card editor" (ngSubmit)="save()">
+      <div class="editor-heading">
+        <span class="section-symbol"
+          ><svg class="icon" aria-hidden="true"><use href="#cus-users" /></svg
+        ></span>
+        <div>
+          <h2>{{ id ? 'Editar cliente' : 'Novo cliente' }}</h2>
+          <p>Os dados certos para um atendimento mais próximo.</p>
+        </div>
+      </div>
+      <fieldset [disabled]="saving()">
+        <div class="form-section">
+          <div class="section-copy">
+            <span class="step">01 / IDENTIFICAÇÃO</span>
+            <h3>Quem é o cliente?</h3>
+            <p>Comece pelo nome. Você pode adicionar o documento quando precisar.</p>
+          </div>
+          <div class="fields">
+            <label
+              >Nome<input
+                name="name"
+                [(ngModel)]="name"
+                required
+                maxlength="150"
+                autocomplete="name"
+            /></label>
+            <label
+              >CPF/CNPJ (opcional)<input
+                name="document"
+                [(ngModel)]="document"
+                maxlength="18"
+                inputmode="numeric"
+            /></label>
+          </div>
+        </div>
+        <div class="form-section contacts-section">
+          <div class="section-copy">
+            <span class="step">02 / CONTATOS</span>
+            <h3>Vamos manter contato</h3>
+            <p>Reúna telefones, WhatsApp e e-mails em um só lugar.</p>
+          </div>
+          <div class="contact-editor">
+            <div class="heading section-heading">
+              <h3>
+                Contatos <span class="count">{{ contacts.length }}</span>
+              </h3>
+              <button type="button" (click)="addContact()" [disabled]="contacts.length >= 20">
+                <svg class="icon" aria-hidden="true"><use href="#cus-plus" /></svg>Adicionar contato
+              </button>
+            </div>
+            @for (contact of contacts; track $index; let i = $index) {
+              <div class="contact">
+                <label
+                  >Tipo<select [name]="'type' + i" [(ngModel)]="contact.type">
+                    <option value="PHONE">Telefone</option>
+                    <option value="WHATSAPP">WhatsApp</option>
+                    <option value="EMAIL">E-mail</option>
+                  </select></label
+                >
+                <label
+                  >{{ contact.type === 'EMAIL' ? 'E-mail' : 'Número'
+                  }}<input
+                    [name]="'value' + i"
+                    [(ngModel)]="contact.value"
+                    [type]="contact.type === 'EMAIL' ? 'email' : 'tel'"
+                    required
+                    maxlength="254"
+                /></label>
+                <label
+                  >Identificação (opcional)<input
+                    [name]="'label' + i"
+                    [(ngModel)]="contact.label"
+                    maxlength="80"
+                    placeholder="Ex.: trabalho"
+                /></label>
+                <button
+                  type="button"
+                  (click)="contacts.splice(i, 1)"
+                  [attr.aria-label]="'Remover contato ' + (i + 1)"
+                >
+                  <svg class="icon" aria-hidden="true"><use href="#cus-trash" /></svg
+                  ><span class="sr-only">Remover</span>
+                </button>
+              </div>
+            } @empty {
+              <div class="contacts-empty">
+                <svg class="icon" aria-hidden="true"><use href="#cus-phone" /></svg>
+                <p>Nenhum contato adicionado.</p>
+                <span>Adicione um canal para falar com este cliente.</span>
+              </div>
+            }
+          </div>
+        </div>
+        <div class="actions form-footer-actions">
+          <span class="form-note">Nome é obrigatório. Os demais dados são opcionais.</span
+          ><button type="button" (click)="editing.set(false)">Cancelar</button
+          ><button class="primary" type="submit">
+            {{ saving() ? 'Salvando…' : 'Salvar cliente' }}
+          </button>
+        </div>
+      </fieldset>
+    </form>
+  } @else {
+    <div class="card directory">
+      <div class="directory-heading">
+        <div>
+          <span class="section-symbol"
+            ><svg class="icon" aria-hidden="true"><use href="#cus-users" /></svg
+          ></span>
+          <h2>Sua base de clientes</h2>
+          <span class="count">{{ data().totalElements }}</span>
+        </div>
+        <span class="directory-note">Pessoas e contatos, sempre por perto</span>
+      </div>
+      <form class="search" (ngSubmit)="search()">
+        <label
+          ><span class="sr-only">Buscar clientes</span
+          ><span class="search-input"
+            ><svg class="icon" aria-hidden="true"><use href="#cus-search" /></svg
+            ><input
+              name="query"
+              [(ngModel)]="query"
+              maxlength="150"
+              placeholder="Nome, telefone ou documento"
+              type="search" /></span
+        ></label>
+        <label
+          >Por página<select name="size" [(ngModel)]="pageSize" (ngModelChange)="search()">
+            <option [ngValue]="10">10</option>
+            <option [ngValue]="20">20</option>
+            <option [ngValue]="50">50</option>
+          </select></label
+        >
+        <button type="submit" class="primary">Buscar</button>
+      </form>
+      @if (deleting(); as customer) {
+        <div class="card confirmation" role="alert">
+          <p>
+            Excluir <strong>{{ customer.name }}</strong
+            >? O cliente sairá da listagem. OS abertas impedem a exclusão.
+          </p>
+          <div class="actions">
+            <button type="button" [disabled]="saving()" (click)="remove()">
+              Confirmar exclusão</button
+            ><button type="button" [disabled]="saving()" (click)="deleting.set(null)">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      }
+      <div class="results" [attr.aria-busy]="loading()">
+        @if (loading()) {
+          <div role="status" class="loading-state">
+            <span class="spinner" aria-hidden="true"></span>Carregando clientes…
+          </div>
+        } @else {
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>Documento</th>
+                  <th>Contatos</th>
+                  @if (canWrite) {
+                    <th>Ações</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (customer of data().content; track customer.id) {
+                  <tr>
+                    <td data-label="Cliente">
+                      <div class="customer-identity">
+                        <span
+                          class="avatar"
+                          [class.tone-blue]="$index % 3 === 1"
+                          [class.tone-rose]="$index % 3 === 2"
+                          aria-hidden="true"
+                          >{{ initials(customer.name) }}</span
+                        >
+                        <div>
+                          <strong>{{ customer.name }}</strong
+                          ><span class="customer-subtitle"
+                            >{{ customer.contacts.length }}
+                            {{ customer.contacts.length === 1 ? 'contato' : 'contatos' }}</span
+                          >
+                        </div>
+                      </div>
+                    </td>
+                    <td data-label="Documento">
+                      <span class="document">{{ formatDocument(customer.document) }}</span>
+                    </td>
+                    <td data-label="Contatos" class="contact-cell">
+                      @for (c of customer.contacts; track $index) {
+                        <div class="contact-line">
+                          <span
+                            class="contact-symbol"
+                            [class.whatsapp]="c.type === 'WHATSAPP'"
+                            [attr.title]="
+                              c.type === 'EMAIL'
+                                ? 'E-mail'
+                                : c.type === 'WHATSAPP'
+                                  ? 'WhatsApp'
+                                  : 'Telefone'
+                            "
+                            ><svg class="icon" aria-hidden="true">
+                              <use
+                                [attr.href]="c.type === 'EMAIL' ? '#cus-mail' : '#cus-phone'"
+                              /></svg
+                            ><span class="sr-only">{{
+                              c.type === 'EMAIL'
+                                ? 'E-mail'
+                                : c.type === 'WHATSAPP'
+                                  ? 'WhatsApp'
+                                  : 'Telefone'
+                            }}</span></span
+                          ><span class="contact-value">{{ c.value }}</span>
+                          @if (c.label) {
+                            <span class="contact-label">{{ c.label }}</span>
+                          }
+                        </div>
+                      } @empty {
+                        <span class="muted">Sem contatos</span>
+                      }
+                    </td>
+                    @if (canWrite) {
+                      <td class="row-actions">
+                        <div class="actions">
+                          <button
+                            type="button"
+                            class="edit-button"
+                            (click)="edit(customer)"
+                            [attr.aria-label]="'Editar ' + customer.name"
+                          >
+                            <svg class="icon" aria-hidden="true"><use href="#cus-edit" /></svg
+                            >Editar</button
+                          ><button
+                            type="button"
+                            class="delete-button"
+                            (click)="deleting.set(customer)"
+                            [attr.aria-label]="'Excluir ' + customer.name"
+                            title="Excluir cliente"
+                          >
+                            <svg class="icon" aria-hidden="true"><use href="#cus-trash" /></svg
+                            ><span class="sr-only">Excluir</span>
+                          </button>
+                        </div>
+                      </td>
+                    }
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td [attr.colspan]="canWrite ? 4 : 3" class="empty-cell">
+                      <div class="empty-state">
+                        <span class="empty-symbol"
+                          ><svg class="icon" aria-hidden="true"><use href="#cus-users" /></svg
+                        ></span>
+                        <h3>Nenhum cliente encontrado.</h3>
+                        <p>
+                          Busque por outro nome, telefone ou documento.
+                          @if (canWrite) {
+                            <br />Ou cadastre um novo cliente para começar.
+                          }
+                        </p>
+                        @if (canWrite) {
+                          <button class="primary" type="button" (click)="edit()">
+                            <svg class="icon" aria-hidden="true"><use href="#cus-plus" /></svg>Novo
+                            cliente
+                          </button>
+                        }
+                      </div>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+        <div class="pagination">
+          <span
+            >{{ data().totalElements }}
+            {{ data().totalElements === 1 ? 'cliente' : 'clientes' }} encontrados</span
+          >
+          <div class="actions">
+            <button
+              type="button"
+              [disabled]="loading() || data().page === 0"
+              (click)="load(data().page - 1)"
+            >
+              <svg class="icon previous" aria-hidden="true"><use href="#cus-arrow" /></svg
+              >Anterior</button
+            ><span class="page-number" aria-label="Página atual">{{ data().page + 1 }}</span
+            ><button
+              type="button"
+              [disabled]="loading() || (data().page + 1) * data().size >= data().totalElements"
+              (click)="load(data().page + 1)"
+            >
+              Próxima<svg class="icon" aria-hidden="true"><use href="#cus-arrow" /></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</section>
