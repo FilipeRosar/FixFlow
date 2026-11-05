@@ -1,4 +1,5 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { finalize } from 'rxjs';
@@ -23,7 +24,7 @@ interface CustomerPage {
 }
 @Component({
   selector: 'app-customers',
-  imports: [FormsModule],
+  imports: [FormsModule, RouterLink],
   templateUrl: './customers.html',
   styleUrl: './customers.css',
 })

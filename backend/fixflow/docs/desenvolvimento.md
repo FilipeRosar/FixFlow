@@ -484,3 +484,27 @@ Triggers e locks de cliente protegem a regra também contra inserção concorren
 de OS. O futuro módulo de OS deve reutilizar `work_orders` e o serviço de quota
 US-006, mantendo a inserção na mesma transação. Mutações de cliente geram auditoria
 sem nome, documento ou contatos no payload. Interface: `/inicio/clientes`.
+
+## Equipamentos (US-011)
+
+V22 cria `equipment`, com RLS obrigatório e FK composta `(tenant_id, customer_id)`
+para `customers`. Vínculo é obrigatório e nunca atravessa empresas, inclusive
+por SQL direto. Cadastro e troca de cliente exigem cliente ativo; locks e trigger
+serializam o vínculo com exclusão lógica concorrente do cliente. Equipamentos
+anteriores continuam consultáveis quando o cliente é excluído, preservando o vínculo.
+
+API no tenant selecionado: `GET/POST /api/v1/equipment`,
+`GET/PUT/DELETE /api/v1/equipment/{id}` e
+`GET /api/v1/customers/{customerId}/equipment`. Busca `serial` parcial e sem
+sensibilidade a maiúsculas; filtro opcional `customerId`; paginação `page` base
+zero e `size` 1–100 (padrão 20), ordenação estável por modelo/ID. Campos:
+`customerId`, `category` (CELULAR/NOTEBOOK/DESKTOP/IMPRESSORA/PERIFERICO/OUTRO), `brand`,
+`model`, `serialNumber`, `description`. Cliente, categoria e modelo obrigatórios.
+Série é opcional e não impõe unicidade. Acessórios e estado físico pertencem à OS.
+
+Owner/Atendente têm CRUD completo. Técnico consulta e pode alterar somente a
+`description` via `PATCH /api/v1/equipment/{id}/description`; não pode alterar
+cliente, série ou identificação. DELETE é lógico, com 404 nas consultas futuras.
+Mutações geram auditoria sem conteúdo dos campos. Interface em
+`/inicio/equipamentos`, com seleção paginada de clientes, filtro por série e
+atalho pelo nome do cliente na listagem de clientes.

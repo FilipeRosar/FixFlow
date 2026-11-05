@@ -28,6 +28,14 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/pages/recovery/recovery').then((m) => m.Recovery),
   },
   {
+    path: 'inicio/equipamentos',
+    title: 'Equipamentos — FixFlow',
+    data: { page: 'equipment' },
+    canActivate: [sessionGuard],
+    loadComponent: () =>
+      import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
+  },
+  {
     path: 'inicio/clientes',
     title: 'Clientes — FixFlow',
     data: { page: 'customers' },

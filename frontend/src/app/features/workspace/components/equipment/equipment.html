@@ -1,0 +1,345 @@
+<svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <symbol id="eq-device" viewBox="0 0 24 24">
+      <rect x="4" y="3" width="16" height="13" rx="2" />
+      <path d="M2 20h20M9 16v4M15 16v4" />
+    </symbol>
+    <symbol id="eq-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+    <symbol id="eq-search" viewBox="0 0 24 24">
+      <circle cx="10" cy="10" r="6" />
+      <path d="m15 15 5 5" />
+    </symbol>
+  </defs>
+</svg>
+<section aria-labelledby="equipment-heading">
+  <div class="heading page-heading">
+    <div>
+      <p class="eyebrow">Cada aparelho, uma história</p>
+      <h1 id="equipment-heading">Equipamentos</h1>
+      <p>Organize os aparelhos e encontre cada um pelo número de série.</p>
+    </div>
+    @if (canWrite && !editing()) {
+      <button class="primary" type="button" (click)="edit()">
+        <svg class="icon" aria-hidden="true"><use href="#eq-plus" /></svg>Novo equipamento
+      </button>
+    }
+  </div>
+  @if (error()) {
+    <p role="alert" class="error">{{ error() }}</p>
+  }
+  @if (notice()) {
+    <p role="status" class="notice">{{ notice() }}</p>
+  }
+  @if (editing()) {
+    <form class="card editor" (ngSubmit)="save()">
+      <div class="editor-heading">
+        <span class="section-symbol"
+          ><svg class="icon" aria-hidden="true"><use href="#eq-device" /></svg
+        ></span>
+        <div>
+          <h2>{{ id ? 'Editar equipamento' : 'Novo equipamento' }}</h2>
+          <p>Identificação e detalhes para os próximos atendimentos.</p>
+        </div>
+      </div>
+      <fieldset [disabled]="saving()">
+        <div class="form-section">
+          <div class="section-copy">
+            <span class="step">01 / CLIENTE</span>
+            <h3>Quem é o responsável?</h3>
+            <p>Todo equipamento fica vinculado a um cliente da sua empresa.</p>
+          </div>
+          <div>
+            @if (selectedCustomer) {
+              <div class="selected-customer">
+                <span>Cliente selecionado</span><strong>{{ selectedCustomer.name }}</strong>
+              </div>
+            }
+            @if (canWrite) {
+              <div class="customer-search">
+                <label
+                  >Buscar cliente<input
+                    name="customerQuery"
+                    [(ngModel)]="customerQuery"
+                    maxlength="150"
+                    placeholder="Nome, telefone ou documento"
+                    (keydown.enter)="$event.preventDefault(); findCustomers(0)" /></label
+                ><button type="button" (click)="findCustomers(0)" [disabled]="customerLoading()">
+                  Buscar cliente
+                </button>
+              </div>
+              @if (customerError()) {
+                <p role="alert" class="error">{{ customerError() }}</p>
+              }
+              @if (customerLoading()) {
+                <p role="status" class="muted">Buscando clientes…</p>
+              } @else {
+                <div class="customer-options" role="group" aria-label="Selecionar cliente">
+                  @for (c of customers(); track c.id) {
+                    <button
+                      type="button"
+                      [class.selected]="selectedCustomer?.id === c.id"
+                      [attr.aria-pressed]="selectedCustomer?.id === c.id"
+                      (click)="selectedCustomer = c"
+                    >
+                      {{ c.name
+                      }}<span>{{
+                        selectedCustomer?.id === c.id ? 'Selecionado' : 'Selecionar'
+                      }}</span>
+                    </button>
+                  } @empty {
+                    <p class="muted">
+                      Nenhum cliente encontrado.
+                      <a routerLink="/inicio/clientes">Cadastre um cliente</a> para continuar.
+                    </p>
+                  }
+                </div>
+                <div class="picker-pagination">
+                  <button
+                    type="button"
+                    [disabled]="customerPage === 0"
+                    (click)="findCustomers(customerPage - 1)"
+                  >
+                    Anterior</button
+                  ><span>Página {{ customerPage + 1 }}</span
+                  ><button
+                    type="button"
+                    [disabled]="(customerPage + 1) * 10 >= customerTotal()"
+                    (click)="findCustomers(customerPage + 1)"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              }
+            }
+          </div>
+        </div>
+        <div class="form-section">
+          <div class="section-copy">
+            <span class="step">02 / EQUIPAMENTO</span>
+            <h3>Identifique o aparelho</h3>
+            <p>Categoria, marca, modelo e número de série ajudam a localizar o equipamento.</p>
+          </div>
+          <div class="fields">
+            <label
+              >Categoria<select name="category" [(ngModel)]="category" [disabled]="!canWrite">
+                @for (c of categories; track c.value) {
+                  <option [value]="c.value">{{ c.label }}</option>
+                }
+              </select></label
+            >
+            <label
+              >Marca (opcional)<input
+                name="brand"
+                [(ngModel)]="brand"
+                maxlength="100"
+                [disabled]="!canWrite"
+                placeholder="Ex.: Dell"
+            /></label>
+            <label
+              >Modelo<input
+                name="model"
+                [(ngModel)]="model"
+                maxlength="150"
+                required
+                [disabled]="!canWrite"
+                placeholder="Ex.: Inspiron 15"
+            /></label>
+            <label
+              >Número de série (opcional)<input
+                name="serialNumber"
+                [(ngModel)]="serialNumber"
+                maxlength="150"
+                [disabled]="!canWrite"
+                placeholder="Identificação do fabricante"
+            /></label>
+            <label class="description-field"
+              >Descrição (opcional)<textarea
+                name="description"
+                [(ngModel)]="description"
+                maxlength="2000"
+                rows="4"
+                placeholder="Características gerais do equipamento"
+              ></textarea
+              ><span class="muted"
+                >{{ description.length }}/2000 · Acessórios e estado na entrada são registrados na
+                OS.</span
+              ></label
+            >
+          </div>
+        </div>
+        <div class="actions form-footer-actions">
+          <span class="form-note">Cliente, categoria e modelo são obrigatórios.</span
+          ><button type="button" (click)="editing.set(false)">Cancelar</button
+          ><button class="primary" type="submit">
+            {{ saving() ? 'Salvando…' : 'Salvar equipamento' }}
+          </button>
+        </div>
+      </fieldset>
+    </form>
+  } @else {
+    <div class="card directory">
+      <div class="directory-heading">
+        <div>
+          <span class="section-symbol"
+            ><svg class="icon" aria-hidden="true"><use href="#eq-device" /></svg
+          ></span>
+          <h2>Seus equipamentos</h2>
+          <span class="count">{{ data().totalElements }}</span>
+        </div>
+        <span class="directory-note">Vinculados aos seus clientes</span>
+      </div>
+      <form class="search equipment-search" (ngSubmit)="search()">
+        <label
+          ><span class="sr-only">Buscar por número de série</span
+          ><span class="search-input"
+            ><svg class="icon" aria-hidden="true"><use href="#eq-search" /></svg
+            ><input
+              name="serial"
+              [(ngModel)]="serial"
+              maxlength="150"
+              type="search"
+              placeholder="Buscar por número de série" /></span></label
+        ><button class="primary" type="submit">Buscar</button>
+      </form>
+      @if (filterCustomer) {
+        <p class="filter-note">
+          Mostrando equipamentos do cliente selecionado.
+          <a routerLink="/inicio/equipamentos">Ver todos</a>
+        </p>
+      }
+      @if (deleting(); as value) {
+        <div role="alert" class="card confirmation">
+          <p>
+            Excluir <strong>{{ value.model }}</strong
+            >? O equipamento sairá da listagem.
+          </p>
+          <div class="actions">
+            <button type="button" [disabled]="saving()" (click)="remove()">
+              Confirmar exclusão</button
+            ><button type="button" [disabled]="saving()" (click)="deleting.set(null)">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      }
+      <div class="results" [attr.aria-busy]="loading()">
+        @if (loading()) {
+          <div role="status" class="loading-state">
+            <span class="spinner" aria-hidden="true"></span>Carregando equipamentos…
+          </div>
+        } @else {
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Equipamento</th>
+                  <th>Número de série</th>
+                  <th>Cliente</th>
+                  @if (canDescribe) {
+                    <th>Ações</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (value of data().content; track value.id) {
+                  <tr>
+                    <td data-label="Equipamento">
+                      <div class="customer-identity">
+                        <span class="avatar"
+                          ><svg class="icon" aria-hidden="true"><use href="#eq-device" /></svg
+                        ></span>
+                        <div>
+                          <strong>{{ value.model }}</strong
+                          ><span class="customer-subtitle"
+                            >{{ categoryName(value.category)
+                            }}{{ value.brand ? ' · ' + value.brand : '' }}</span
+                          >
+                        </div>
+                      </div>
+                      @if (value.description) {
+                        <p class="equipment-description">{{ value.description }}</p>
+                      }
+                    </td>
+                    <td data-label="Série">
+                      <span class="document">{{ value.serialNumber || 'Não informado' }}</span>
+                    </td>
+                    <td data-label="Cliente">
+                      <span class="customer-name">{{ value.customerName }}</span>
+                      @if (value.customerDeleted) {
+                        <span class="customer-subtitle">Cliente excluído</span>
+                      }
+                    </td>
+                    @if (canDescribe) {
+                      <td class="row-actions">
+                        <div class="actions">
+                          <button
+                            class="edit-button"
+                            type="button"
+                            (click)="edit(value)"
+                            [attr.aria-label]="'Editar ' + value.model"
+                          >
+                            {{ canWrite ? 'Editar' : 'Editar descrição' }}
+                          </button>
+                          @if (canWrite) {
+                            <button
+                              class="delete-button"
+                              type="button"
+                              (click)="deleting.set(value)"
+                              [attr.aria-label]="'Excluir ' + value.model"
+                            >
+                              Excluir
+                            </button>
+                          }
+                        </div>
+                      </td>
+                    }
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td class="empty-cell" [attr.colspan]="canDescribe ? 4 : 3">
+                      <div class="empty-state">
+                        <span class="empty-symbol"
+                          ><svg class="icon" aria-hidden="true"><use href="#eq-device" /></svg
+                        ></span>
+                        <h3>Nenhum equipamento encontrado.</h3>
+                        <p>
+                          Busque por outro número de série.
+                          @if (canWrite) {
+                            <br />Ou cadastre o primeiro equipamento de um cliente.
+                          }
+                        </p>
+                        @if (canWrite) {
+                          <button class="primary" type="button" (click)="edit()">
+                            Novo equipamento
+                          </button>
+                        }
+                      </div>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+        <div class="pagination">
+          <span>{{ data().totalElements }} equipamentos · Página {{ data().page + 1 }}</span>
+          <div class="actions">
+            <button
+              type="button"
+              [disabled]="loading() || data().page === 0"
+              (click)="load(data().page - 1)"
+            >
+              Anterior</button
+            ><button
+              type="button"
+              [disabled]="loading() || (data().page + 1) * data().size >= data().totalElements"
+              (click)="load(data().page + 1)"
+            >
+              Próxima
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</section>

@@ -1,3 +1,4 @@
+import { provideRouter } from '@angular/router';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
@@ -17,6 +18,7 @@ describe('Customers', () => {
     TestBed.configureTestingModule({
       imports: [CustomersPanel],
       providers: [
+        provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: SessionService, useValue: { session: signal({ role }).asReadonly() } },

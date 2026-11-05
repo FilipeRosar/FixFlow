@@ -1,3 +1,4 @@
+import { EquipmentPanel } from '../../components/equipment/equipment';
 import { CustomersPanel } from '../../components/customers/customers';
 import { toSignal } from '@angular/core/rxjs-interop';
 import {
@@ -14,7 +15,7 @@ import { Membership } from '../../../../core/auth/dto/session';
 
 @Component({
   selector: 'app-workspace',
-  imports: [RouterLink, FormsModule, CompanySettingsPanel, CustomersPanel],
+  imports: [RouterLink, FormsModule, CompanySettingsPanel, CustomersPanel, EquipmentPanel],
   templateUrl: './workspace.html',
   styleUrl: './workspace.css',
 })
@@ -24,6 +25,10 @@ export class Workspace implements OnInit {
   protected readonly session = this.sessions.session;
   protected readonly companyName = signal('');
   protected readonly companyLogo = signal<string | null>(null);
+  protected readonly equipmentPage = toSignal(
+    inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'equipment')),
+    { initialValue: false },
+  );
   protected readonly customersPage = toSignal(
     inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'customers')),
     { initialValue: false },
@@ -61,7 +66,7 @@ export class Workspace implements OnInit {
   protected readonly upcoming = [
     { label: 'Ordens de serviço', icon: 'orders' },
     { label: 'Clientes', icon: 'clients' },
-    { label: 'Aparelhos', icon: 'devices' },
+    { label: 'Equipamentos', icon: 'devices' },
     { label: 'Financeiro', icon: 'finance' },
     { label: 'Configurações', icon: 'settings' },
   ];
