@@ -227,10 +227,9 @@
                         >
                         <div>
                           <a
-                            class="customer-equipment-link"
-                            routerLink="/inicio/equipamentos"
-                            [queryParams]="{ customerId: customer.id }"
-                            [attr.aria-label]="'Equipamentos de ' + customer.name"
+                            class="customer-history-link"
+                            [routerLink]="['/inicio/clientes', customer.id, 'historico']"
+                            [attr.aria-label]="'Histórico de ' + customer.name"
                             ><strong>{{ customer.name }}</strong></a
                           ><span class="customer-subtitle"
                             >{{ customer.contacts.length }}

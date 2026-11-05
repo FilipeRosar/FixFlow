@@ -1,0 +1,166 @@
+<svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <symbol id="history-clock" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </symbol>
+    <symbol id="history-device" viewBox="0 0 24 24">
+      <rect x="4" y="3" width="16" height="13" rx="2" />
+      <path d="M2 20h20M9 16v4M15 16v4" />
+    </symbol>
+    <symbol id="history-order" viewBox="0 0 24 24">
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <path d="M9 3h6v4H9zM9 12h6M9 16h4" />
+    </symbol>
+    <symbol id="history-arrow" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6" /></symbol>
+  </defs>
+</svg>
+<section aria-labelledby="history-heading">
+  <a class="back-to-customers" routerLink="/inicio/clientes"
+    ><svg class="icon" aria-hidden="true"><use href="#history-arrow" /></svg>Voltar para clientes</a
+  >
+  <div class="heading page-heading">
+    <div>
+      <p class="eyebrow">Cada atendimento faz parte da história</p>
+      <h1 id="history-heading">Histórico do cliente</h1>
+      <p>{{ data()?.customerName || 'Equipamentos e ordens de serviço em uma linha do tempo.' }}</p>
+    </div>
+    @if (data()) {
+      <a
+        class="equipment-shortcut"
+        routerLink="/inicio/equipamentos"
+        [queryParams]="{ customerId: customerId }"
+        ><svg class="icon" aria-hidden="true"><use href="#history-device" /></svg>Ver
+        equipamentos</a
+      >
+    }
+  </div>
+  @if (error()) {
+    <div class="error" role="alert">
+      <p>{{ error() }}</p>
+      <button type="button" (click)="load(data()?.page ?? 0)">Tentar novamente</button>
+    </div>
+  }
+  <div class="card directory">
+    <div class="directory-heading">
+      <div>
+        <span class="section-symbol"
+          ><svg class="icon" aria-hidden="true"><use href="#history-clock" /></svg
+        ></span>
+        <h2>Linha do tempo</h2>
+        @if (data(); as history) {
+          <span class="count">{{ history.totalElements }}</span>
+        }
+      </div>
+      <span class="directory-note">Organizado pela data de criação</span>
+    </div>
+    <div class="history-filters">
+      <label
+        >Mostrar<select name="type" [(ngModel)]="type" (ngModelChange)="load(0)">
+          <option value="ALL">Todos os registros</option>
+          @if (data()?.workOrdersVisible) {
+            <option value="WORK_ORDER">Ordens de serviço</option>
+          }
+          <option value="EQUIPMENT">Equipamentos</option>
+        </select></label
+      ><label
+        >Ordenar por<select name="sort" [(ngModel)]="sort" (ngModelChange)="load(0)">
+          <option value="desc">Mais recentes primeiro</option>
+          <option value="asc">Mais antigos primeiro</option>
+        </select></label
+      ><label
+        >Por página<select name="size" [(ngModel)]="size" (ngModelChange)="load(0)">
+          <option [ngValue]="10">10</option>
+          <option [ngValue]="20">20</option>
+          <option [ngValue]="50">50</option>
+        </select></label
+      >
+    </div>
+    @if (data() && !data()?.workOrdersVisible) {
+      <p class="permission-note">
+        Sua permissão permite consultar os equipamentos neste histórico.
+      </p>
+    }
+    <div [attr.aria-busy]="loading()">
+      @if (loading()) {
+        <div role="status" class="loading-state">
+          <span class="spinner" aria-hidden="true"></span>Carregando histórico…
+        </div>
+      } @else if (!error()) {
+        <ol class="timeline">
+          @for (entry of data()?.content ?? []; track entry.type + entry.id) {
+            <li class="timeline-entry">
+              <span class="timeline-symbol" [class.is-order]="entry.type === 'WORK_ORDER'"
+                ><svg class="icon" aria-hidden="true">
+                  <use
+                    [attr.href]="entry.type === 'WORK_ORDER' ? '#history-order' : '#history-device'"
+                  /></svg
+              ></span>
+              <article>
+                <div class="entry-meta">
+                  <span class="entry-kind">{{
+                    entry.type === 'WORK_ORDER' ? 'Ordem de serviço' : 'Equipamento cadastrado'
+                  }}</span
+                  ><time [attr.datetime]="entry.createdAt">{{
+                    entry.createdAt | date: 'dd/MM/yyyy · HH:mm'
+                  }}</time>
+                </div>
+                <div class="entry-heading">
+                  <h3>{{ entry.title }}</h3>
+                  @if (entry.type === 'WORK_ORDER') {
+                    <span
+                      class="status-badge"
+                      [class.closed]="entry.status === 'ENTREGUE'"
+                      [class.canceled]="entry.status === 'CANCELADA'"
+                      >{{ statusLabel(entry.status) }}</span
+                    >
+                  } @else if (entry.deleted) {
+                    <span class="deleted-badge">Excluído</span>
+                  }
+                </div>
+                @if (entry.type === 'EQUIPMENT') {
+                  <p class="entry-detail">
+                    Número de série: <span>{{ entry.serialNumber || 'Não informado' }}</span>
+                  </p>
+                } @else {
+                  <p class="entry-detail">
+                    Identificador:
+                    <span class="order-id" [attr.title]="entry.id">{{ entry.id }}</span>
+                  </p>
+                }
+              </article>
+            </li>
+          } @empty {
+            <li class="empty-state">
+              <span class="empty-symbol"
+                ><svg class="icon" aria-hidden="true"><use href="#history-clock" /></svg
+              ></span>
+              <h3>Nenhum registro encontrado.</h3>
+              <p>As ordens de serviço e os equipamentos deste cliente aparecerão aqui.</p>
+            </li>
+          }
+        </ol>
+      }
+    </div>
+    @if (data(); as history) {
+      <div class="pagination">
+        <span>{{ history.totalElements }} registros · Página {{ history.page + 1 }}</span>
+        <div class="actions">
+          <button
+            type="button"
+            [disabled]="loading() || history.page === 0"
+            (click)="load(history.page - 1)"
+          >
+            Anterior</button
+          ><button
+            type="button"
+            [disabled]="loading() || (history.page + 1) * history.size >= history.totalElements"
+            (click)="load(history.page + 1)"
+          >
+            Próxima
+          </button>
+        </div>
+      </div>
+    }
+  </div>
+</section>

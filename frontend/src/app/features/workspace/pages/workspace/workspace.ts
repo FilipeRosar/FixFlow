@@ -1,3 +1,4 @@
+import { CustomerHistoryPanel } from '../../components/customer-history/customer-history';
 import { EquipmentPanel } from '../../components/equipment/equipment';
 import { CustomersPanel } from '../../components/customers/customers';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -15,7 +16,14 @@ import { Membership } from '../../../../core/auth/dto/session';
 
 @Component({
   selector: 'app-workspace',
-  imports: [RouterLink, FormsModule, CompanySettingsPanel, CustomersPanel, EquipmentPanel],
+  imports: [
+    RouterLink,
+    FormsModule,
+    CompanySettingsPanel,
+    CustomersPanel,
+    EquipmentPanel,
+    CustomerHistoryPanel,
+  ],
   templateUrl: './workspace.html',
   styleUrl: './workspace.css',
 })
@@ -27,6 +35,10 @@ export class Workspace implements OnInit {
   protected readonly companyLogo = signal<string | null>(null);
   protected readonly equipmentPage = toSignal(
     inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'equipment')),
+    { initialValue: false },
+  );
+  protected readonly historyPage = toSignal(
+    inject(ActivatedRoute).data.pipe(map((data) => data['history'] === true)),
     { initialValue: false },
   );
   protected readonly customersPage = toSignal(

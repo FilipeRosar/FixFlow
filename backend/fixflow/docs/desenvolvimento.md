@@ -508,3 +508,30 @@ cliente, série ou identificação. DELETE é lógico, com 404 nas consultas fut
 Mutações geram auditoria sem conteúdo dos campos. Interface em
 `/inicio/equipamentos`, com seleção paginada de clientes, filtro por série e
 atalho pelo nome do cliente na listagem de clientes.
+
+## Histórico do cliente (US-012)
+
+`GET /api/v1/customers/{customerId}/history` retorna uma linha do tempo unificada
+de OS e equipamentos vinculados ao cliente do tenant autorizado. Filtros:
+`type=ALL|WORK_ORDER|EQUIPMENT` (padrão ALL), `sort=asc|desc` (padrão desc),
+`page` base zero e `size` de 1 a 100 (padrão 20). Ordenação por `created_at`,
+com desempate por tipo e UUID para garantir estabilidade entre páginas. V24
+adiciona índices por tenant, cliente e data nas duas tabelas.
+
+Resposta: cliente, `content`, `totalElements`, `page`, `size`, `sort` e
+`workOrdersVisible`. Cada registro possui `id`, `type`, `createdAt`, `title`,
+`status`, `serialNumber` e `deleted`. Inclui OS abertas/encerradas/canceladas e
+mantém equipamentos excluídos logicamente, sinalizados como excluídos. A data é
+a de criação do registro; o status de OS é o atual. Não representa eventos de
+mudança de status ou histórico de transferência de propriedade do equipamento.
+Cliente inexistente, excluído ou de outro tenant retorna 404 idêntico.
+
+Owner e Atendente veem ambos os tipos. Técnico vê apenas equipamentos; os
+contadores também excluem OS, e solicitar `type=WORK_ORDER` retorna 403. Quando
+a US-020 implementar a atribuição de técnicos às OS, o histórico poderá adotar
+esse escopo sem expor OS não atribuídas. A US-020 ainda está pendente: a consulta
+usa a base real `work_orders` existente e não cria dados nem protocolos fictícios.
+
+Interface: clique no nome do cliente para abrir
+`/inicio/clientes/{customerId}/historico`, com filtros, datas, status, paginação
+e atalho para os equipamentos do cliente.
