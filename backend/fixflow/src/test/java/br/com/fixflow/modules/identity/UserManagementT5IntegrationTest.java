@@ -35,7 +35,6 @@ class UserManagementT5IntegrationTest {
                 return "ok";
             });
         }
-        @PostMapping("/api/v1/work-orders") String createOrder() { return "ok"; }
         @GetMapping("/api/v1/dashboard/summary") String finance() { return "ok"; }
     }
     @Autowired MockMvc mvc;
@@ -126,13 +125,16 @@ class UserManagementT5IntegrationTest {
         var tech = tokenFor(create("TECHNICIAN"));
         var attendant = tokenFor(create("ATTENDANT"));
         mvc.perform(post("/api/v1/work-orders").header("Authorization", "Bearer " + tech)
+                .contentType("application/json").content("{}")
                 .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf()))
                 .andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/dashboard/summary").header("Authorization", "Bearer " + attendant))
                 .andExpect(status().isForbidden());
+        // Use the real OS endpoint: an authorized attendant reaches body validation.
         mvc.perform(post("/api/v1/work-orders").header("Authorization", "Bearer " + attendant)
+                .contentType("application/json").content("{}")
                 .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf()))
-                .andExpect(status().isOk());
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors.customerId").exists());
         mvc.perform(get("/api/v1/dashboard/summary").header("Authorization", "Bearer " + owner))
                 .andExpect(status().isOk());
         mvc.perform(get(url).header("Authorization", "Bearer " + tech)).andExpect(status().isForbidden());
