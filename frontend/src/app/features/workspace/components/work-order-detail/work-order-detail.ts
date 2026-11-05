@@ -1,3 +1,5 @@
+import { WorkOrderAttachmentsPanel } from '../work-order-attachments/work-order-attachments';
+import { WorkOrderItemsPanel } from '../work-order-items/work-order-items';
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -36,13 +38,19 @@ interface WorkOrder {
 }
 @Component({
   selector: 'app-work-order-detail',
-  imports: [DatePipe, RouterLink, FormsModule],
+  imports: [DatePipe, RouterLink, FormsModule, WorkOrderItemsPanel, WorkOrderAttachmentsPanel],
   templateUrl: './work-order-detail.html',
   styleUrls: ['../customers/customers.css', './work-order-detail.css'],
 })
 export class WorkOrderDetail implements OnInit {
   private readonly http = inject(HttpClient);
   protected readonly role = inject(SessionService).session()?.role;
+  protected readonly itemsSaving = signal(false);
+  protected updateItemsVersion(version: number): void {
+    this.order.update((order) =>
+      order ? { ...order, version: Math.max(order.version, version) } : null,
+    );
+  }
   protected readonly changing = signal(false);
   protected readonly transitionError = signal('');
   protected readonly transitionNotice = signal('');
@@ -85,6 +93,7 @@ export class WorkOrderDetail implements OnInit {
       !this.canAssign ||
       !this.selectedTechnician ||
       this.assigning() ||
+      this.itemsSaving() ||
       this.changing() ||
       this.diagnosing()
     )
@@ -140,6 +149,7 @@ export class WorkOrderDetail implements OnInit {
       this.diagnosing() ||
       this.changing() ||
       this.assigning() ||
+      this.itemsSaving() ||
       !this.findings.trim() ||
       !this.probableCause.trim() ||
       !this.proposedSolution.trim()
@@ -243,7 +253,15 @@ export class WorkOrderDetail implements OnInit {
   }
   protected changeStatus(): void {
     const order = this.order();
-    if (!order || !this.target || this.changing() || this.assigning() || this.diagnosing()) return;
+    if (
+      !order ||
+      !this.target ||
+      this.changing() ||
+      this.assigning() ||
+      this.diagnosing() ||
+      this.itemsSaving()
+    )
+      return;
     this.changing.set(true);
     this.transitionError.set('');
     this.transitionNotice.set('');
@@ -318,6 +336,7 @@ export class WorkOrderDetail implements OnInit {
             this.transitionNotice.set('');
           }
           this.viewRequest++;
+          this.itemsSaving.set(false);
           this.diagnosing.set(false);
           this.historyLoading.set(false);
           this.historyShown.set(false);

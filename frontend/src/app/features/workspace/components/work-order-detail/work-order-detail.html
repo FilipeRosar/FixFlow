@@ -54,6 +54,13 @@
         }
       </article>
     </div>
+    <app-work-order-attachments [orderId]="item.id" />
+    <app-work-order-items
+      [order]="item"
+      [blocked]="changing() || assigning() || diagnosing()"
+      (busyChanged)="itemsSaving.set($event)"
+      (versionChanged)="updateItemsVersion($event)"
+    />
     <section class="card status-editor" aria-labelledby="technician-heading">
       <div class="directory-heading"><h2 id="technician-heading">Técnico responsável</h2></div>
       <div class="technician-content">
@@ -66,7 +73,7 @@
                 [(ngModel)]="selectedTechnician"
                 (focus)="loadTechnicians()"
                 (click)="loadTechnicians()"
-                [disabled]="assigning() || changing() || diagnosing()"
+                [disabled]="assigning() || changing() || diagnosing() || itemsSaving()"
                 required
               >
                 <option value="">
@@ -265,7 +272,7 @@
         <div class="directory-heading">
           <div><h2>Próxima etapa do atendimento</h2></div>
         </div>
-        <fieldset [disabled]="changing() || assigning() || diagnosing()">
+        <fieldset [disabled]="changing() || assigning() || diagnosing() || itemsSaving()">
           <label
             >Alterar estado para<select name="target" [(ngModel)]="target" required>
               <option value="">Selecione a próxima etapa</option>

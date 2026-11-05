@@ -1,0 +1,119 @@
+<section class="card attachments-panel" aria-labelledby="attachments-heading">
+  <div class="attachment-heading">
+    <div class="attachment-title">
+      <span class="attachment-icon" aria-hidden="true"
+        ><svg viewBox="0 0 24 24">
+          <path d="m9 13 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l8-8a2 2 0 0 1 3 3l-8 8" /></svg
+      ></span>
+      <div>
+        <h2 id="attachments-heading">Anexos e fotos</h2>
+        <p>Registros do equipamento e documentos do atendimento.</p>
+      </div>
+    </div>
+    <button
+      type="button"
+      (click)="toggle()"
+      [attr.aria-expanded]="open()"
+      aria-controls="order-attachments-content"
+    >
+      {{ open() ? 'Recolher anexos' : 'Ver anexos da OS' }}
+    </button>
+  </div>
+  @if (open()) {
+    <div id="order-attachments-content">
+      @if (error()) {
+        <p class="error" role="alert">{{ error() }}</p>
+      }
+      @if (notice()) {
+        <p class="notice" role="status">{{ notice() }}</p>
+      }
+      @if (loading()) {
+        <p role="status">Carregando anexos…</p>
+      } @else if (!loaded()) {
+        <button type="button" (click)="load()">Tentar novamente</button>
+      } @else {
+        <div class="attachment-count">
+          <span>Arquivos da ordem</span
+          ><strong>{{ attachments().length }} <small>/ 20</small></strong
+          ><button type="button" (click)="load()" [disabled]="uploading()">Atualizar lista</button>
+        </div>
+        <div class="attachment-grid">
+          @for (file of attachments(); track file.id) {
+            <article class="attachment-file">
+              <span class="file-type">{{
+                file.contentType === 'application/pdf' ? 'PDF' : 'FOTO'
+              }}</span>
+              <h3 [title]="file.originalName">{{ file.originalName }}</h3>
+              <p>
+                {{ size(file.sizeBytes) }} <span aria-hidden="true">·</span>
+                {{ file.createdAt | date: 'dd/MM/yyyy · HH:mm' }}
+              </p>
+              <div class="download-actions">
+                <button type="button" (click)="generateDownload(file)" [disabled]="!!downloading()">
+                  {{
+                    downloading() === file.id
+                      ? 'Gerando link…'
+                      : download()?.id === file.id
+                        ? 'Renovar link'
+                        : 'Gerar link de download'
+                  }}
+                </button>
+                @if (download(); as link) {
+                  @if (link.id === file.id) {
+                    <a
+                      [href]="link.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      referrerpolicy="no-referrer"
+                      >Baixar arquivo ↗</a
+                    ><small>Disponível até {{ link.expiresAt | date: 'HH:mm' }}</small>
+                  }
+                }
+              </div>
+            </article>
+          } @empty {
+            <div class="attachment-empty">
+              <h3>Os detalhes também fazem parte do reparo</h3>
+              <p>
+                Adicione fotos da entrada, do diagnóstico e do serviço realizado, ou documentos
+                deste atendimento.
+              </p>
+            </div>
+          }
+        </div>
+        <form (submit)="$event.preventDefault(); upload(fileInput)" class="attachment-upload">
+          <div>
+            <h3>Adicionar um arquivo</h3>
+            <p>JPEG, PNG, WebP ou PDF · Até 10 MB por arquivo e 20 anexos por OS.</p>
+          </div>
+          @if (attachments().length >= 20) {
+            <p class="attachment-limit" role="status">Esta ordem atingiu o limite de 20 anexos.</p>
+          }
+          <label for="attachment-file"
+            >Escolher arquivo<input
+              #fileInput
+              id="attachment-file"
+              type="file"
+              name="file"
+              accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+              (change)="choose($event)"
+              [disabled]="uploading() || attachments().length >= 20"
+          /></label>
+          @if (selected(); as file) {
+            <p class="selected-file">{{ file.name }} · {{ size(file.size) }}</p>
+          }
+          <div class="attachment-upload-footer">
+            <span>Arquivos privados. Links de download válidos por 5 minutos.</span
+            ><button
+              class="primary"
+              type="submit"
+              [disabled]="!selected() || uploading() || attachments().length >= 20"
+            >
+              {{ uploading() ? 'Enviando arquivo…' : '＋ Anexar à OS' }}
+            </button>
+          </div>
+        </form>
+      }
+    </div>
+  }
+</section>

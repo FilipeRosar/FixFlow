@@ -1,0 +1,228 @@
+<section class="card items-panel" aria-labelledby="items-heading">
+  <div class="section-heading">
+    <div>
+      <h2 id="items-heading">Serviços e peças</h2>
+      <p>Itens executados nesta ordem de serviço.</p>
+    </div>
+    <button
+      type="button"
+      (click)="toggle()"
+      [attr.aria-expanded]="open()"
+      aria-controls="order-items-content"
+      [disabled]="busy() || blocked()"
+    >
+      {{ open() ? 'Recolher itens' : 'Ver itens da OS' }}
+    </button>
+  </div>
+  @if (open()) {
+    <div id="order-items-content">
+      @if (notice()) {
+        <p class="notice" role="status">{{ notice() }}</p>
+      }
+      @if (error()) {
+        <p class="error" role="alert">{{ error() }}</p>
+      }
+      @if (loading()) {
+        <p role="status">Carregando itens…</p>
+      } @else if (!loaded()) {
+        <button type="button" (click)="load()">Tentar novamente</button>
+      } @else {
+        @if (items().length) {
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Item</th>
+                  <th scope="col">Quantidade</th>
+                  <th scope="col">Valor unitário</th>
+                  <th scope="col">Subtotal</th>
+                  @if (canEdit()) {
+                    <th scope="col">Ações</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (item of items(); track item.id) {
+                  <tr>
+                    <td>
+                      <strong>{{ item.description }}</strong
+                      ><small>{{
+                        item.type === 'PART' ? 'Peça · baixa registrada' : 'Serviço'
+                      }}</small>
+                    </td>
+                    <td>{{ item.quantity | number: '1.0-3' }}</td>
+                    <td>{{ item.unitPrice | currency: 'BRL' }}</td>
+                    <td>{{ item.quantity * item.unitPrice | currency: 'BRL' }}</td>
+                    @if (canEdit()) {
+                      <td>
+                        <button
+                          type="button"
+                          (click)="remove(item)"
+                          [disabled]="busy() || blocked()"
+                          [attr.aria-label]="'Remover ' + item.description"
+                        >
+                          Remover
+                        </button>
+                      </td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <div class="items-total">
+            <span>Total dos itens executados</span><strong>{{ total() | currency: 'BRL' }}</strong>
+          </div>
+        } @else {
+          <div class="items-empty">
+            <h3>Nenhum item registrado</h3>
+            <p>Os serviços e as peças utilizados no reparo aparecerão aqui.</p>
+          </div>
+        }
+        @if (canEdit()) {
+          <form #itemForm="ngForm" (ngSubmit)="add()">
+            <fieldset [disabled]="busy() || blocked() || loading()">
+              <legend>Adicionar item executado</legend>
+              <div class="item-fields">
+                <label
+                  >Tipo<select name="type" [(ngModel)]="type">
+                    <option value="SERVICE">Serviço</option>
+                    <option value="PART">Peça</option>
+                  </select></label
+                >
+                @if (type === 'PART') {
+                  <label class="wide-field"
+                    >Peça<select
+                      name="part"
+                      [(ngModel)]="partId"
+                      (ngModelChange)="selectPart()"
+                      required
+                      [disabled]="partsLoading()"
+                    >
+                      <option value="">
+                        {{ partsLoading() ? 'Carregando peças…' : 'Selecione uma peça' }}
+                      </option>
+                      @for (part of parts(); track part.id) {
+                        <option [value]="part.id">
+                          {{ part.sku }} · {{ part.name }} · saldo
+                          {{ part.quantityOnHand | number: '1.0-3' }}
+                        </option>
+                      }
+                    </select></label
+                  >
+                }
+                <label class="wide-field"
+                  >Descrição<input
+                    name="description"
+                    [(ngModel)]="description"
+                    required
+                    maxlength="500"
+                    placeholder="Ex.: troca de tela ou limpeza técnica"
+                /></label>
+                <label
+                  >Quantidade<input
+                    name="quantity"
+                    type="number"
+                    [(ngModel)]="quantity"
+                    required
+                    min="0.001"
+                    max="99999999999.999"
+                    step="0.001"
+                /></label>
+                <label
+                  >Valor unitário (R$)<input
+                    name="price"
+                    type="number"
+                    [(ngModel)]="unitPrice"
+                    required
+                    min="0"
+                    max="999999999999.99"
+                    step="0.01"
+                /></label>
+              </div>
+              @if (type === 'PART') {
+                <p class="item-hint">
+                  Adicionar a peça baixa o estoque. Remover o item devolve a quantidade ao estoque.
+                </p>
+              }
+              @if (partsError()) {
+                <p class="error" role="alert">
+                  {{ partsError() }}
+                  <button type="button" (click)="loadParts()">Tentar novamente</button>
+                </p>
+              }
+              <button
+                class="primary"
+                type="submit"
+                [disabled]="itemForm.invalid || !description.trim() || busy() || blocked()"
+              >
+                {{ busy() ? 'Salvando…' : '＋ Adicionar item' }}
+              </button>
+            </fieldset>
+          </form>
+          @if (role === 'OWNER') {
+            <details class="part-registration">
+              <summary>Cadastrar uma peça no estoque</summary>
+              <form #partForm="ngForm" (ngSubmit)="createPart()">
+                <fieldset [disabled]="busy() || blocked()">
+                  <legend>Nova peça</legend>
+                  <div class="item-fields">
+                    <label>SKU<input name="sku" [(ngModel)]="sku" required maxlength="80" /></label
+                    ><label class="wide-field"
+                      >Nome<input name="name" [(ngModel)]="partName" required maxlength="200"
+                    /></label>
+                    <label
+                      >Custo (R$)<input
+                        name="cost"
+                        type="number"
+                        [(ngModel)]="partCost"
+                        required
+                        min="0"
+                        step="0.01" /></label
+                    ><label
+                      >Preço sugerido (R$)<input
+                        name="salePrice"
+                        type="number"
+                        [(ngModel)]="partPrice"
+                        required
+                        min="0"
+                        step="0.01" /></label
+                    ><label
+                      >Saldo inicial<input
+                        name="initialQuantity"
+                        type="number"
+                        [(ngModel)]="initialQuantity"
+                        required
+                        min="0"
+                        step="0.001"
+                    /></label>
+                  </div>
+                  <p class="item-hint">
+                    O saldo inicial gera uma entrada de estoque. O consumo só ocorre ao adicionar a
+                    peça à OS.
+                  </p>
+                  <button
+                    type="submit"
+                    [disabled]="
+                      partForm.invalid || !sku.trim() || !partName.trim() || busy() || blocked()
+                    "
+                  >
+                    Cadastrar peça
+                  </button>
+                </fieldset>
+              </form>
+            </details>
+          }
+        } @else {
+          <p class="item-hint">
+            {{
+              role === 'ATTENDANT'
+                ? 'Os itens são registrados pelo proprietário ou pelo técnico responsável durante a manutenção.'
+                : 'Os itens executados podem ser alterados durante a manutenção.'
+            }}
+          </p>
+        }
+      }
+    </div>
+  }
+</section>
