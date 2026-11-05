@@ -1,0 +1,62 @@
+<section class="card privacy-panel" aria-labelledby="privacy-heading">
+  <div class="privacy-heading">
+    <div>
+      <span class="step">DADOS DO CLIENTE</span>
+      <h2 id="privacy-heading">Privacidade e exportação</h2>
+      <p>Exporte os dados para o titular ou remova as informações que identificam o cliente.</p>
+    </div>
+    <span class="privacy-tag">Somente proprietário</span>
+  </div>
+  @if (error()) {
+    <p role="alert" class="error">{{ error() }}</p>
+  }
+  @if (notice()) {
+    <p role="status" class="notice">{{ notice() }}</p>
+  }
+  <div class="privacy-options">
+    <div>
+      <h3>Exportar dados</h3>
+      <p>Baixe um JSON com o cadastro, contatos, equipamentos e ordens de serviço deste cliente.</p>
+      <button type="button" [disabled]="busy()" (click)="export()">Exportar JSON</button>
+    </div>
+    <div>
+      <h3>Anonimizar cliente</h3>
+      @if (anonymized() || completed()) {
+        <p class="anonymized-label">
+          Cliente anonimizado. O histórico permanece disponível sem dados identificáveis.
+        </p>
+      } @else {
+        <p>
+          Remove nome, documento, contatos e dados identificáveis dos equipamentos. OS são
+          preservadas. A ação é permanente e registrada na auditoria.
+        </p>
+        <button class="danger" type="button" [disabled]="busy()" (click)="start()">
+          Anonimizar dados
+        </button>
+      }
+    </div>
+  </div>
+  @if (confirming() && !anonymized() && !completed()) {
+    <form class="confirmation privacy-confirmation" (ngSubmit)="anonymize()">
+      <h3>Confirmar anonimização</h3>
+      <p>
+        O cliente e os equipamentos sairão das listagens de cadastro. IDs, vínculos e OS serão
+        mantidos. Exporte os dados antes, se precisar de uma cópia. OS abertas impedem esta ação.
+      </p>
+      <label class="confirmation-checkbox"
+        ><input
+          type="checkbox"
+          name="confirmed"
+          [(ngModel)]="confirmed"
+          [disabled]="busy()"
+          required
+        />Entendo que os dados removidos não poderão ser recuperados pela aplicação.</label
+      >
+      <div class="actions">
+        <button class="danger" type="submit" [disabled]="busy() || !confirmed">
+          {{ busy() ? 'Processando…' : 'Confirmar anonimização' }}</button
+        ><button type="button" [disabled]="busy()" (click)="confirming.set(false)">Cancelar</button>
+      </div>
+    </form>
+  }
+</section>
