@@ -9,7 +9,9 @@ COPY src ./src
 
 RUN mvn -B --no-transfer-progress clean package -DskipTests
 
-FROM eclipse-temurin:25-jre
+FROM eclipse-temurin:25-jre-alpine-3.24
+
+RUN apk upgrade --no-cache
 
 WORKDIR /app
 
