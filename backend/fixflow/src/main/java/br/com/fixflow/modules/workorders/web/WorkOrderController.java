@@ -48,4 +48,11 @@ public class WorkOrderController {
         return orders.assignTechnician(id, request.technicianId(), request.version());
     }
     @GetMapping("/{id}") public WorkOrder get(@PathVariable UUID id) { return orders.get(id); }
+    @GetMapping(value = "/{id}/pdf", produces = "application/pdf")
+    public ResponseEntity<byte[]> pdf(@PathVariable UUID id, @RequestParam(defaultValue = "ENTRY") String type) {
+        if (!type.equals("ENTRY") && !type.equals("DELIVERY"))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Tipo de termo inválido.");
+        return ResponseEntity.ok().header("Content-Disposition", "attachment; filename=\"os-" + id + "-" + type.toLowerCase(java.util.Locale.ROOT) + ".pdf\"")
+                .header("Cache-Control", "no-store").body(orders.pdf(id, type.equals("DELIVERY")));
+    }
 }

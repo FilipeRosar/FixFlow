@@ -60,6 +60,34 @@ interface WorkOrder {
   styleUrls: ['../customers/customers.css', './work-order-detail.css'],
 })
 export class WorkOrderDetail implements OnInit {
+  protected readonly downloadingPdf = signal(false);
+  protected readonly pdfError = signal('');
+  protected downloadPdf(type: 'ENTRY' | 'DELIVERY'): void {
+    const order = this.order();
+    if (!order || this.downloadingPdf()) return;
+    const view = this.viewRequest;
+    this.downloadingPdf.set(true);
+    this.pdfError.set('');
+    this.http.get(`/api/v1/work-orders/${order.id}/pdf`, {
+      params: { type }, responseType: 'blob',
+    }).pipe(takeUntilDestroyed(this.destroy)).subscribe({
+      next: (blob) => {
+        if (view !== this.viewRequest) return;
+        this.downloadingPdf.set(false);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `os-${order.number}-${type === 'ENTRY' ? 'entrada' : 'entrega'}.pdf`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      },
+      error: () => {
+        if (view !== this.viewRequest) return;
+        this.downloadingPdf.set(false);
+        this.pdfError.set('Não foi possível gerar o PDF. Tente novamente.');
+      },
+    });
+  }
   private readonly http = inject(HttpClient);
   protected readonly role = inject(SessionService).session()?.role;
   protected readonly timelineRevision = signal(0);
@@ -376,6 +404,8 @@ export class WorkOrderDetail implements OnInit {
             this.transitionNotice.set('');
           }
           this.viewRequest++;
+          this.downloadingPdf.set(false);
+          this.pdfError.set('');
           this.itemsSaving.set(false);
           this.diagnosing.set(false);
           this.historyLoading.set(false);

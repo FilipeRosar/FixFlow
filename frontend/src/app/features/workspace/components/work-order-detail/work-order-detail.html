@@ -15,6 +15,14 @@
       </div>
       <span class="order-status">{{ statusLabel(item.status) }}</span>
     </div>
+    <div class="pdf-actions">
+      <button type="button" [disabled]="downloadingPdf()" (click)="downloadPdf('ENTRY')">Baixar termo de entrada (PDF)</button>
+      @if (item.status === 'ENTREGUE') {
+        <button type="button" [disabled]="downloadingPdf()" (click)="downloadPdf('DELIVERY')">Baixar termo de entrega (PDF)</button>
+      }
+      @if (downloadingPdf()) { <p role="status">Gerando PDF…</p> }
+      @if (pdfError()) { <p role="alert">{{ pdfError() }}</p> }
+    </div>
     <div class="detail-grid">
       <article class="card">
         <div class="directory-heading"><h2>Cliente e equipamento</h2></div>

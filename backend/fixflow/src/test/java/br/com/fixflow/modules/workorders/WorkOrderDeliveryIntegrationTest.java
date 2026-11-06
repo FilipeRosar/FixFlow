@@ -122,6 +122,44 @@ class WorkOrderDeliveryIntegrationTest {
         var body = new HashMap<String, Object>(); body.put("version", version); body.put("warrantyDays", days); body.put("paymentOverride", override); body.put("reason", reason);
         return mvc.perform(post(url + "/" + id + "/deliver").header("Authorization", "Bearer " + token).contentType("application/json").content(mapper.writeValueAsString(body)));
     }
+    @Test void pdfTermsRespectAuthorizationDeliverySnapshotAndPagination() throws Exception {
+        UUID id = ready(true);
+        String endpoint = url + "/" + id + "/pdf";
+        mvc.perform(get(endpoint)).andExpect(status().isUnauthorized());
+        mvc.perform(get(endpoint).param("type", "OTHER").header("Authorization", "Bearer " + token)).andExpect(status().isBadRequest());
+        mvc.perform(get(endpoint).param("type", "DELIVERY").header("Authorization", "Bearer " + token)).andExpect(status().isConflict());
+        var entry = mvc.perform(get(endpoint).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(content().contentType("application/pdf"))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().exists("Content-Disposition")).andReturn().getResponse().getContentAsByteArray();
+        try (var pdf = org.apache.pdfbox.Loader.loadPDF(entry)) {
+            String text = new org.apache.pdfbox.text.PDFTextStripper().getText(pdf);
+            for (String expected : List.of("Integration workshop", "CPF/CNPJ", "Telefone", "Endereço", "TERMO DE ENTRADA", "Ana", "Dell", "Não liga", "Carregador", "Risco na tampa", "Termos registrados na entrega", "Assinatura")) assertTrue(text.contains(expected), expected);
+            assertFalse(pdf.getDocumentCatalog().getCOSObject().containsKey("OpenAction"));
+        }
+        String longTerms = "Garantia de serviço com atenção às condições. ".repeat(190) + "FIM DOS TERMOS";
+        inTenant(fixture.tenantA, () -> admin.update("UPDATE tenant_settings SET warranty_terms = ? WHERE tenant_id = ?", longTerms, fixture.tenantA));
+        deliver(id, 0, 90, false, null).andExpect(status().isOk());
+        inTenant(fixture.tenantA, () -> admin.update("UPDATE tenant_settings SET warranty_terms = 'TERMOS NOVOS' WHERE tenant_id = ?", fixture.tenantA));
+        byte[] receipt = mvc.perform(get(endpoint).param("type", "DELIVERY").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        try (var pdf = org.apache.pdfbox.Loader.loadPDF(receipt)) {
+            String text = new org.apache.pdfbox.text.PDFTextStripper().getText(pdf);
+            assertTrue(pdf.getNumberOfPages() > 1);
+            assertTrue(text.contains("TERMO DE ENTREGA"));
+            assertTrue(text.contains("FIM DOS TERMOS"));
+            assertFalse(text.contains("TERMOS NOVOS"));
+        }
+        role("TECHNICIAN");
+        mvc.perform(get(endpoint).header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        inTenant(fixture.tenantA, () -> admin.update("UPDATE work_order_transition_facts SET technician_id = NULL WHERE work_order_id = ?", id));
+        mvc.perform(get(endpoint).header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+        role("OWNER");
+        UUID otherCustomer = customer(fixture.tenantB, "Cliente de outra empresa");
+        UUID other = UUID.randomUUID();
+        inTenant(fixture.tenantB, () -> admin.update("INSERT INTO work_orders(id, tenant_id, customer_id, status) VALUES (?, ?, ?, 'RECEBIDA')", other, fixture.tenantB, otherCustomer));
+        mvc.perform(get(url + "/" + other + "/pdf").header("Authorization", "Bearer " + token)).andExpect(status().isNotFound());
+    }
     @Test void paidDeliveryCalculatesAndReturnsWarrantyWithImmutableTermsAndHistory() throws Exception {
         UUID id = ready(true); role("ATTENDANT");
         deliver(id, 0, 90, false, null).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ENTREGUE"))

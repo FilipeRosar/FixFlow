@@ -40,6 +40,34 @@ describe('Work order details', () => {
     }),
   );
   afterEach(() => TestBed.inject(HttpTestingController).verify());
+  it('requests the entry PDF as a blob and offers retry after failure', () => {
+    const fixture = TestBed.createComponent(WorkOrderDetail);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/v1/work-orders/order').flush(order);
+    fixture.detectChanges();
+    const button = [...fixture.nativeElement.querySelectorAll('button')].find((item: any) => item.textContent.includes('termo de entrada')) as HTMLButtonElement;
+    expect(fixture.nativeElement.textContent).not.toContain('termo de entrega');
+    button.click();
+    fixture.detectChanges();
+    expect(button.disabled).toBe(true);
+    const request = http.expectOne('/api/v1/work-orders/order/pdf?type=ENTRY');
+    expect(request.request.responseType).toBe('blob');
+    request.flush(new Blob(), { status: 500, statusText: 'Error' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Não foi possível gerar o PDF');
+    expect(button.disabled).toBe(false);
+  });
+  it('offers the delivery PDF only for delivered orders', () => {
+    const fixture = TestBed.createComponent(WorkOrderDetail);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/v1/work-orders/order').flush({ ...order, status: 'ENTREGUE', deliveredAt: '2026-11-06T12:00:00Z' });
+    fixture.detectChanges();
+    const button = [...fixture.nativeElement.querySelectorAll('button')].find((item: any) => item.textContent.includes('termo de entrega')) as HTMLButtonElement;
+    button.click();
+    http.expectOne('/api/v1/work-orders/order/pdf?type=DELIVERY').flush(new Blob(), { status: 403, statusText: 'Forbidden' });
+  });
   it('loads and displays the selected order with a link back to its customer history', () => {
     const fixture = TestBed.createComponent(WorkOrderDetail);
     fixture.detectChanges();

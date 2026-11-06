@@ -1194,3 +1194,33 @@ comprovante, terminalidade, dias inteiros e destaque na timeline.
 ```bash
 ./mvnw -Dtest='WorkOrder*Test,DeliveryWarrantyTest,ArchitectureTest' test
 ```
+
+## US-028 — Impressão PDF da OS
+
+A consulta da OS oferece **Baixar termo de entrada (PDF)** e, após a entrega,
+**Baixar termo de entrega (PDF)**. O arquivo pode ser aberto e impresso pelo leitor
+PDF do usuário. A geração ocorre no servidor, sem serviços externos.
+
+`GET /api/v1/work-orders/{id}/pdf?type=ENTRY|DELIVERY` retorna `application/pdf`,
+`Content-Disposition: attachment` e `Cache-Control: no-store`. `ENTRY` é o padrão;
+tipos desconhecidos retornam 400, e `DELIVERY` antes de uma entrega registrada
+retorna 409. A autorização segue a consulta da OS: proprietário/atendente e
+somente o técnico atribuído, com isolamento por tenant e RLS.
+
+Os documentos incluem nome, CPF/CNPJ, endereço, telefone e logo configurado da
+empresa, número da OS, cliente, equipamento/série, defeito, estado físico,
+acessórios, datas no fuso `America/Sao_Paulo` e campos de assinatura. Dados legados
+ausentes são identificados como não informados. A entrada usa os termos atuais
+da empresa. A entrega usa o snapshot de termos da US-027, responsável, data e
+prazo adicional/vencimento de garantia preservados na OS. Dados cadastrais da
+empresa, cliente e equipamento refletem o cadastro atual; não há snapshot de
+recebimento cadastral nesta história.
+
+PDFBox gera páginas A4 automaticamente para textos longos. A fonte Noto Sans
+embutida preserva acentos; caracteres sem glifo são substituídos por `?`. Texto
+é gravado literalmente, sem HTML, scripts ou recursos remotos. A fonte e sua
+licença estão em `src/main/resources/fonts`.
+
+Validação: `WorkOrderDeliveryIntegrationTest` verifica conteúdo extraído do PDF,
+headers, paginação, snapshot, parâmetros, autenticação, técnico e isolamento;
+`work-order-detail.spec.ts` verifica os botões, requisição binária e falha recuperável.

@@ -29,10 +29,11 @@ public class JdbcWorkOrders implements WorkOrders {
     private final AuditService audit;
     private final OutboxService outbox;
     private final ObjectMapper mapper;
+    private final br.com.fixflow.modules.tenants.application.FileStorage files;
     public JdbcWorkOrders(JdbcTemplate jdbc, TenantLimitsService limits, AuthorizedTenantOperations tenants,
-                          CurrentAuthenticatedIdentity identity, AuditService audit, OutboxService outbox, ObjectMapper mapper) {
+                          CurrentAuthenticatedIdentity identity, AuditService audit, OutboxService outbox, ObjectMapper mapper, br.com.fixflow.modules.tenants.application.FileStorage files) {
         this.jdbc = jdbc; this.limits = limits; this.tenants = tenants; this.identity = identity;
-        this.audit = audit; this.outbox = outbox; this.mapper = mapper;
+        this.audit = audit; this.outbox = outbox; this.mapper = mapper; this.files = files;
     }
     private UUID tenant() {
         UUID tenant = identity.require().tenantId();
@@ -81,12 +82,27 @@ public class JdbcWorkOrders implements WorkOrders {
         if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "OS não encontrada.");
         return rows.getFirst();
     }
+    private WorkOrder authorizedRead(AuthorizedMembership m, UUID id) {
+        if (!RolePermissions.forRole(m.role().name()).contains("workorder:read") &&
+                !(m.role().name().equals("TECHNICIAN") && m.userId().equals(facts(m.tenantId(), id).technicianId())))
+            throw new AccessDeniedException("Consulta de OS não autorizada.");
+        return read(m.tenantId(), id);
+    }
     @Override public WorkOrder get(UUID id) {
+        return tenants.execute(tenant(), m -> authorizedRead(m, id));
+    }
+    @Override public byte[] pdf(UUID id, boolean delivery) {
         return tenants.execute(tenant(), m -> {
-            if (!RolePermissions.forRole(m.role().name()).contains("workorder:read") &&
-                    !(m.role().name().equals("TECHNICIAN") && m.userId().equals(facts(m.tenantId(), id).technicianId())))
-                throw new AccessDeniedException("Consulta de OS não autorizada.");
-            return read(m.tenantId(), id);
+            var order = authorizedRead(m, id);
+            if (delivery && (order.deliveredAt() == null || !order.status().equals("ENTREGUE")))
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "O termo de entrega exige uma OS entregue.");
+            var company = jdbc.queryForObject("""
+                    SELECT t.name, t.document, t.address, t.phone, coalesce(s.warranty_terms, '') AS terms, s.logo_key
+                    FROM public.tenants t LEFT JOIN public.tenant_settings s ON s.tenant_id = t.id WHERE t.id = ?
+                    """, (rs, row) -> new WorkOrderPdf.Company(rs.getString("name"), rs.getString("document"),
+                    rs.getString("address"), rs.getString("phone"), rs.getString("terms"), rs.getString("logo_key")), m.tenantId());
+            byte[] logo = company.logoKey() == null ? null : files.readLogo(m.tenantId(), company.logoKey());
+            return WorkOrderPdf.render(order, company, logo, delivery);
         });
     }
     @Override public List<Technician> technicians() {
