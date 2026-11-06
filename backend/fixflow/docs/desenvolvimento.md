@@ -672,8 +672,8 @@ ao orçamento anterior, incrementando sua versão; um novo envio exige nova evid
 Envio gera token aleatório de 256 bits: só o hash SHA-256 fica na projeção; o token
 original é protegido por AES-GCM no evento `QuoteSent`, conforme a US-031.
 A projeção limpa a autorização de decisão após aprovação/rejeição e encerramento;
-a tabela de tokens preserva o prazo de leitura para a futura US-032. Revisão e
-cancelamento revogam o link. A API pública é escopo da US-032.
+a tabela de tokens preserva o prazo de leitura usado pela US-032. Revisão e
+cancelamento revogam o link. A consulta pública está implementada na US-032.
 
 A tela de consulta oferece transições por perfil, justificativa e exceção de
 pagamento para o proprietário. A lista mostra as arestas possíveis; o servidor
@@ -1391,8 +1391,8 @@ normais; não se promete exatamente uma entrega SMTP.
 
 O e-mail contém empresa, número da OS, versão, validade no fuso brasileiro e o
 link `${APP_ORIGIN}/orcamento#token=...`. O fragmento evita enviar o token em
-uma requisição HTTP inicial. A página pública e as APIs de consulta/decisão
-continuam sendo a **US-032**; esta história prepara e envia o link.
+uma requisição HTTP inicial. A página e a API de consulta estão implementadas na **US-032**; as decisões
+pelo cliente são escopo da **US-033**.
 Rotação/reenvio intencional com novo link continua na US-035.
 
 ### Configuração local e produção
@@ -1428,4 +1428,108 @@ cobrem chave reutilizada, bloqueio de edição não salva, perfil e atualizaçã
 
 ```bash
 ./mvnw -Dtest='Quote*Test,ArchitectureTest,OutboxIntegrationTest,WorkOrderT4IntegrationTest' test
+```
+
+
+## US-032 — Página pública do orçamento (T10)
+
+O link enviado pela US-031 abre `/orcamento#token=...`, sem login. A página usa o
+fragmento para consultar `GET /public/v1/work-orders/{token}`. O token permanece
+no fragmento para permitir recarregar a página, fica apenas em memória no código
+e não é salvo em localStorage/sessionStorage. Não é renderizado como texto.
+A rota tem layout próprio, sem navegação interna da oficina, e não tenta
+restaurar sessão nem envia JWT. Abrir o link não decide nem altera a OS.
+
+A página mostra empresa, número da OS, equipamento, versão/status, serviços,
+peças, quantidades/preços, subtotais, desconto, total, validade no horário de
+Brasília e termos preservados. O total vem do servidor; não é recalculado no
+navegador. Texto livre usa interpolação Angular, sem HTML executável.
+Não há nome/documento/endereço/contatos do cliente, custos, diagnóstico, série,
+notas internas, IDs de usuários, tenant, OS, orçamento ou peças na resposta.
+
+### Validação do token e isolamento
+
+A API aceita o token base64url de 43 caracteres gerado com 256 bits na US-031 e
+consulta apenas seu hash SHA-256. Não recebe tenant ou ID de OS como argumento
+comercial. Acrescentar IDs no caminho retorna 404; parâmetros/headers de tenant
+não ampliam a autorização. A cadeia de segurança pública é independente de JWT,
+inclusive se o navegador tiver credenciais antigas de uma conta interna.
+
+A V38 cria `read_public_quote(text)`, função `SECURITY DEFINER` com `search_path`
+fixo e execução restrita à role runtime. Uma policy **somente da role migradora**
+permite localizar o registro do hash. A função deriva o tenant do token, consulta
+com as referências compostas e RLS, produz JSON por uma lista explícita de campos
+públicos e restaura o contexto anterior antes de retornar. A role runtime não
+recebe leitura irrestrita das tabelas nem permissão para enumerar tenants/tokens.
+O Java não abre um `TenantScope` anônimo nem contorna o executor autorizado.
+
+Uma proposta enviada exige empresa ativa, token não revogado, versão vigente,
+OS aguardando aprovação, hash correspondente na projeção e validade ainda aberta.
+Depois de aprovada/rejeitada, permite consulta **somente leitura** até `read_until`
+(90 dias da decisão). Encerrado esse prazo, o link também fica indisponível.
+Revisão/cancelamento revogam o link anterior. A API de aprovação/rejeição permanece
+na US-033; endpoints de decisão ainda não estão expostos.
+
+Token desconhecido, formato inválido, expirado, revogado ou empresa indisponível
+retornam o mesmo status e corpo, sem caminho/token em `instance`:
+
+```json
+{"status":404,"detail":"Orçamento não encontrado ou indisponível."}
+```
+
+A consulta registra `PUBLIC_QUOTE_VIEWED` ou `PUBLIC_QUOTE_ACCESS_DENIED` para
+hashes conhecidos, com tenant derivado, autor nulo, canal e versão, sem segredo
+ou dados pessoais. Falhas de tokens desconhecidos/malformados e recusas pelo
+limite não são atribuídas a um tenant inventado; ficam na observabilidade HTTP
+com status/método, sem URI/token. O histórico comercial não é alterado por GET.
+
+### Rate limit e headers
+
+O filtro anterior à segurança aplica janelas deslizantes exatas e concorrentes:
+**20 requisições/minuto por IP** e **60 requisições/hora por hash de token**.
+IPs são identificados por `getRemoteAddr()`, sem confiar diretamente em
+`X-Forwarded-For`/`Forwarded`. Tokens bem formados desconhecidos também contam;
+formatos inválidos contam no limite por IP. Ao exceder, retorna 429 com
+`Retry-After` em segundos. A página respeita esse intervalo e oferece nova
+consulta manual, sem loop de tentativas automáticas.
+
+O limitador é local ao processo, conforme o MVP de uma instância da seção 29.
+Usa duas estruturas limitadas a 10.000 chaves cada, guarda apenas hashes e
+janelas limitadas, remove entradas expiradas e recusa novas chaves com 429
+quando a capacidade está ocupada, sem expulsar limites ativos. Nesta rota,
+janelas deslizantes foram implementadas diretamente, sem nova dependência de
+Bucket4j. Reiniciar o processo reinicia as janelas. Para múltiplas instâncias,
+é necessário compartilhar o limitador (Redis/gateway), como prevê o ADR.
+Atrás de proxy, configure a obtenção de IP apenas de proxies conhecidos; não
+ative confiança irrestrita em headers fornecidos pelo cliente.
+
+Respostas públicas de sucesso, 404 e 429 incluem:
+
+- `Cache-Control: no-store`;
+- `Referrer-Policy: no-referrer`;
+- `X-Robots-Tag: noindex, nofollow, noarchive`;
+- `X-Content-Type-Options: nosniff`;
+- `X-Frame-Options: DENY`;
+- `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`.
+
+A página Angular também aplica metas `robots`/`referrer`, restauradas ao sair.
+No host de estáticos/SPA, aplique `no-store`, `no-referrer`, `noindex` e proteção
+contra frames ao documento `/orcamento`; a API entrega seus próprios headers.
+O proxy de desenvolvimento encaminha `/public/**`, além de `/api/**`, ao backend.
+Em produção, preserve esse prefixo no reverse proxy e desabilite/redija o URI
+nas access logs dessa rota, pois o token faz parte do caminho da API.
+
+### Testes T10
+
+`PublicQuoteT10IntegrationTest` usa PostgreSQL e role runtime com RLS para cobrir:
+404 idêntico, headers, limites de IP/token, spoof de headers de encaminhamento,
+IDs acrescentados à URL, ausência de autenticação, dois tenants, dados mínimos,
+restauração de contexto no banco, auditoria, revisão, empresa suspensa e janela
+de leitura após decisão. A suíte também executa a regressão comercial herdada.
+`PublicQuoteRateLimiterTest` cobre concorrência, janelas exatas, expiração e
+capacidade de memória. Os testes Angular verificam consulta anônima, metadados,
+textos literais, mudança de token, cancelamento, erros e `Retry-After`.
+
+```bash
+./mvnw -Dtest='PublicQuote*Test,ArchitectureTest' test
 ```

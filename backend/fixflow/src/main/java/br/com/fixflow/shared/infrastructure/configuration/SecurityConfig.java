@@ -18,6 +18,15 @@ import org.springframework.security.web.servlet.util.matcher.PathPatternRequestM
 @org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 public class SecurityConfig {
     @Bean
+    @org.springframework.core.annotation.Order(1)
+    SecurityFilterChain publicQuoteSecurityFilterChain(HttpSecurity http) throws Exception {
+        return http.securityMatcher("/public/v1/work-orders/**")
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth.requestMatchers(HttpMethod.GET, "/public/v1/work-orders/*").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/public/v1/work-orders/*").permitAll().anyRequest().denyAll())
+                .headers(headers -> headers.cacheControl(cache -> cache.disable())).build();
+    }
+    @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, GlobalAuthenticationProvider provider,
             JwtDecoder decoder, ActiveJwtAuthenticationConverter converter, org.springframework.core.env.Environment environment,
             @Value("${fixflow.auth.basic-enabled:false}") boolean legacyBasic,
