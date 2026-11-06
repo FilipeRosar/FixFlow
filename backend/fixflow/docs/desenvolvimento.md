@@ -1392,7 +1392,7 @@ normais; não se promete exatamente uma entrega SMTP.
 O e-mail contém empresa, número da OS, versão, validade no fuso brasileiro e o
 link `${APP_ORIGIN}/orcamento#token=...`. O fragmento evita enviar o token em
 uma requisição HTTP inicial. A página e a API de consulta estão implementadas na **US-032**; as decisões
-pelo cliente são escopo da **US-033**.
+pelo cliente estão implementadas na **US-033**.
 Rotação/reenvio intencional com novo link continua na US-035.
 
 ### Configuração local e produção
@@ -1467,8 +1467,8 @@ Uma proposta enviada exige empresa ativa, token não revogado, versão vigente,
 OS aguardando aprovação, hash correspondente na projeção e validade ainda aberta.
 Depois de aprovada/rejeitada, permite consulta **somente leitura** até `read_until`
 (90 dias da decisão). Encerrado esse prazo, o link também fica indisponível.
-Revisão/cancelamento revogam o link anterior. A API de aprovação/rejeição permanece
-na US-033; endpoints de decisão ainda não estão expostos.
+Revisão/cancelamento revogam o link anterior. A aprovação/rejeição com
+confirmação explícita está implementada na US-033, descrita abaixo.
 
 Token desconhecido, formato inválido, expirado, revogado ou empresa indisponível
 retornam o mesmo status e corpo, sem caminho/token em `instance`:
@@ -1532,4 +1532,109 @@ textos literais, mudança de token, cancelamento, erros e `Retry-After`.
 
 ```bash
 ./mvnw -Dtest='PublicQuote*Test,ArchitectureTest' test
+```
+
+
+## US-033 — Aprovar/rejeitar via link (T2 e T3)
+
+A página pública oferece **Aprovar orçamento** e **Rejeitar orçamento** para
+propostas enviadas e disponíveis. Selecionar uma opção abre a confirmação com
+versão, valor e checkbox de concordância com itens e termos. Somente confirmar
+o formulário dispara um POST; abrir/visualizar/pré-carregar o link não decide.
+A rejeição permite motivo opcional de até 2.000 caracteres. Depois da resposta,
+a página mostra o resultado e o horário de Brasília, em modo somente leitura.
+
+### API e confirmação do conteúdo
+
+`POST /public/v1/work-orders/{token}/approve` ou `/reject` recebe JSON:
+
+```http
+Idempotency-Key: 40151f40-18d1-4446-99f0-08dfcd5c61da
+Content-Type: application/json
+
+{"confirmed":true,"contentHash":"<hash retornado na consulta>","reason":null}
+```
+
+`confirmed=true`, hash de 64 caracteres hexadecimais e chave com 8–128 caracteres
+ASCII são obrigatórios. O motivo é considerado somente na rejeição; valores em
+branco viram `null`. O servidor obtém IP por `getRemoteAddr()` e user-agent pelo
+header HTTP (limitado a 1.024 caracteres), independentemente de campos extras no
+body. Headers de encaminhamento não substituem o IP de origem por conta própria.
+
+A consulta da US-032 agora inclui `contentHash` e um resumo `decision`, quando
+houver. O hash SHA-256 é calculado pelo PostgreSQL sobre o documento comercial
+canônico em JSONB: empresa, número da OS, equipamento, versão, itens ordenados,
+quantidade/preço, subtotais, desconto, total, validade em UTC e termos. Estado
+da OS, estado de decisão e metadados de navegação ficam fora do hash. O cliente
+não calcula ou fornece preços/totais para o comando de decisão.
+
+No POST, o servidor reconstrói esse documento e compara o hash da consulta.
+Conteúdo diferente retorna 409 `QUOTE_CONTENT_CHANGED`; o cliente precisa
+atualizar a página e conferir novamente. A evidência preserva o documento exato,
+inclusive nome da empresa/equipamento exibidos. Após decidir, as consultas usam
+esse snapshot comercial, com o estado atual do atendimento separado; renomear
+cadastros não reescreve o conteúdo aceito ou rejeitado.
+
+### Decisão única e atomicidade
+
+A V39 cria `quote_decisions` com unicidade por orçamento, RLS, conteúdo/hash,
+versão, decisão, motivo, canal `PUBLIC_LINK`, IP, UA e instante do banco. A role
+runtime pode consultar com RLS, mas não inserir/editar/apagar evidências
+diretamente. Um trigger também impede UPDATE. A tabela de histórico admite
+autor nulo somente para origem `CUSTOMER`, identificada como Cliente na timeline.
+
+`decide_public_quote` deriva o tenant do hash do token e usa a mesma ordem de
+bloqueios do fluxo interno: OS, projeção, proposta e autorização do link. A
+validade é reavaliada com o relógio do banco depois dos bloqueios. É necessário
+um link vigente/não revogado, empresa ativa, proposta atual `SENT` e OS em
+`AGUARDANDO_APROVACAO`. Não há ID de OS/tenant no comando público.
+
+Na mesma transação, grava evidência e decisão, atualiza proposta/projeção e
+incrementa a versão da OS, registra histórico/auditoria e inclui a outbox:
+
+- aprovação: OS `APROVADA`, proposta `APPROVED`, evento `QuoteApproved`;
+- rejeição: OS `ORCAMENTO_REJEITADO`, proposta `REJECTED`, evento `QuoteRejected`.
+
+A máquina de estados existente continua impedindo ir de rejeitada para
+`EM_MANUTENCAO`. Não há evento de aprovação e de rejeição para uma mesma versão.
+Falha em histórico, auditoria, outbox ou recibo desfaz toda a operação. Tentativas
+recusadas/repetidas para tokens conhecidos recebem auditoria sem expor o segredo.
+
+### Idempotência, erros e proteção pública
+
+O escopo da chave é empresa + proposta. O hash da chave e o hash de decisão,
+conteúdo e motivo ficam com a resposta original por 24 horas. Repetir a mesma
+chave/corpo recupera o recibo, sem recriar evidência, evento, histórico ou alterar
+IP/UA originais. A chave não depende do IP/UA da nova tentativa. Chave reutilizada
+com outro corpo retorna 409 `IDEMPOTENCY_KEY_REUSED`. Outra chave após a decisão
+retorna 409 `QUOTE_ALREADY_DECIDED`. Duas decisões opostas simultâneas produzem
+um sucesso e um conflito; duas iguais com a mesma chave recuperam o mesmo recibo.
+Revogação ou fim da autorização de leitura mantém o 404, mesmo para replays.
+
+Sucesso retorna decisão, estado da OS, versão, instante e hash, sem IP/UA ou IDs
+internos. O link continua somente leitura por 90 dias da decisão. Token inválido,
+expirado ou revogado mantém o 404 idêntico da US-032. Os limites por IP/token e
+headers públicos também se aplicam aos POSTs. `Retry-After` é respeitado na UI.
+Erros públicos, inclusive 500 e JSON malformado, não incluem a URI com o token.
+
+Os POSTs são JSON, sem cookies/JWT, com confirmação e chave explícitas. A cadeia
+pública permite somente essas duas rotas de mutação; a exceção ao token CSRF
+padrão é limitada a elas. `Origin` diferente de `APP_ORIGIN` ou
+`Sec-Fetch-Site: cross-site` retorna 403. GET nas rotas de decisão retorna 404;
+submissões de formulário não JSON retornam 415. Solicitações de API sem Origin
+continuam possíveis, sempre exigindo bearer token, chave e confirmação no JSON.
+O user-agent é evidência declarada pelo cliente, não comprovação de identidade.
+
+### Validação
+
+`PublicQuoteDecisionT2T3IntegrationTest` cobre T2/T3, conteúdo, evidências,
+repetição, conflitos, decisões concorrentes iguais/opostas, rejeição sem início
+de manutenção, validade/revogação, confirmação/origem/método, evidência imutável,
+rollback completo em falha de outbox e ausência do token nas respostas de erro.
+A suíte herda T10 e a regressão comercial. Os testes Angular cobrem confirmação,
+rejeição/motivo, recibo, chave reutilizada após resultado incerto, conflito com
+recarga, `Retry-After` e troca de link durante uma decisão pendente.
+
+```bash
+./mvnw -Dtest='PublicQuoteDecisionT2T3IntegrationTest,ArchitectureTest' test
 ```

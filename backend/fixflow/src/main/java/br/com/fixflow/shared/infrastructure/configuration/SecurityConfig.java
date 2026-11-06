@@ -22,7 +22,11 @@ public class SecurityConfig {
     SecurityFilterChain publicQuoteSecurityFilterChain(HttpSecurity http) throws Exception {
         return http.securityMatcher("/public/v1/work-orders/**")
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth.requestMatchers(HttpMethod.GET, "/public/v1/work-orders/*").permitAll()
+                .csrf(csrf -> csrf.ignoringRequestMatchers(
+                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/public/v1/work-orders/*/approve"),
+                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/public/v1/work-orders/*/reject")))
+                .authorizeHttpRequests(auth -> auth.requestMatchers(HttpMethod.POST, "/public/v1/work-orders/*/approve", "/public/v1/work-orders/*/reject").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/public/v1/work-orders/*").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/public/v1/work-orders/*").permitAll().anyRequest().denyAll())
                 .headers(headers -> headers.cacheControl(cache -> cache.disable())).build();
     }

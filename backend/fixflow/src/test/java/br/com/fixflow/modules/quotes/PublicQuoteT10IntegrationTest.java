@@ -48,7 +48,7 @@ class PublicQuoteT10IntegrationTest extends QuoteIntegrationTest {
                 .andExpect(jsonPath("$.quote.items[0].description").value("Mão de obra"))
                 .andExpect(jsonPath("$.readOnly").value(false)).andReturn().getResponse().getContentAsString();
         var json = mapper.readTree(response);
-        assertEquals(Set.of("companyName", "workOrderNumber", "equipmentLabel", "workOrderStatus", "readOnly", "quote"), json.propertyNames());
+        assertEquals(Set.of("companyName", "workOrderNumber", "equipmentLabel", "workOrderStatus", "readOnly", "quote", "contentHash", "decision"), json.propertyNames());
         assertEquals(Set.of("type", "description", "quantity", "unitPrice"), json.get("quote").get("items").get(0).propertyNames());
         for (String secret : List.of(first.token(), fixture.tenantA.toString(), first.order().toString(), first.quote().toString(), "ana@example.test", "customerId", "unitCost", "reportedIssue", "physicalCondition", "document", "serialNumber", "deliveryReason")) assertFalse(response.contains(secret), secret);
         view(first.token() + "/" + other).andExpect(status().isNotFound());
