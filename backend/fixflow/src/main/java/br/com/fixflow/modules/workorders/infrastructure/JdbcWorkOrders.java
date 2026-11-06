@@ -28,12 +28,13 @@ public class JdbcWorkOrders implements WorkOrders {
     private final CurrentAuthenticatedIdentity identity;
     private final AuditService audit;
     private final OutboxService outbox;
+    private final br.com.fixflow.modules.quotes.application.QuoteWorkflow quotes;
     private final ObjectMapper mapper;
     private final br.com.fixflow.modules.tenants.application.FileStorage files;
     public JdbcWorkOrders(JdbcTemplate jdbc, TenantLimitsService limits, AuthorizedTenantOperations tenants,
-                          CurrentAuthenticatedIdentity identity, AuditService audit, OutboxService outbox, ObjectMapper mapper, br.com.fixflow.modules.tenants.application.FileStorage files) {
+                          CurrentAuthenticatedIdentity identity, AuditService audit, OutboxService outbox, ObjectMapper mapper, br.com.fixflow.modules.tenants.application.FileStorage files, br.com.fixflow.modules.quotes.application.QuoteWorkflow quotes) {
         this.jdbc = jdbc; this.limits = limits; this.tenants = tenants; this.identity = identity;
-        this.audit = audit; this.outbox = outbox; this.mapper = mapper; this.files = files;
+        this.audit = audit; this.outbox = outbox; this.mapper = mapper; this.files = files; this.quotes = quotes;
     }
     private UUID tenant() {
         UUID tenant = identity.require().tenantId();
@@ -199,6 +200,9 @@ public class JdbcWorkOrders implements WorkOrders {
                 target.name(), m.userId(), target.name(), actorName, target.name(), reason, target.name(), exceptionUsed,
                 target.name(), warrantyTerms, m.tenantId(), id, version);
         if (changed != 1) throw new WorkOrderVersionConflictException();
+        if (target == WorkOrderStatus.AGUARDANDO_APROVACAO) quotes.sent(m.tenantId(), id, facts.quoteId(), occurredAt);
+        if (target == WorkOrderStatus.APROVADA || target == WorkOrderStatus.ORCAMENTO_REJEITADO)
+            quotes.decided(m.tenantId(), facts.quoteId(), target == WorkOrderStatus.APROVADA ? "APPROVED" : "REJECTED");
         String publicToken = null;
         if (target == WorkOrderStatus.AGUARDANDO_APROVACAO) {
             byte[] bytes = new byte[32]; new java.security.SecureRandom().nextBytes(bytes);

@@ -116,7 +116,9 @@ describe('Work order details', () => {
     const http = TestBed.inject(HttpTestingController);
     params.next(convertToParamMap({ orderId: 'first' }));
     const first = http.expectOne('/api/v1/work-orders/first');
+    fixture.componentInstance['quotesSaving'].set(true);
     params.next(convertToParamMap({ orderId: 'second' }));
+    expect(fixture.componentInstance['quotesSaving']()).toBe(false);
     expect(first.cancelled).toBe(true);
     http.expectOne('/api/v1/work-orders/second').flush({ ...order, number: 43 });
     fixture.detectChanges();

@@ -1224,3 +1224,93 @@ licença estão em `src/main/resources/fonts`.
 Validação: `WorkOrderDeliveryIntegrationTest` verifica conteúdo extraído do PDF,
 headers, paginação, snapshot, parâmetros, autenticação, técnico e isolamento;
 `work-order-detail.spec.ts` verifica os botões, requisição binária e falha recuperável.
+
+## US-030 — Montar orçamento
+
+A US-023 está implementada. A montagem exige diagnóstico persistido e OS em
+`AGUARDANDO_ORCAMENTO`. O painel **Orçamento** na consulta da OS permite incluir
+serviços e peças, informar quantidade/preço negociado, aplicar desconto fixo ou
+percentual e salvar para calcular os totais no backend. Os totais exibidos são os
+**valores salvos**; campos ainda em edição não recalculam valores no navegador.
+Peças do catálogo preenchem descrição e preço sugerido, que podem ser negociados.
+
+### Cálculo e snapshots
+
+Conforme a seção 20.2, usa-se `BigDecimal`: soma dos produtos quantidade × preço
+por categoria, cada subtotal arredondado `HALF_UP` para duas casas, desconto e
+total = mão de obra + peças − desconto. No percentual, aplica-se o percentual ao
+subtotal arredondado e arredonda-se o desconto também `HALF_UP`. Quantidades têm
+até três casas; preços/desconto até duas. Quantidade deve ser positiva; preço
+pode ser zero. Desconto fixo não pode superar o subtotal, percentual fica entre
+0 e 100. Desconto integral e total zero são permitidos. Limite monetário do
+subtotal: R$ 999.999.999.999,99; de 1 a 100 itens por versão.
+
+A migration `V35` cria `quotes` e `quote_items`, com RLS e referências compostas
+por tenant. Descrição, quantidade e preço são snapshots próprios da proposta;
+renomear uma peça ou alterar seu preço de venda não muda o orçamento. Os itens
+executados da US-026 e os movimentos de estoque continuam separados da proposta:
+montar, revisar e enviar orçamento não consome nem reserva peças.
+
+### API, versões e envio
+
+- `GET /api/v1/work-orders/{orderId}/quotes`: histórico em ordem decrescente de
+  versão, com itens, totais, condições, validade e `workOrderVersion` atual.
+- `POST /api/v1/work-orders/{orderId}/quotes`: cria a primeira versão ou uma nova
+  revisão, retornando 201. Só pode existir um rascunho por OS.
+- `PUT /api/v1/work-orders/{orderId}/quotes/{quoteId}`: substitui os itens e o
+  desconto de um rascunho, preservando seu número de versão. Enviados retornam 409.
+
+Exemplo de corpo para POST/PUT:
+
+```json
+{
+  "workOrderVersion": 4,
+  "items": [
+    {"type": "SERVICE", "partId": null, "description": "Reparo da fonte", "quantity": 1, "unitPrice": 150.00}
+  ],
+  "discountType": "PERCENT",
+  "discountValue": 10.00
+}
+```
+
+O corpo recebe apenas componentes do cálculo; totais são definidos no servidor.
+`PART` exige ID de peça ativa da mesma empresa; `SERVICE` não aceita peça.
+Proprietário e atendente podem montar; técnico só pode rascunhar em OS atribuída.
+Todos os acessos revalidam o vínculo e o tenant. Ausência de diagnóstico, estado
+inadequado, rascunho duplicado, versão desatualizada ou edição após envio retornam
+409; dados de cálculo inválidos retornam 400, referências ausentes retornam 404.
+
+Salvar bloqueia a linha da OS, compara `workOrderVersion` e incrementa a versão
+da OS. Alteração comercial e auditoria `QUOTE_DRAFT_SAVED` são atômicas. A projeção
+`work_order_transition_facts` recebe ID, versão, contagem, total e validade reais,
+permitindo o envio pelo fluxo existente `PATCH /work-orders/{id}/status` para
+`AGUARDANDO_APROVACAO`. O mesmo bloqueio serializa edição e envio concorrentes.
+
+No envio, a proposta passa para `SENT`, recebe `sentAt` e preserva validade,
+termos e logo vigentes da empresa. A validade passa a contar desse instante.
+Aprovação/rejeição também atualizam o estado da proposta. Triggers impedem mudar
+os valores/condições de uma versão enviada ou inserir, alterar ou apagar seus
+itens; somente a decisão `SENT → APPROVED|REJECTED` é permitida. A role de execução
+não pode excluir cabeçalhos. Versões antigas continuam consultáveis.
+
+Para revisar uma proposta enviada/rejeitada, retorne a OS para
+`AGUARDANDO_ORCAMENTO` pelo fluxo existente e use **Criar nova versão**. A tela
+copia os dados para um novo rascunho, preservando a versão anterior. A API não
+reabre orçamento aprovado nem cria aditivos durante manutenção. As projeções
+legadas anteriores a este módulo continuam compatíveis com a máquina de estados,
+sem inventar itens comerciais. A entrega da US-031 (notificação por e-mail e
+`Idempotency-Key` de envio) permanece separada.
+
+### Validação
+
+`QuoteCalculationTest` cobre subtotais, `HALF_UP`, percentuais, limites, total zero
+e dados inválidos. `QuoteIntegrationTest` cobre o fluxo desde diagnóstico, preços
+preservados, edição de rascunho, histórico, envio/decisão, proteção no banco,
+permissões/RLS, isolamento, concorrência entre salvamentos e entre edição/envio,
+e rollback em falha de auditoria. `work-order-quote.spec.ts` cobre requisições,
+totais do servidor, histórico, nova versão, bloqueio após envio, conflito,
+recuperação de falhas e navegação durante uma consulta.
+
+```bash
+./mvnw -Dtest='Quote*Test,WorkOrder*Test,ArchitectureTest' test
+```

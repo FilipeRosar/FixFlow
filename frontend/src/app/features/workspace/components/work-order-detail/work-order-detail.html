@@ -126,9 +126,16 @@
       [orderId]="item.id"
       (changed)="timelineRevision.set(timelineRevision() + 1)"
     />
+    <app-work-order-quote
+      [order]="item"
+      [blocked]="changing() || assigning() || diagnosing() || itemsSaving()"
+      (versionChanged)="updateItemsVersion($event)"
+      (busyChanged)="quotesSaving.set($event)"
+      (saved)="timelineRevision.set(timelineRevision() + 1)"
+    />
     <app-work-order-items
       [order]="item"
-      [blocked]="changing() || assigning() || diagnosing()"
+      [blocked]="changing() || assigning() || diagnosing() || quotesSaving()"
       (busyChanged)="itemsSaving.set($event)"
       (versionChanged)="updateItemsVersion($event)"
     />
@@ -144,7 +151,9 @@
                 [(ngModel)]="selectedTechnician"
                 (focus)="loadTechnicians()"
                 (click)="loadTechnicians()"
-                [disabled]="assigning() || changing() || diagnosing() || itemsSaving()"
+                [disabled]="
+                  assigning() || changing() || diagnosing() || itemsSaving() || quotesSaving()
+                "
                 required
               >
                 <option value="">
@@ -343,7 +352,9 @@
         <div class="directory-heading">
           <div><h2>Próxima etapa do atendimento</h2></div>
         </div>
-        <fieldset [disabled]="changing() || assigning() || diagnosing() || itemsSaving()">
+        <fieldset
+          [disabled]="changing() || assigning() || diagnosing() || itemsSaving() || quotesSaving()"
+        >
           <label
             >Alterar estado para<select name="target" [(ngModel)]="target" required>
               <option value="">Selecione a próxima etapa</option>

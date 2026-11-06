@@ -1,3 +1,4 @@
+import { WorkOrderQuotePanel } from '../work-order-quote/work-order-quote';
 import { WorkOrderTimelinePanel } from '../work-order-timeline/work-order-timeline';
 import { WorkOrderAttachmentsPanel } from '../work-order-attachments/work-order-attachments';
 import { WorkOrderItemsPanel } from '../work-order-items/work-order-items';
@@ -53,6 +54,7 @@ interface WorkOrder {
     RouterLink,
     FormsModule,
     WorkOrderItemsPanel,
+    WorkOrderQuotePanel,
     WorkOrderAttachmentsPanel,
     WorkOrderTimelinePanel,
   ],
@@ -91,6 +93,7 @@ export class WorkOrderDetail implements OnInit {
   private readonly http = inject(HttpClient);
   protected readonly role = inject(SessionService).session()?.role;
   protected readonly timelineRevision = signal(0);
+  protected readonly quotesSaving = signal(false);
   protected readonly itemsSaving = signal(false);
   protected updateItemsVersion(version: number): void {
     this.order.update((order) =>
@@ -147,6 +150,7 @@ export class WorkOrderDetail implements OnInit {
       !this.selectedTechnician ||
       this.assigning() ||
       this.itemsSaving() ||
+      this.quotesSaving() ||
       this.changing() ||
       this.diagnosing()
     )
@@ -203,6 +207,7 @@ export class WorkOrderDetail implements OnInit {
       this.changing() ||
       this.assigning() ||
       this.itemsSaving() ||
+      this.quotesSaving() ||
       !this.findings.trim() ||
       !this.probableCause.trim() ||
       !this.proposedSolution.trim()
@@ -312,7 +317,8 @@ export class WorkOrderDetail implements OnInit {
       this.changing() ||
       this.assigning() ||
       this.diagnosing() ||
-      this.itemsSaving()
+      this.itemsSaving() ||
+      this.quotesSaving()
     )
       return;
     const delivering = this.target === 'ENTREGUE';
@@ -407,6 +413,7 @@ export class WorkOrderDetail implements OnInit {
           this.downloadingPdf.set(false);
           this.pdfError.set('');
           this.itemsSaving.set(false);
+          this.quotesSaving.set(false);
           this.diagnosing.set(false);
           this.historyLoading.set(false);
           this.historyShown.set(false);

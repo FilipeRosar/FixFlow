@@ -1,0 +1,265 @@
+<article class="card quote-panel" aria-labelledby="quote-heading">
+  <div class="quote-heading">
+    <div class="quote-title">
+      <span class="quote-icon" aria-hidden="true">$</span>
+      <div>
+        <span class="quote-eyebrow">PROPOSTA COMERCIAL</span>
+        <h2 id="quote-heading">Orçamento</h2>
+        <p>Serviços, peças e condições em um só lugar.</p>
+      </div>
+    </div>
+    <button class="quote-toggle" type="button" (click)="toggle()" [attr.aria-expanded]="open()">
+      {{ open() ? 'Recolher' : 'Consultar / montar' }}
+    </button>
+  </div>
+  @if (open()) {
+    <div class="quote-content">
+      @if (loading()) {
+        <p class="quote-message" role="status">Carregando orçamento…</p>
+      }
+      @if (error()) {
+        <p class="quote-message quote-error" role="alert">{{ error() }}</p>
+      }
+      @if (notice()) {
+        <p class="quote-message quote-notice" role="status">{{ notice() }}</p>
+      }
+      <button
+        class="quote-refresh"
+        type="button"
+        (click)="load()"
+        [disabled]="loading() || busy() || blocked()"
+      >
+        Recarregar orçamento
+      </button>
+      @if (loaded() && !loading()) {
+        <nav class="quote-versions" aria-label="Versões do orçamento">
+          @for (quote of quotes(); track quote.id) {
+            <button
+              type="button"
+              (click)="select(quote)"
+              [disabled]="busy() || blocked()"
+              [attr.aria-pressed]="selected()?.id === quote.id"
+            >
+              <span>Versão {{ quote.version }}</span
+              ><span class="quote-version-status" [class.sent]="quote.status !== 'DRAFT'">{{
+                statusLabel(quote.status)
+              }}</span>
+            </button>
+          }
+        </nav>
+        @if (canEdit() && quotes().length && quotes()[0].status !== 'DRAFT') {
+          <button type="button" (click)="newVersion()" [disabled]="busy() || blocked()">
+            Criar nova versão
+          </button>
+        }
+        @if (selected(); as quote) {
+          <div class="quote-totals" aria-label="Totais salvos do orçamento">
+            <div class="quote-summary-heading">
+              <h3>Resumo da proposta</h3>
+              <span class="quote-badge"
+                >{{ statusLabel(quote.status) }} · v{{ quote.version }}</span
+              >
+            </div>
+            <div class="quote-breakdown">
+              <p>
+                <span>Mão de obra</span><strong>{{ quote.laborSubtotal | currency: 'BRL' }}</strong>
+              </p>
+              <p>
+                <span>Peças</span><strong>{{ quote.partsSubtotal | currency: 'BRL' }}</strong>
+              </p>
+              <p>
+                <span>Desconto</span
+                ><strong class="quote-discount-value"
+                  >− {{ quote.discountAmount | currency: 'BRL' }}</strong
+                >
+              </p>
+            </div>
+            <div class="quote-grand-total">
+              <div><span>Total salvo</span><small>Valor final da proposta</small></div>
+              <strong>{{ quote.total | currency: 'BRL' }}</strong>
+            </div>
+            <p class="quote-validity">
+              Válido até {{ quote.validUntil | date: 'dd/MM/yyyy HH:mm' : '-0300' }}
+            </p>
+          </div>
+          @if (quote.status !== 'DRAFT') {
+            <p class="quote-lock-note">
+              <span aria-hidden="true">✓</span> Proposta enviada. Os valores desta versão estão
+              preservados.
+            </p>
+            @if (quote.warrantyTerms) {
+              <p class="quote-terms">{{ quote.warrantyTerms }}</p>
+            }
+          }
+        } @else if (!canEdit()) {
+          <div class="quote-empty">
+            <h3>A proposta começa aqui</h3>
+            <p>Nenhum orçamento registrado para este atendimento.</p>
+          </div>
+        }
+        @if (editing()) {
+          <div class="quote-editor-heading">
+            <div>
+              <h3>Composição do orçamento</h3>
+              <p>Inclua os serviços e as peças previstos para este atendimento.</p>
+            </div>
+            <span class="quote-badge"
+              >{{ lines.length }} {{ lines.length === 1 ? 'item' : 'itens' }}</span
+            >
+          </div>
+          @if (partsError()) {
+            <p role="alert">
+              {{ partsError() }}
+              <button type="button" (click)="loadParts()">Tentar carregar peças</button>
+            </p>
+          }
+          <form (ngSubmit)="save()" #quoteForm="ngForm">
+            <fieldset [disabled]="busy() || blocked()">
+              <legend class="sr-only">Itens e desconto do rascunho</legend>
+              @for (item of lines; track $index; let i = $index) {
+                <div class="quote-line" [class.quote-line-part]="item.type === 'PART'">
+                  <div class="quote-line-heading">
+                    <span class="quote-line-number">{{ i + 1 }}</span>
+                    <h4>{{ item.type === 'SERVICE' ? 'Serviço' : 'Peça' }}</h4>
+                  </div>
+                  <label
+                    >Tipo
+                    <select
+                      [(ngModel)]="item.type"
+                      [name]="'type' + i"
+                      (ngModelChange)="changeType(item)"
+                    >
+                      <option value="SERVICE">Serviço</option>
+                      <option value="PART">Peça</option>
+                    </select></label
+                  >
+                  @if (item.type === 'PART') {
+                    <label class="quote-part-selector"
+                      >Peça
+                      <select
+                        [(ngModel)]="item.partId"
+                        [name]="'part' + i"
+                        required
+                        (ngModelChange)="selectPart(item)"
+                      >
+                        <option [ngValue]="null">Selecione</option>
+                        @for (part of parts(); track part.id) {
+                          <option [value]="part.id">{{ part.name }}</option>
+                        }
+                      </select></label
+                    >
+                  }
+                  <label class="quote-description"
+                    >Descrição
+                    <input
+                      placeholder="Ex.: Reparo da placa principal"
+                      [(ngModel)]="item.description"
+                      [name]="'description' + i"
+                      required
+                      maxlength="500"
+                  /></label>
+                  <label
+                    >Quantidade
+                    <input
+                      type="number"
+                      [(ngModel)]="item.quantity"
+                      [name]="'quantity' + i"
+                      required
+                      min="0.001"
+                      max="99999999999.999"
+                      step="0.001"
+                  /></label>
+                  <label
+                    >Preço unitário (R$)
+                    <input
+                      type="number"
+                      [(ngModel)]="item.unitPrice"
+                      [name]="'price' + i"
+                      required
+                      min="0"
+                      max="999999999999.99"
+                      step="0.01"
+                  /></label>
+                  <button
+                    class="quote-remove"
+                    type="button"
+                    (click)="removeLine(i)"
+                    [attr.aria-label]="'Remover item ' + (i + 1)"
+                  >
+                    Remover
+                  </button>
+                </div>
+              }
+              @if (!lines.length) {
+                <div class="quote-empty">
+                  <span class="quote-empty-symbol" aria-hidden="true">＋</span>
+                  <h3>Vamos montar sua proposta?</h3>
+                  <p>Comece adicionando um serviço ou uma peça.</p>
+                </div>
+              }
+              <button
+                class="quote-add"
+                type="button"
+                (click)="addLine()"
+                [disabled]="lines.length >= 100"
+              >
+                Adicionar item
+              </button>
+              <div class="quote-discount">
+                <div class="quote-discount-heading">
+                  <h3>Desconto</h3>
+                  <p>Uma condição especial para o seu cliente.</p>
+                </div>
+                <label
+                  >Tipo de desconto
+                  <select name="discountType" [(ngModel)]="discountType">
+                    <option value="FIXED">Valor fixo (R$)</option>
+                    <option value="PERCENT">Percentual (%)</option>
+                  </select></label
+                >
+                <label
+                  >Desconto
+                  <input
+                    type="number"
+                    name="discountValue"
+                    [(ngModel)]="discountValue"
+                    required
+                    min="0"
+                    [max]="discountType === 'PERCENT' ? 100 : 999999999999.99"
+                    step="0.01"
+                /></label>
+              </div>
+              <div class="quote-footer">
+                <p>Os totais são atualizados ao salvar a proposta.</p>
+                <button
+                  type="submit"
+                  class="primary"
+                  [disabled]="quoteForm.invalid || !lines.length"
+                >
+                  {{ busy() ? 'Salvando…' : 'Salvar e calcular orçamento' }}
+                </button>
+              </div>
+            </fieldset>
+          </form>
+        } @else if (selected(); as quote) {
+          <div class="quote-saved-items">
+            <h3>Itens da proposta</h3>
+            <ul>
+              @for (item of quote.items; track $index) {
+                <li>
+                  <div>
+                    <span class="quote-item-type">{{
+                      item.type === 'SERVICE' ? 'Serviço' : 'Peça'
+                    }}</span
+                    ><strong>{{ item.description }}</strong>
+                  </div>
+                  <span>{{ item.quantity }} × {{ item.unitPrice | currency: 'BRL' }}</span>
+                </li>
+              }
+            </ul>
+          </div>
+        }
+      }
+    </div>
+  }
+</article>
