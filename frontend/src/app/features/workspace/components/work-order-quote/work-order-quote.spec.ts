@@ -53,6 +53,43 @@ describe('Work order quote', () => {
       item.textContent.includes(text),
     ) as HTMLButtonElement;
   }
+  it('reuses the same idempotency key after an uncertain send and emits the new OS state', () => {
+    const fixture = setup(); load(fixture, [draft]);
+    const receipts: any[] = [];
+    fixture.componentInstance.sent.subscribe(receipt => receipts.push(receipt));
+    fixture.componentInstance['sendQuote']();
+    const http = TestBed.inject(HttpTestingController);
+    const first = http.expectOne('/api/v1/work-orders/os-1/quotes/quote-1/send');
+    const key = first.request.headers.get('Idempotency-Key');
+    expect(key).toBeTruthy(); expect(first.request.body).toEqual({ workOrderVersion: 4 });
+    first.flush({}, { status: 500, statusText: 'Uncertain result' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('mesma solicitação');
+    fixture.componentInstance['sendQuote']();
+    const retry = http.expectOne('/api/v1/work-orders/os-1/quotes/quote-1/send');
+    expect(retry.request.headers.get('Idempotency-Key')).toBe(key);
+    retry.flush({ workOrderId: 'os-1', quoteId: 'quote-1', workOrderVersion: 5, status: 'AGUARDANDO_APROVACAO', notificationStatus: 'QUEUED', validUntil: draft.validUntil });
+    fixture.detectChanges();
+    expect(receipts[0].status).toBe('AGUARDANDO_APROVACAO');
+    expect(fixture.nativeElement.textContent).toContain('e-mail está na fila');
+    expect(button(fixture, 'Enviar orçamento')).toBeUndefined();
+  });
+  it('requires unsaved edits to be saved before sending', async () => {
+    const fixture = setup(); load(fixture, [draft]);
+    await fixture.whenStable();
+    const price = fixture.nativeElement.querySelectorAll('.quote-line input')[2] as HTMLInputElement;
+    price.value = '123'; price.dispatchEvent(new Event('input'));
+    await fixture.whenStable(); fixture.detectChanges();
+    expect(button(fixture, 'Enviar orçamento').disabled).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('Salve suas alterações');
+    fixture.componentInstance['sendQuote']();
+  });
+  it('does not offer sending to technicians', () => {
+    TestBed.overrideProvider(SessionService, { useValue: { session: signal({ role: 'TECHNICIAN' }) } });
+    const fixture = setup(); load(fixture, [draft]);
+    expect(button(fixture, 'Enviar orçamento')).toBeUndefined();
+    fixture.componentInstance['sendQuote']();
+  });
   it('displays server totals and sends draft changes without accepting a client total', async () => {
     const fixture = setup();
     load(fixture, [draft]);

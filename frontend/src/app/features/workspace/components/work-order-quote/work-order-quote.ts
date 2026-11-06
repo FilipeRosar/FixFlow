@@ -39,6 +39,14 @@ interface Quote {
   warrantyTerms: string;
   sentAt: string | null;
 }
+interface SendReceipt {
+  workOrderId: string;
+  quoteId: string;
+  workOrderVersion: number;
+  status: string;
+  notificationStatus: string;
+  validUntil: string;
+}
 interface History {
   quotes: Quote[];
   workOrderVersion: number;
@@ -61,6 +69,7 @@ export class WorkOrderQuotePanel implements OnChanges {
   readonly versionChanged = output<number>();
   readonly busyChanged = output<boolean>();
   readonly saved = output<void>();
+  readonly sent = output<SendReceipt>();
   private readonly http = inject(HttpClient);
   private readonly destroy = inject(DestroyRef);
   private readonly role = inject(SessionService).session()?.role;
@@ -85,6 +94,78 @@ export class WorkOrderQuotePanel implements OnChanges {
   protected lines: Item[] = [];
   protected discountType = 'FIXED';
   protected discountValue = 0;
+  protected readonly sending = signal(false);
+  protected readonly canSend = computed(
+    () =>
+      (this.role === 'OWNER' || this.role === 'ATTENDANT') &&
+      this.order().status === 'AGUARDANDO_ORCAMENTO' &&
+      this.selected()?.status === 'DRAFT',
+  );
+  private pendingSend: { quoteId: string; version: number; key: string } | null = null;
+  protected hasUnsavedChanges(): boolean {
+    const quote = this.selected();
+    return (
+      !!quote &&
+      (JSON.stringify(this.lines) !== JSON.stringify(quote.items) ||
+        this.discountType !== quote.discountType ||
+        this.discountValue !== quote.discountValue)
+    );
+  }
+  protected sendQuote(): void {
+    const quote = this.selected();
+    if (!quote || !this.canSend() || this.busy() || this.blocked() || this.hasUnsavedChanges())
+      return;
+    const order = this.order();
+    if (
+      !this.pendingSend ||
+      this.pendingSend.quoteId !== quote.id ||
+      this.pendingSend.version !== order.version
+    )
+      this.pendingSend = { quoteId: quote.id, version: order.version, key: crypto.randomUUID() };
+    const pending = this.pendingSend;
+    const request = ++this.request;
+    this.busy.set(true);
+    this.sending.set(true);
+    this.busyChanged.emit(true);
+    this.error.set('');
+    this.notice.set('');
+    this.http
+      .post<SendReceipt>(
+        `/api/v1/work-orders/${order.id}/quotes/${quote.id}/send`,
+        { workOrderVersion: pending.version },
+        { headers: { 'Idempotency-Key': pending.key } },
+      )
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe({
+        next: (receipt) => {
+          if (request !== this.request) return;
+          this.pendingSend = null;
+          const updated = { ...quote, status: 'SENT', validUntil: receipt.validUntil };
+          this.quotes.update((quotes) =>
+            quotes.map((item) => (item.id === quote.id ? updated : item)),
+          );
+          this.selected.set(updated);
+          this.busy.set(false);
+          this.sending.set(false);
+          this.busyChanged.emit(false);
+          this.sent.emit(receipt);
+          this.notice.set('Orçamento enviado para aprovação. O e-mail está na fila de entrega.');
+        },
+        error: (error) => {
+          if (request !== this.request) return;
+          this.busy.set(false);
+          this.sending.set(false);
+          this.busyChanged.emit(false);
+          this.error.set(
+            error.status < 500 && typeof error.error?.detail === 'string'
+              ? error.error.detail
+              : 'Não foi possível confirmar o envio. Tente novamente; a mesma solicitação será recuperada sem duplicar o envio.',
+          );
+          if (error.status === 409)
+            this.notice.set('Recarregue o orçamento para conferir a versão atual.');
+        },
+      });
+  }
   private lastId = '';
   private lastStatus = '';
   private request = 0;
@@ -92,6 +173,8 @@ export class WorkOrderQuotePanel implements OnChanges {
     const order = this.order();
     if (order.id !== this.lastId) {
       this.request++;
+      this.pendingSend = null;
+      this.sending.set(false);
       this.lastId = order.id;
       this.lastStatus = order.status;
       this.open.set(false);
@@ -247,6 +330,7 @@ export class WorkOrderQuotePanel implements OnChanges {
         this.busy.set(false);
         this.busyChanged.emit(false);
         this.saved.emit();
+        this.pendingSend = null;
         this.notice.set('Rascunho salvo. Totais calculados pelo servidor.');
       },
       error: (error) => {

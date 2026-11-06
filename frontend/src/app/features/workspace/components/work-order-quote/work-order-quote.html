@@ -97,6 +97,28 @@
             <p>Nenhum orçamento registrado para este atendimento.</p>
           </div>
         }
+        @if (canSend()) {
+          <div class="quote-send">
+            <div>
+              <h3>Pronto para enviar?</h3>
+              <p>
+                A proposta será enviada ao e-mail cadastrado do cliente e ficará aguardando
+                aprovação.
+              </p>
+              @if (hasUnsavedChanges()) {
+                <p class="quote-send-hint">Salve suas alterações antes de enviar.</p>
+              }
+            </div>
+            <button
+              type="button"
+              class="primary"
+              (click)="sendQuote()"
+              [disabled]="busy() || blocked() || hasUnsavedChanges()"
+            >
+              {{ sending() ? 'Enviando…' : 'Enviar orçamento' }}
+            </button>
+          </div>
+        }
         @if (editing()) {
           <div class="quote-editor-heading">
             <div>

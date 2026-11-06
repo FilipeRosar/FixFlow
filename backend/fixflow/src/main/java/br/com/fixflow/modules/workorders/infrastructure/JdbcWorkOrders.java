@@ -21,7 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
-public class JdbcWorkOrders implements WorkOrders {
+public class JdbcWorkOrders implements WorkOrders, br.com.fixflow.modules.quotes.application.QuoteSending {
     private final JdbcTemplate jdbc;
     private final TenantLimitsService limits;
     private final AuthorizedTenantOperations tenants;
@@ -153,14 +153,14 @@ public class JdbcWorkOrders implements WorkOrders {
         return rows.isEmpty() ? WorkOrderFacts.empty() : rows.getFirst();
     }
     @Override public WorkOrder transition(UUID id, String toStatus, int version, String reason, boolean paymentOverride) {
-        return tenants.execute(tenant(), m -> transition(m, id, toStatus, version, reason, paymentOverride, null));
+        return tenants.execute(tenant(), m -> transition(m, id, toStatus, version, reason, paymentOverride, null, false));
     }
     @Override public WorkOrder deliver(UUID id, int version, int warrantyDays, String reason, boolean paymentOverride) {
         if (warrantyDays < 0 || warrantyDays > 3650) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Prazo adicional deve estar entre 0 e 3650 dias.");
-        return tenants.execute(tenant(), m -> transition(m, id, "ENTREGUE", version, reason, paymentOverride, warrantyDays));
+        return tenants.execute(tenant(), m -> transition(m, id, "ENTREGUE", version, reason, paymentOverride, warrantyDays, false));
     }
     private WorkOrder transition(AuthorizedMembership m, UUID id, String toStatus, int version, String reason,
-                                 boolean paymentOverride, Integer requestedWarrantyDays) {
+                                 boolean paymentOverride, Integer requestedWarrantyDays, boolean dispatch) {
         var ids = jdbc.queryForList("SELECT id FROM public.work_orders WHERE tenant_id = ? AND id = ? FOR UPDATE", UUID.class, m.tenantId(), id);
         if (ids.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "OS não encontrada.");
         WorkOrder order = read(m.tenantId(), id);
@@ -174,6 +174,9 @@ public class JdbcWorkOrders implements WorkOrders {
         var from = WorkOrderStatus.valueOf(order.status());
         var transition = new WorkOrderStateMachine().validate(from, target, m.role().name(), m.userId(), facts,
                 reason, paymentOverride, java.time.Instant.now());
+        if (target == WorkOrderStatus.AGUARDANDO_APROVACAO && !dispatch && Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM public.quotes WHERE tenant_id = ? AND work_order_id = ?)", Boolean.class, m.tenantId(), id)))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Use Enviar orçamento para enviar a proposta com segurança.");
         if (requestedWarrantyDays != null && from != WorkOrderStatus.PRONTA && requestedWarrantyDays != 0)
             throw new InvalidStateTransitionException("Devoluções sem reparo não recebem prazo adicional de garantia.");
         int warrantyDays = from == WorkOrderStatus.PRONTA ? (requestedWarrantyDays == null ? facts.warrantyDays() : requestedWarrantyDays) : 0;
@@ -200,11 +203,12 @@ public class JdbcWorkOrders implements WorkOrders {
                 target.name(), m.userId(), target.name(), actorName, target.name(), reason, target.name(), exceptionUsed,
                 target.name(), warrantyTerms, m.tenantId(), id, version);
         if (changed != 1) throw new WorkOrderVersionConflictException();
-        if (target == WorkOrderStatus.AGUARDANDO_APROVACAO) quotes.sent(m.tenantId(), id, facts.quoteId(), occurredAt);
+        String encryptedNotification = target == WorkOrderStatus.AGUARDANDO_APROVACAO ? quotes.sent(m.tenantId(), id, facts.quoteId(), occurredAt) : null;
+        if (target == WorkOrderStatus.AGUARDANDO_ORCAMENTO || target == WorkOrderStatus.CANCELADA) quotes.revoke(m.tenantId(), id);
         if (target == WorkOrderStatus.APROVADA || target == WorkOrderStatus.ORCAMENTO_REJEITADO)
             quotes.decided(m.tenantId(), facts.quoteId(), target == WorkOrderStatus.APROVADA ? "APPROVED" : "REJECTED");
         String publicToken = null;
-        if (target == WorkOrderStatus.AGUARDANDO_APROVACAO) {
+        if (target == WorkOrderStatus.AGUARDANDO_APROVACAO && encryptedNotification == null) {
             byte[] bytes = new byte[32]; new java.security.SecureRandom().nextBytes(bytes);
             publicToken = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
             String hash;
@@ -240,10 +244,40 @@ public class JdbcWorkOrders implements WorkOrders {
         }
         audit.record(m.userId(), "WORK_ORDER_STATUS_CHANGED", "WORK_ORDER", id, mapper.writeValueAsString(payload));
         if (exceptionUsed) audit.record(m.userId(), "WORK_ORDER_UNPAID_DELIVERY_AUTHORIZED", "WORK_ORDER", id, mapper.writeValueAsString(payload));
-        // Token is only delivered to the notification consumer, never to audit/logs.
-        if (publicToken != null) payload.put("publicToken", publicToken);
+        if (encryptedNotification != null) {
+            payload.put("quoteId", facts.quoteId()); payload.put("encryptedNotification", encryptedNotification);
+        }
         if (transition.eventType() != null) outbox.record("WorkOrder", id, transition.eventType(), mapper.writeValueAsString(payload));
         return read(m.tenantId(), id);
+    }
+    private static String sha256(String value) {
+        try { return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))); }
+        catch (java.security.NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
+    }
+    @Override public br.com.fixflow.modules.quotes.application.QuoteSending.Receipt send(UUID order, UUID quote, int version, String key) {
+        if (key == null || !key.matches("[A-Za-z0-9._:-]{8,128}"))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe Idempotency-Key com 8 a 128 caracteres ASCII (letras, números, ponto, hífen, dois-pontos ou sublinhado).");
+        return tenants.execute(tenant(), member -> {
+            if (!RolePermissions.forRole(member.role().name()).contains("quote:send")) throw new AccessDeniedException("Envio de orçamento não autorizado.");
+            if (!Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM public.quotes WHERE tenant_id = ? AND work_order_id = ? AND id = ?)", Boolean.class, member.tenantId(), order, quote)))
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Orçamento não encontrado nesta OS.");
+            String keyHash = sha256(key), requestHash = sha256("quote-send:" + order + ":" + quote + ":" + version);
+            jdbc.update("INSERT INTO public.quote_send_requests(tenant_id, key_hash, request_hash) VALUES (?, ?, ?) ON CONFLICT DO NOTHING", member.tenantId(), keyHash, requestHash);
+            var saved = jdbc.queryForMap("SELECT *, expires_at <= clock_timestamp() AS expired FROM public.quote_send_requests WHERE tenant_id = ? AND key_hash = ? FOR UPDATE", member.tenantId(), keyHash);
+            if (Boolean.TRUE.equals(saved.get("expired"))) {
+                jdbc.update("UPDATE public.quote_send_requests SET request_hash = ?, response = NULL, expires_at = clock_timestamp() + interval '24 hours' WHERE tenant_id = ? AND key_hash = ?", requestHash, member.tenantId(), keyHash);
+            } else {
+                if (!requestHash.equals(saved.get("request_hash"))) throw new ResponseStatusException(HttpStatus.CONFLICT, "Idempotency-Key já utilizada com outra requisição.");
+                if (saved.get("response") != null) return mapper.readValue(saved.get("response").toString(), br.com.fixflow.modules.quotes.application.QuoteSending.Receipt.class);
+            }
+            var active = jdbc.queryForList("SELECT quote_id FROM public.work_order_transition_facts WHERE tenant_id = ? AND work_order_id = ?", UUID.class, member.tenantId(), order);
+            if (active.isEmpty() || !quote.equals(active.getFirst())) throw new ResponseStatusException(HttpStatus.CONFLICT, "Envie somente a versão vigente do orçamento.");
+            var updated = transition(member, order, "AGUARDANDO_APROVACAO", version, null, false, null, true);
+            var until = jdbc.queryForObject("SELECT valid_until FROM public.quotes WHERE tenant_id = ? AND id = ?", (rs, row) -> rs.getTimestamp(1).toInstant(), member.tenantId(), quote);
+            var result = new br.com.fixflow.modules.quotes.application.QuoteSending.Receipt(order, quote, updated.version(), updated.status(), "QUEUED", until);
+            jdbc.update("UPDATE public.quote_send_requests SET response = ?::jsonb WHERE tenant_id = ? AND key_hash = ?", mapper.writeValueAsString(result), member.tenantId(), keyHash);
+            return result;
+        });
     }
     @Override public WorkOrder open(UUID customerId, UUID equipmentId, String issue, List<String> accessories, String condition) {
         UUID tenant = tenant();

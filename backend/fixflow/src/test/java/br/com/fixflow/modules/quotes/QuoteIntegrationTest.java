@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
+@SpringBootTest(properties = "fixflow.quotes.link-encryption-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 @AutoConfigureMockMvc
 @ActiveProfiles("integration-test")
 class QuoteIntegrationTest {
@@ -63,6 +63,7 @@ class QuoteIntegrationTest {
         UUID customer = UUID.randomUUID(), equipment = UUID.randomUUID();
         inTenant(fixture.tenantA, () -> {
             admin.update("INSERT INTO customers(id, tenant_id, name) VALUES (?, ?, 'Ana')", customer, fixture.tenantA);
+            admin.update("INSERT INTO customer_contacts(tenant_id, customer_id, type, value, position) VALUES (?, ?, 'EMAIL', 'ana@example.test', 0)", fixture.tenantA, customer);
             admin.update("INSERT INTO equipment(id, tenant_id, customer_id, category, model) VALUES (?, ?, ?, 'NOTEBOOK', 'Dell')", equipment, fixture.tenantA, customer);
         });
         var result = mvc.perform(post("/api/v1/work-orders").header("Authorization", "Bearer " + token).contentType("application/json").content(mapper.writeValueAsString(Map.of("customerId", customer, "equipmentId", equipment, "reportedIssue", "Não liga", "receivedAccessories", List.of(), "physicalCondition", "Usado"))))
@@ -95,6 +96,13 @@ class QuoteIntegrationTest {
     }
     org.springframework.test.web.servlet.ResultActions list(UUID order) throws Exception { return mvc.perform(get(orders + order + "/quotes").header("Authorization", "Bearer " + token)); }
     org.springframework.test.web.servlet.ResultActions transition(UUID id, String target, int version) throws Exception {
+        if (target.equals("AGUARDANDO_APROVACAO")) {
+            var quote = new java.util.concurrent.atomic.AtomicReference<UUID>();
+            inTenant(fixture.tenantA, () -> quote.set(admin.queryForObject("SELECT id FROM quotes WHERE tenant_id = ? AND work_order_id = ? ORDER BY version DESC LIMIT 1", UUID.class, fixture.tenantA, id)));
+            return mvc.perform(post(orders + id + "/quotes/" + quote.get() + "/send").header("Authorization", "Bearer " + token)
+                    .header("Idempotency-Key", UUID.randomUUID().toString()).contentType("application/json")
+                    .content(mapper.writeValueAsString(Map.of("workOrderVersion", version))));
+        }
         return mvc.perform(patch(orders + id + "/status").header("Authorization", "Bearer " + token).contentType("application/json").content(mapper.writeValueAsString(Map.of("toStatus", target, "version", version, "reason", "Decisão registrada pelo cliente"))));
     }
     UUID quote(org.springframework.test.web.servlet.ResultActions result) throws Exception {

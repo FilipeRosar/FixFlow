@@ -95,6 +95,11 @@ export class WorkOrderDetail implements OnInit {
   protected readonly timelineRevision = signal(0);
   protected readonly quotesSaving = signal(false);
   protected readonly itemsSaving = signal(false);
+  protected quoteSent(receipt: { workOrderId: string; workOrderVersion: number; status: string }): void {
+    this.order.update(order => order && order.id === receipt.workOrderId ? { ...order, version: receipt.workOrderVersion, status: receipt.status } : order);
+    this.timelineRevision.update(value => value + 1);
+    this.target = '';
+  }
   protected updateItemsVersion(version: number): void {
     this.order.update((order) =>
       order ? { ...order, version: Math.max(order.version, version) } : null,
@@ -292,7 +297,7 @@ export class WorkOrderDetail implements OnInit {
     const reception: Record<string, string[]> = {
       RECEBIDA: ['CANCELADA'],
       EM_DIAGNOSTICO: ['CANCELADA'],
-      AGUARDANDO_ORCAMENTO: ['AGUARDANDO_APROVACAO', 'CANCELADA'],
+      AGUARDANDO_ORCAMENTO: ['CANCELADA'],
       AGUARDANDO_APROVACAO: [
         'APROVADA',
         'ORCAMENTO_REJEITADO',

@@ -132,6 +132,7 @@
       (versionChanged)="updateItemsVersion($event)"
       (busyChanged)="quotesSaving.set($event)"
       (saved)="timelineRevision.set(timelineRevision() + 1)"
+      (sent)="quoteSent($event)"
     />
     <app-work-order-items
       [order]="item"

@@ -68,6 +68,14 @@ describe('Work order details', () => {
     button.click();
     http.expectOne('/api/v1/work-orders/order/pdf?type=DELIVERY').flush(new Blob(), { status: 403, statusText: 'Forbidden' });
   });
+  it('updates the work order after the quote is sent and uses its new version', () => {
+    const fixture = TestBed.createComponent(WorkOrderDetail); fixture.detectChanges();
+    TestBed.inject(HttpTestingController).expectOne('/api/v1/work-orders/order').flush({ ...order, status: 'AGUARDANDO_ORCAMENTO', version: 5 });
+    fixture.componentInstance['quoteSent']({ workOrderId: 'order', workOrderVersion: 6, status: 'AGUARDANDO_APROVACAO' });
+    expect(fixture.componentInstance['order']()?.status).toBe('AGUARDANDO_APROVACAO');
+    expect(fixture.componentInstance['order']()?.version).toBe(6);
+    expect(fixture.componentInstance['targets']('AGUARDANDO_ORCAMENTO')).not.toContain('AGUARDANDO_APROVACAO');
+  });
   it('loads and displays the selected order with a link back to its customer history', () => {
     const fixture = TestBed.createComponent(WorkOrderDetail);
     fixture.detectChanges();

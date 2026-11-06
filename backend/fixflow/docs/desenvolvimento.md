@@ -670,9 +670,10 @@ total, validade e decisão, serviços, consumo/baixa de peças, quitação, regi
 taxa, peça faltante e início de manutenção. Revisão revoga token e limpa a referência
 ao orçamento anterior, incrementando sua versão; um novo envio exige nova evidência.
 Envio gera token aleatório de 256 bits: só o hash SHA-256 fica na projeção; o token
-original segue no evento QuoteSent para o consumidor de notificação, sem auditoria
-ou logs. Aprovação, rejeição, cancelamento, revisão e entrega revogam o token.
-A API pública de orçamento e o consumo desse token não fazem parte desta US.
+original é protegido por AES-GCM no evento `QuoteSent`, conforme a US-031.
+A projeção limpa a autorização de decisão após aprovação/rejeição e encerramento;
+a tabela de tokens preserva o prazo de leitura para a futura US-032. Revisão e
+cancelamento revogam o link. A API pública é escopo da US-032.
 
 A tela de consulta oferece transições por perfil, justificativa e exceção de
 pagamento para o proprietário. A lista mostra as arestas possíveis; o servidor
@@ -1283,7 +1284,7 @@ inadequado, rascunho duplicado, versão desatualizada ou edição após envio re
 Salvar bloqueia a linha da OS, compara `workOrderVersion` e incrementa a versão
 da OS. Alteração comercial e auditoria `QUOTE_DRAFT_SAVED` são atômicas. A projeção
 `work_order_transition_facts` recebe ID, versão, contagem, total e validade reais,
-permitindo o envio pelo fluxo existente `PATCH /work-orders/{id}/status` para
+permitindo o envio pelo endpoint dedicado da US-031 para
 `AGUARDANDO_APROVACAO`. O mesmo bloqueio serializa edição e envio concorrentes.
 
 No envio, a proposta passa para `SENT`, recebe `sentAt` e preserva validade,
@@ -1298,8 +1299,8 @@ Para revisar uma proposta enviada/rejeitada, retorne a OS para
 copia os dados para um novo rascunho, preservando a versão anterior. A API não
 reabre orçamento aprovado nem cria aditivos durante manutenção. As projeções
 legadas anteriores a este módulo continuam compatíveis com a máquina de estados,
-sem inventar itens comerciais. A entrega da US-031 (notificação por e-mail e
-`Idempotency-Key` de envio) permanece separada.
+sem inventar itens comerciais. O envio por e-mail e a chave de idempotência
+estão implementados na US-031, descrita abaixo.
 
 ### Validação
 
@@ -1313,4 +1314,118 @@ recuperação de falhas e navegação durante uma consulta.
 
 ```bash
 ./mvnw -Dtest='Quote*Test,WorkOrder*Test,ArchitectureTest' test
+```
+
+
+## US-031 — Enviar orçamento
+
+As dependências US-030 e F-06 estão implementadas. No painel **Orçamento**, o
+proprietário/atendente pode enviar o rascunho salvo para o primeiro contato
+`EMAIL` do cliente, ordenado por posição e ID. Alterações em edição precisam ser
+salvas antes de enviar. Técnico pode montar o rascunho, mas não enviar.
+
+### Endpoint e idempotência
+
+`POST /api/v1/work-orders/{orderId}/quotes/{quoteId}/send` recebe:
+
+```http
+Idempotency-Key: 972e2476-755e-43a4-a7c9-8f9793b575c1
+Content-Type: application/json
+
+{"workOrderVersion": 5}
+```
+
+Retorna 200 com `workOrderId`, `quoteId`, `workOrderVersion`,
+`status=AGUARDANDO_APROVACAO`, `notificationStatus=QUEUED` e `validUntil`.
+`Cache-Control: no-store` impede cache da resposta. `QUEUED` confirma o registro
+transacional da notificação; não confirma a entrega na caixa postal.
+
+A chave aceita 8–128 caracteres ASCII: letras, números, ponto, hífen, dois-pontos
+ou sublinhado. O banco guarda seu hash, o hash de ordem/orçamento/versão e a
+resposta original. O escopo é a empresa; a validade lógica é de 24 horas.
+Repetir a mesma chave/corpo retorna a resposta original, inclusive após decisão,
+sem incrementar versões, trocar token, acrescentar histórico ou enfileirar outro
+e-mail. Mesma chave com outro corpo retorna 409. Requisições concorrentes com a
+mesma chave aguardam a mesma linha; a segunda recupera o resultado da primeira.
+Registros expirados são substituídos quando a chave volta a ser usada; expirar
+a chave não permite enviar novamente um orçamento já enviado.
+
+Estado, versão e autorização são validados no servidor. Somente a proposta
+vigente em rascunho pode ser enviada. E-mail ausente/inválido retorna 422;
+chave ausente/inválida retorna 400; versão/estado conflitante retorna 409;
+técnico retorna 403; referência de outra empresa retorna 404. Replays também
+revalidam a autorização atual. Falha antes do commit desfaz chave, estado,
+token, snapshots, histórico, auditoria e outbox juntos.
+
+O PATCH genérico de estado não envia propostas nativas da US-030: retorna 409
+orientando a usar o endpoint dedicado. Projeções legadas continuam compatíveis
+com os testes e transições antigas, sem inventar destinatários ou e-mails.
+A interface usa uma mesma chave durante tentativas com resultado incerto e
+atualiza o estado/versão da OS após confirmar o envio.
+
+### Token e entrega por e-mail
+
+O token usa `SecureRandom`, 256 bits, base64url sem padding (43 caracteres).
+`quote_access_tokens` e a projeção da OS guardam apenas SHA-256. A autorização de
+decisão expira na validade da proposta. Aprovação/rejeição registram prazo de
+leitura de 90 dias; revisão/cancelamento revogam os links anteriores.
+
+Para permitir retry persistente sem guardar um bearer token legível no banco,
+o destinatário e o token ficam em um envelope AES-256-GCM na outbox, com nonce
+aleatório e associação autenticada ao tenant e à proposta. A chave de criptografia
+é externa ao banco. A resposta HTTP, auditoria e logs não recebem o token.
+A V36 cria as tabelas de envio com RLS; a V37 remove `publicToken` em claro dos
+eventos antigos, que ainda não tinham consumidor de e-mail.
+
+O consumidor síncrono `QuoteSentEmailListener` usa SMTP e a outbox F-06. Falha no
+SMTP propaga para o publicador, que registra a classe do erro e tenta novamente
+com o backoff existente, até cinco tentativas. A OS permanece aguardando
+aprovação enquanto o e-mail aguarda nova tentativa. Eventos repetidos são
+ignorados pelo recibo por `event_id`; mensagens ainda pendentes para links
+revogados/expirados ou propostas já decididas são marcadas `SKIPPED`.
+
+A entrega externa continua **pelo menos uma vez**: uma queda após o SMTP aceitar
+a mensagem e antes do commit do recibo pode repetir o e-mail. A idempotência
+HTTP e a deduplicação de eventos confirmados evitam duplicação nos retries
+normais; não se promete exatamente uma entrega SMTP.
+
+O e-mail contém empresa, número da OS, versão, validade no fuso brasileiro e o
+link `${APP_ORIGIN}/orcamento#token=...`. O fragmento evita enviar o token em
+uma requisição HTTP inicial. A página pública e as APIs de consulta/decisão
+continuam sendo a **US-032**; esta história prepara e envia o link.
+Rotação/reenvio intencional com novo link continua na US-035.
+
+### Configuração local e produção
+
+Em `backend/fixflow`, execute uma vez:
+
+```bash
+python3 scripts/configure-quote-mail-local.py
+```
+
+O script cria `application-quote-mail-local.properties` com chave persistente de
+32 bytes, permissão 0600 e sem imprimir o segredo. O arquivo é ignorado pelo Git,
+importado apenas se existir e não é sobrescrito pelo script. Em produção/Compose,
+configure `QUOTE_LINK_ENCRYPTION_KEY` com 32 bytes aleatórios em base64, por um
+gerenciador de segredos. Sem chave, enviar retorna 503 e nenhuma alteração é
+confirmada. Preserve a chave enquanto houver notificações pendentes; trocá-la
+sem preservar a chave antiga impede descriptografar a fila anterior.
+
+SMTP usa a configuração existente `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
+`SMTP_PASSWORD`, `SMTP_AUTH`, `SMTP_STARTTLS` e `MAIL_FROM`. `APP_ORIGIN` define a
+origem do link. Para receber os e-mails em desenvolvimento, suba `mailpit` pelo
+Compose e consulte `http://localhost:8025` (SMTP no host: `localhost:1025`).
+
+### Validação
+
+`QuoteSendingIntegrationTest` cobre repetição, concorrência, resposta preservada
+após decisão, conflito/expiração de chave, falta de e-mail, permissões, proteção
+contra bypass pelo PATCH, revisão/revogação, falha de SMTP com retry e rollback
+por falha de auditoria. O SMTP é simulado nos testes; nenhum e-mail real é enviado.
+`QuoteLinkProtectionTest` cobre criptografia autenticada, nonce aleatório, vínculo
+a tenant/proposta, adulteração e ausência/chave inválida. Os testes Angular
+cobrem chave reutilizada, bloqueio de edição não salva, perfil e atualização da OS.
+
+```bash
+./mvnw -Dtest='Quote*Test,ArchitectureTest,OutboxIntegrationTest,WorkOrderT4IntegrationTest' test
 ```

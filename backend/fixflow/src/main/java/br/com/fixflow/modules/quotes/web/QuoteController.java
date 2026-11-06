@@ -15,7 +15,8 @@ import java.util.UUID;
 @RequestMapping("/api/v1/work-orders/{orderId}/quotes")
 public class QuoteController {
     private final Quotes quotes;
-    public QuoteController(Quotes quotes) { this.quotes = quotes; }
+    private final br.com.fixflow.modules.quotes.application.QuoteSending sending;
+    public QuoteController(Quotes quotes, br.com.fixflow.modules.quotes.application.QuoteSending sending) { this.quotes = quotes; this.sending = sending; }
     public record ItemRequest(@NotNull @Pattern(regexp = "SERVICE|PART") String type, UUID partId,
                               @NotBlank @Size(max = 500) String description,
                               @NotNull @DecimalMin(value = "0", inclusive = false) @Digits(integer = 11, fraction = 3) BigDecimal quantity,
@@ -36,5 +37,11 @@ public class QuoteController {
     }
     @PutMapping("/{quoteId}") public Quotes.History update(@PathVariable UUID orderId, @PathVariable UUID quoteId, @Valid @RequestBody Request request) {
         return quotes.update(orderId, quoteId, request.draft());
+    }
+    public record SendRequest(@NotNull @Min(0) Integer workOrderVersion) { }
+    @PostMapping("/{quoteId}/send")
+    public ResponseEntity<br.com.fixflow.modules.quotes.application.QuoteSending.Receipt> send(@PathVariable UUID orderId, @PathVariable UUID quoteId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key, @Valid @RequestBody SendRequest request) {
+        return ResponseEntity.ok().header("Cache-Control", "no-store").body(sending.send(orderId, quoteId, request.workOrderVersion(), key));
     }
 }

@@ -483,3 +483,30 @@ fieldset {
     gap: 9px;
   }
 }
+
+.quote-send {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px;
+  margin: 20px 0;
+  border: 1px solid #8b77df40;
+  border-radius: 10px;
+  background: #8b77df0a;
+}
+.quote-send p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.quote-send .quote-send-hint {
+  color: #dcc292;
+}
+@media (max-width: 600px) {
+  .quote-send {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
