@@ -510,3 +510,49 @@ fieldset {
     flex-direction: column;
   }
 }
+
+.quote-link-panel {
+  border: 1px solid var(--border);
+  background: #141923;
+  border-radius: 10px;
+  padding: 18px;
+  margin: 20px 0;
+}
+.quote-link-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.quote-link-heading p,
+.quote-link-confirmation p,
+.quote-link-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 6px 0 0;
+}
+.quote-link-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.quote-link-confirmation {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 12px;
+}
+.quote-link-buttons .quote-revoke {
+  color: #e2afbd;
+  background: #a6495d0c;
+  border-color: #a6495d40;
+}
+@media (max-width: 600px) {
+  .quote-link-buttons {
+    flex-direction: column;
+  }
+  .quote-link-buttons button {
+    white-space: normal;
+  }
+}

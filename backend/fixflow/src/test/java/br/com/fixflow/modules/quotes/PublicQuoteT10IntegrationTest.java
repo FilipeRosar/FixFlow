@@ -16,7 +16,11 @@ class PublicQuoteT10IntegrationTest extends QuoteIntegrationTest {
     String ip;
     final String publicUrl = "/public/v1/work-orders/";
     record Link(UUID order, UUID quote, String token) { }
-    @BeforeEach void remoteAddress() { ip = "198.51.100." + IPS.incrementAndGet(); }
+    static String nextIp() {
+        int value = IPS.incrementAndGet();
+        return "198.18." + ((value >>> 8) & 255) + "." + (value & 255);
+    }
+    @BeforeEach void remoteAddress() { ip = nextIp(); }
     Link link() throws Exception {
         UUID order = order(true), quote = quote(save(order, null, body(4)).andExpect(status().isCreated()));
         transition(order, "AGUARDANDO_APROVACAO", 5).andExpect(status().isOk());
@@ -81,7 +85,7 @@ class PublicQuoteT10IntegrationTest extends QuoteIntegrationTest {
     }
     @Test void t10TokenLimitIsSixtyPerHourAcrossDifferentIps() throws Exception {
         Link link = link();
-        for (int i = 0; i < 60; i++) mvc.perform(get(publicUrl + link.token()).with(request -> { request.setRemoteAddr("203.0.113." + IPS.incrementAndGet()); return request; })).andExpect(status().isOk());
+        for (int i = 0; i < 60; i++) mvc.perform(get(publicUrl + link.token()).with(request -> { request.setRemoteAddr(nextIp()); return request; })).andExpect(status().isOk());
         var response = view(link.token()).andExpect(status().isTooManyRequests()).andReturn().getResponse();
         assertTrue(Integer.parseInt(response.getHeader("Retry-After")) > 60);
         assertFalse(response.getContentAsString().contains(link.token()));

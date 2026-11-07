@@ -38,6 +38,7 @@ interface Quote {
   validUntil: string;
   warrantyTerms: string;
   sentAt: string | null;
+  linkStatus?: 'NONE' | 'ACTIVE' | 'REVOKED' | 'EXPIRED';
 }
 interface SendReceipt {
   workOrderId: string;
@@ -46,6 +47,9 @@ interface SendReceipt {
   status: string;
   notificationStatus: string;
   validUntil: string;
+}
+interface LinkReceipt extends SendReceipt {
+  linkStatus: 'ACTIVE' | 'REVOKED';
 }
 interface History {
   quotes: Quote[];
@@ -140,7 +144,12 @@ export class WorkOrderQuotePanel implements OnChanges {
         next: (receipt) => {
           if (request !== this.request) return;
           this.pendingSend = null;
-          const updated = { ...quote, status: 'SENT', validUntil: receipt.validUntil };
+          const updated: Quote = {
+            ...quote,
+            status: 'SENT',
+            validUntil: receipt.validUntil,
+            linkStatus: 'ACTIVE',
+          };
           this.quotes.update((quotes) =>
             quotes.map((item) => (item.id === quote.id ? updated : item)),
           );
@@ -166,6 +175,102 @@ export class WorkOrderQuotePanel implements OnChanges {
         },
       });
   }
+  protected readonly linkAction = signal<'revoke-link' | 'resend-link' | null>(null);
+  protected readonly managingLink = signal(false);
+  protected readonly canManageLink = computed(() => {
+    const quote = this.selected(),
+      status = this.order().status;
+    return (
+      (this.role === 'OWNER' || this.role === 'ATTENDANT') &&
+      !!quote &&
+      quote.id === this.quotes()[0]?.id &&
+      (quote.status === 'SENT'
+        ? status === 'AGUARDANDO_APROVACAO'
+        : ['APPROVED', 'REJECTED'].includes(quote.status) &&
+          [
+            'APROVADA',
+            'ORCAMENTO_REJEITADO',
+            'EM_MANUTENCAO',
+            'AGUARDANDO_PECA',
+            'PRONTA',
+            'ENTREGUE',
+          ].includes(status))
+    );
+  });
+  private pendingLink: { fingerprint: string; key: string } | null = null;
+  protected linkLabel(status: string | undefined): string {
+    return (
+      (
+        { ACTIVE: 'Ativo', REVOKED: 'Revogado', EXPIRED: 'Expirado', NONE: 'Sem link' } as Record<
+          string,
+          string
+        >
+      )[status ?? 'NONE'] ?? 'Sem link'
+    );
+  }
+  protected chooseLinkAction(action: 'revoke-link' | 'resend-link' | null): void {
+    if (this.busy() || this.blocked()) return;
+    this.linkAction.set(action);
+    this.error.set('');
+    this.notice.set('');
+  }
+  protected manageLink(): void {
+    const quote = this.selected(),
+      action = this.linkAction(),
+      order = this.order();
+    if (!quote || !action || !this.canManageLink() || this.busy() || this.blocked()) return;
+    const fingerprint = `${order.id}:${quote.id}:${action}:${order.version}`;
+    if (this.pendingLink?.fingerprint !== fingerprint)
+      this.pendingLink = { fingerprint, key: crypto.randomUUID() };
+    const request = ++this.request;
+    this.busy.set(true);
+    this.managingLink.set(true);
+    this.busyChanged.emit(true);
+    this.error.set('');
+    this.notice.set('');
+    this.http
+      .post<LinkReceipt>(
+        `/api/v1/work-orders/${order.id}/quotes/${quote.id}/${action}`,
+        { workOrderVersion: order.version },
+        { headers: { 'Idempotency-Key': this.pendingLink.key } },
+      )
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe({
+        next: (receipt) => {
+          if (request !== this.request) return;
+          this.pendingLink = null;
+          this.linkAction.set(null);
+          const updated = { ...quote, linkStatus: receipt.linkStatus };
+          this.quotes.update((quotes) =>
+            quotes.map((item) => (item.id === quote.id ? updated : item)),
+          );
+          this.selected.set(updated);
+          this.busy.set(false);
+          this.managingLink.set(false);
+          this.busyChanged.emit(false);
+          this.versionChanged.emit(receipt.workOrderVersion);
+          this.saved.emit();
+          this.notice.set(
+            action === 'resend-link'
+              ? 'Novo link enviado para a fila de e-mail. O link anterior foi invalidado.'
+              : 'Link revogado. O endereço anterior não permite mais acessar a proposta.',
+          );
+        },
+        error: (error) => {
+          if (request !== this.request) return;
+          this.busy.set(false);
+          this.managingLink.set(false);
+          this.busyChanged.emit(false);
+          this.error.set(
+            error.status < 500 && typeof error.error?.detail === 'string'
+              ? error.error.detail
+              : 'Não foi possível confirmar a operação. Tente novamente para recuperar a mesma solicitação sem duplicá-la.',
+          );
+          if (error.status === 409)
+            this.notice.set('Recarregue o orçamento para conferir seu estado e versão atuais.');
+        },
+      });
+  }
   private lastId = '';
   private lastStatus = '';
   private request = 0;
@@ -174,6 +279,9 @@ export class WorkOrderQuotePanel implements OnChanges {
     if (order.id !== this.lastId) {
       this.request++;
       this.pendingSend = null;
+      this.pendingLink = null;
+      this.linkAction.set(null);
+      this.managingLink.set(false);
       this.sending.set(false);
       this.lastId = order.id;
       this.lastStatus = order.status;
@@ -227,6 +335,7 @@ export class WorkOrderQuotePanel implements OnChanges {
     this.versionChanged.emit(data.workOrderVersion);
   }
   protected select(quote: Quote | null): void {
+    this.linkAction.set(null);
     this.selected.set(quote);
     this.lines = quote ? quote.items.map((item) => ({ ...item })) : [];
     this.discountType = quote?.discountType ?? 'FIXED';

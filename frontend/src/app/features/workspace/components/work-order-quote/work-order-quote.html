@@ -97,6 +97,80 @@
             <p>Nenhum orçamento registrado para este atendimento.</p>
           </div>
         }
+        @if (canManageLink()) {
+          <section class="quote-link-panel" aria-labelledby="quote-link-title">
+            <div class="quote-link-heading">
+              <div>
+                <h3 id="quote-link-title">Link público</h3>
+                <p>
+                  {{
+                    selected()?.status === 'SENT'
+                      ? 'Gerencie o acesso do cliente à proposta.'
+                      : 'Link de consulta. A decisão registrada será preservada.'
+                  }}
+                </p>
+              </div>
+              <span class="quote-badge">{{ linkLabel(selected()?.linkStatus) }}</span>
+            </div>
+            @if (linkAction(); as action) {
+              <div class="quote-link-confirmation">
+                <p>
+                  {{
+                    action === 'resend-link'
+                      ? 'O link atual deixará de funcionar e um novo será enviado ao e-mail cadastrado do cliente.'
+                      : 'O link atual deixará de funcionar. Nenhum novo e-mail será enviado.'
+                  }}
+                </p>
+                <p>A validade, os valores e a decisão do orçamento serão mantidos.</p>
+                <div class="quote-link-buttons">
+                  <button
+                    type="button"
+                    class="primary"
+                    (click)="manageLink()"
+                    [disabled]="busy() || blocked()"
+                  >
+                    {{
+                      managingLink()
+                        ? 'Confirmando…'
+                        : action === 'resend-link'
+                          ? 'Confirmar reenvio'
+                          : 'Confirmar revogação'
+                    }}</button
+                  ><button type="button" (click)="chooseLinkAction(null)" [disabled]="busy()">
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            } @else {
+              <div class="quote-link-buttons">
+                <button
+                  type="button"
+                  (click)="chooseLinkAction('resend-link')"
+                  [disabled]="busy() || blocked() || selected()?.linkStatus === 'EXPIRED'"
+                >
+                  Reenviar novo link</button
+                ><button
+                  type="button"
+                  class="quote-revoke"
+                  (click)="chooseLinkAction('revoke-link')"
+                  [disabled]="
+                    busy() ||
+                    blocked() ||
+                    selected()?.linkStatus === 'REVOKED' ||
+                    selected()?.linkStatus === 'NONE'
+                  "
+                >
+                  Revogar link
+                </button>
+              </div>
+              @if (selected()?.linkStatus === 'EXPIRED') {
+                <p class="quote-link-hint">
+                  O prazo de acesso expirou. Reenviar não altera a validade da proposta.
+                </p>
+              }
+            }
+          </section>
+        }
         @if (canSend()) {
           <div class="quote-send">
             <div>

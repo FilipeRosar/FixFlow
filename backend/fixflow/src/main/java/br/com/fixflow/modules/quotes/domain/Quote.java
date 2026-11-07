@@ -8,6 +8,6 @@ import java.util.UUID;
 public record Quote(UUID id, UUID workOrderId, int version, String status, List<Item> items,
                     String discountType, BigDecimal discountValue, BigDecimal laborSubtotal,
                     BigDecimal partsSubtotal, BigDecimal discountAmount, BigDecimal total,
-                    Instant validUntil, String warrantyTerms, String logoDataUrl, Instant createdAt, Instant sentAt) {
+                    Instant validUntil, String warrantyTerms, String logoDataUrl, Instant createdAt, Instant sentAt, String linkStatus) {
     public record Item(String type, UUID partId, String description, BigDecimal quantity, BigDecimal unitPrice) { }
 }

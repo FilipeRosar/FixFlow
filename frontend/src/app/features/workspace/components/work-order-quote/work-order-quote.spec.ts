@@ -53,6 +53,52 @@ describe('Work order quote', () => {
       item.textContent.includes(text),
     ) as HTMLButtonElement;
   }
+  function linkReceipt(linkStatus: string, status = 'AGUARDANDO_APROVACAO') {
+    return { workOrderId: 'os-1', quoteId: 'quote-1', workOrderVersion: 5, status, notificationStatus: linkStatus === 'ACTIVE' ? 'QUEUED' : 'NONE', validUntil: draft.validUntil, linkStatus };
+  }
+  it('requires confirmation before rotating a sent link and sends the version and idempotency key', () => {
+    const fixture = setup('AGUARDANDO_APROVACAO'); load(fixture, [{ ...draft, status: 'SENT', linkStatus: 'ACTIVE' }]);
+    button(fixture, 'Reenviar novo link').click(); fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectNone('/api/v1/work-orders/os-1/quotes/quote-1/resend-link');
+    expect(fixture.nativeElement.textContent).toContain('O link atual deixará de funcionar');
+    button(fixture, 'Confirmar reenvio').click();
+    const request = http.expectOne('/api/v1/work-orders/os-1/quotes/quote-1/resend-link');
+    expect(request.request.body).toEqual({ workOrderVersion: 4 }); expect(request.request.headers.get('Idempotency-Key')).toBeTruthy();
+    request.flush(linkReceipt('ACTIVE')); fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('O link anterior foi invalidado');
+  });
+  it('revokes the link without changing the proposal or requesting an email', () => {
+    const fixture = setup('AGUARDANDO_APROVACAO'); load(fixture, [{ ...draft, status: 'SENT', linkStatus: 'ACTIVE' }]);
+    fixture.componentInstance['chooseLinkAction']('revoke-link'); fixture.componentInstance['manageLink']();
+    TestBed.inject(HttpTestingController).expectOne('/api/v1/work-orders/os-1/quotes/quote-1/revoke-link').flush(linkReceipt('REVOKED'));
+    fixture.detectChanges(); expect(fixture.nativeElement.textContent).toContain('Link revogado');
+    expect(button(fixture, 'Revogar link').disabled).toBe(true);
+    expect(fixture.componentInstance['selected']()?.status).toBe('SENT');
+  });
+  it('recovers an uncertain reissue using the same key without duplicating the operation', () => {
+    const fixture = setup('AGUARDANDO_APROVACAO'); load(fixture, [{ ...draft, status: 'SENT', linkStatus: 'ACTIVE' }]);
+    const http = TestBed.inject(HttpTestingController);
+    fixture.componentInstance['chooseLinkAction']('resend-link'); fixture.componentInstance['manageLink']();
+    const first = http.expectOne('/api/v1/work-orders/os-1/quotes/quote-1/resend-link'); const key = first.request.headers.get('Idempotency-Key');
+    first.flush({}, { status: 500, statusText: 'Unknown result' });
+    fixture.componentInstance['manageLink'](); const retry = http.expectOne('/api/v1/work-orders/os-1/quotes/quote-1/resend-link');
+    expect(retry.request.headers.get('Idempotency-Key')).toBe(key); retry.flush(linkReceipt('ACTIVE'));
+  });
+  it('keeps an approved proposal read-only when rotating its consultation link', () => {
+    const fixture = setup('APROVADA'); load(fixture, [{ ...draft, status: 'APPROVED', linkStatus: 'REVOKED' }]);
+    fixture.componentInstance['chooseLinkAction']('resend-link'); fixture.componentInstance['manageLink']();
+    TestBed.inject(HttpTestingController).expectOne('/api/v1/work-orders/os-1/quotes/quote-1/resend-link').flush({ ...linkReceipt('ACTIVE', 'APROVADA'), validUntil: '2027-02-01T12:00:00Z' });
+    fixture.detectChanges(); expect(fixture.componentInstance['selected']()?.status).toBe('APPROVED');
+    expect(fixture.componentInstance['selected']()?.validUntil).toBe(draft.validUntil);
+    expect(fixture.nativeElement.querySelector('form')).toBeNull();
+  });
+  it('does not manage links for technicians', () => {
+    TestBed.overrideProvider(SessionService, { useValue: { session: signal({ role: 'TECHNICIAN' }) } });
+    const fixture = setup('AGUARDANDO_APROVACAO'); load(fixture, [{ ...draft, status: 'SENT', linkStatus: 'ACTIVE' }]);
+    expect(button(fixture, 'Reenviar novo link')).toBeUndefined();
+    fixture.componentInstance['chooseLinkAction']('resend-link'); fixture.componentInstance['manageLink']();
+  });
   it('reuses the same idempotency key after an uncertain send and emits the new OS state', () => {
     const fixture = setup(); load(fixture, [draft]);
     const receipts: any[] = [];

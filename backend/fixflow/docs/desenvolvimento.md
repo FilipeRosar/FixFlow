@@ -1382,7 +1382,8 @@ SMTP propaga para o publicador, que registra a classe do erro e tenta novamente
 com o backoff existente, até cinco tentativas. A OS permanece aguardando
 aprovação enquanto o e-mail aguarda nova tentativa. Eventos repetidos são
 ignorados pelo recibo por `event_id`; mensagens ainda pendentes para links
-revogados/expirados ou propostas já decididas são marcadas `SKIPPED`.
+revogados/expirados são marcadas `SKIPPED`. Mensagens iniciais de propostas já
+decididas também são ignoradas; a US-035 permite reenvio explícito para consulta.
 
 A entrega externa continua **pelo menos uma vez**: uma queda após o SMTP aceitar
 a mensagem e antes do commit do recibo pode repetir o e-mail. A idempotência
@@ -1393,7 +1394,7 @@ O e-mail contém empresa, número da OS, versão, validade no fuso brasileiro e 
 link `${APP_ORIGIN}/orcamento#token=...`. O fragmento evita enviar o token em
 uma requisição HTTP inicial. A página e a API de consulta estão implementadas na **US-032**; as decisões
 pelo cliente estão implementadas na **US-033**.
-Rotação/reenvio intencional com novo link continua na US-035.
+Rotação/reenvio intencional com novo link está implementado na US-035.
 
 ### Configuração local e produção
 
@@ -1720,4 +1721,91 @@ canal/responsável no histórico.
 
 ```bash
 ./mvnw -Dtest='QuoteManualApprovalIntegrationTest,PublicQuoteDecisionT2T3IntegrationTest,ArchitectureTest' test
+```
+
+
+## US-035 — Revogar e reenviar link
+
+O painel **Orçamento → Link público** mostra o estado do acesso (`Ativo`,
+`Revogado`, `Expirado` ou `Sem link`) e oferece **Revogar link** e **Reenviar novo
+link** ao proprietário/atendente. As ações têm confirmação explícita e operam
+somente sobre a proposta vigente. Técnico e versões históricas não oferecem
+esses controles. A autorização e a referência são revalidadas no servidor.
+
+### API e efeito no link anterior
+
+As rotas autenticadas são:
+
+- `POST /api/v1/work-orders/{orderId}/quotes/{quoteId}/revoke-link`;
+- `POST /api/v1/work-orders/{orderId}/quotes/{quoteId}/resend-link`.
+
+Ambas exigem `Idempotency-Key` e corpo `{"workOrderVersion": 6}`. A validação da
+chave, o prazo de replay de 24 horas e o hash do request seguem a US-031, usando
+a mesma tabela de recibos com a operação no fingerprint. Mesma chave/corpo
+retorna a resposta original; mesma chave com outra ação ou dados retorna 409.
+Novas operações com versão antiga também retornam 409.
+
+Revogar marca o token atual como revogado e limpa sua autorização de decisão
+na projeção. Nenhum e-mail é enfileirado. O link anterior retorna o 404 idêntico
+da US-032, tanto na consulta quanto nas decisões, inclusive quando a proposta
+já estava aprovada/rejeitada e o link era somente leitura. Revogação repetida
+com a mesma chave não duplica efeitos; se já estiver revogado, outra solicitação
+com a versão atual também não altera novamente a versão da OS.
+
+Reenviar revoga o acesso anterior, gera outro token de 256 bits e atualiza o hash
+da projeção quando ainda há decisão pendente. O token é enviado ao contato
+`EMAIL` atual do cliente pela outbox, com envelope AES-GCM. O hash anterior
+permanece apenas para histórico/auditoria e nunca é reativado. A V41 substitui a
+unicidade de token por proposta por um índice parcial que permite **um único
+token não revogado**, mantendo os hashes revogados. A role runtime e o RLS
+permanecem iguais.
+
+A resposta traz IDs internos da operação autenticada, versão atualizada da OS,
+estado da OS, `linkStatus`, `notificationStatus` (`QUEUED` no reenvio, `NONE` na
+revogação) e prazo do acesso. Nenhum token ou URL pública em claro é retornado à
+interface. A consulta interna de versões inclui `linkStatus`.
+
+### Preservação da proposta e concorrência
+
+A operação não altera itens, preços, desconto, termos, número de versão do
+orçamento, `sentAt`, validade comercial ou decisão. Atualiza somente autorização
+do link e versão otimista da OS, preservando seu estado. Para propostas `SENT`,
+é necessário que a OS siga aguardando aprovação e a validade ainda esteja
+aberta. Reenviar não estende orçamento expirado: nesse caso retorna 409.
+
+Para propostas aprovadas/rejeitadas, o novo link é **somente leitura**, com o
+mesmo limite de 90 dias da decisão. A decisão/evidência é preservada; não é
+possível aprovar novamente pelo reenvio. O prazo da resposta de reenvio nessa
+situação é o prazo do acesso de consulta, não uma nova validade comercial.
+A interface mantém a validade comercial original no resumo da proposta.
+Propostas canceladas ou substituídas não podem ter o acesso reativado.
+
+A chave de idempotência é bloqueada antes da OS, como no envio inicial; depois
+são bloqueadas OS, projeção e proposta. A troca do token, auditoria
+`QUOTE_LINK_REVOKED`/`QUOTE_LINK_RESENT`, outbox e recibo são atômicos. E-mail
+inválido, falta de configuração ou falha de auditoria desfazem a operação e
+preservam o link anterior. Rotação concorrente com decisão pública usa o mesmo
+bloqueio: se a rotação vencer, a decisão pelo token antigo recebe 404; se a
+aprovação vencer, o comando com versão antiga recebe conflito.
+
+### Fila de e-mails e validação
+
+O consumidor trata `QuoteSent` e `QuoteLinkResent`. Ele confere **o hash do token
+contido naquela mensagem** e a proposta vigente antes de enviar. A existência
+de outro token ativo da mesma proposta não libera uma mensagem antiga. Eventos
+pendentes com token revogado ficam `SKIPPED`; eventos já entregues são
+deduplicados por ID. O e-mail de um reenvio após decisão informa que o link é de
+consulta e que a decisão está preservada. Falha SMTP mantém o novo link ativo e
+a notificação no retry da F-06; o link antigo continua revogado.
+
+`QuoteLinkRotationIntegrationTest` cobre 404 do link antigo, novo link válido
+para consulta/decisão, reenvio idempotente, revogação sem e-mail, e-mails antigos
+ignorados, deduplicação, acesso somente leitura após decisão, rollback,
+permissões/referências/versão, prazo expirado, rotações simultâneas e disputa com
+aprovação pública. A suíte herda T10 e regressão comercial. Os testes Angular
+cobrem confirmação, chave reutilizada após falha, estado do link, perfis e
+preservação da decisão/validade.
+
+```bash
+./mvnw -Dtest='Quote*Test,PublicQuote*Test,ArchitectureTest' test
 ```

@@ -28,11 +28,11 @@ public class JdbcQuotes implements Quotes, QuoteWorkflow {
     private final AuditService audit;
     private final ObjectMapper mapper;
     private final FileStorage files;
-    private final QuoteLinkProtection links;
+    private final QuoteLinkEmail emails;
     public JdbcQuotes(JdbcTemplate jdbc, AuthorizedTenantOperations tenants, CurrentAuthenticatedIdentity identity,
-                      AuditService audit, ObjectMapper mapper, FileStorage files, QuoteLinkProtection links) {
+                      AuditService audit, ObjectMapper mapper, FileStorage files, QuoteLinkEmail emails) {
         this.jdbc = jdbc; this.tenants = tenants; this.identity = identity;
-        this.audit = audit; this.mapper = mapper; this.files = files; this.links = links;
+        this.audit = audit; this.mapper = mapper; this.files = files; this.emails = emails;
     }
     private UUID tenant() {
         UUID tenant = identity.require().tenantId();
@@ -54,11 +54,19 @@ public class JdbcQuotes implements Quotes, QuoteWorkflow {
                 new Quote.Item(rs.getString("type"), rs.getObject("part_id", UUID.class), rs.getString("description"), rs.getBigDecimal("quantity"), rs.getBigDecimal("unit_price")), tenant, quote);
     }
     private History history(UUID tenant, UUID order, int workOrderVersion) {
-        var quotes = jdbc.query("SELECT * FROM public.quotes WHERE tenant_id = ? AND work_order_id = ? ORDER BY version DESC", (rs, row) ->
+        var quotes = jdbc.query("""
+                SELECT q.*, CASE
+                    WHEN q.status = 'DRAFT' OR NOT EXISTS(SELECT 1 FROM public.quote_access_tokens a WHERE a.tenant_id = q.tenant_id AND a.quote_id = q.id) THEN 'NONE'
+                    WHEN EXISTS(SELECT 1 FROM public.quote_access_tokens a WHERE a.tenant_id = q.tenant_id AND a.quote_id = q.id AND a.revoked_at IS NULL
+                        AND CASE WHEN q.status = 'SENT' THEN a.expires_at ELSE a.read_until END > clock_timestamp()) THEN 'ACTIVE'
+                    WHEN EXISTS(SELECT 1 FROM public.quote_access_tokens a WHERE a.tenant_id = q.tenant_id AND a.quote_id = q.id AND a.revoked_at IS NULL) THEN 'EXPIRED'
+                    ELSE 'REVOKED' END AS link_status
+                FROM public.quotes q WHERE q.tenant_id = ? AND q.work_order_id = ? ORDER BY q.version DESC
+                """, (rs, row) ->
                 new Quote(rs.getObject("id", UUID.class), order, rs.getInt("version"), rs.getString("status"), items(tenant, rs.getObject("id", UUID.class)),
                         rs.getString("discount_type"), rs.getBigDecimal("discount_value"), rs.getBigDecimal("labor_subtotal"), rs.getBigDecimal("parts_subtotal"),
                         rs.getBigDecimal("discount_amount"), rs.getBigDecimal("total"), rs.getTimestamp("valid_until").toInstant(), rs.getString("warranty_terms"),
-                        rs.getString("logo_data_url"), rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("sent_at") == null ? null : rs.getTimestamp("sent_at").toInstant()), tenant, order);
+                        rs.getString("logo_data_url"), rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("sent_at") == null ? null : rs.getTimestamp("sent_at").toInstant(), rs.getString("link_status")), tenant, order);
         return new History(quotes, workOrderVersion);
     }
     @Override public History list(UUID order) {
@@ -141,28 +149,7 @@ public class JdbcQuotes implements Quotes, QuoteWorkflow {
     @Override public String sent(UUID tenant, UUID order, UUID quote, Instant at) {
         // Legacy transition facts may predate the quotes module; do not invent their commercial details.
         if (quote == null || !Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM public.quotes WHERE tenant_id = ? AND work_order_id = ? AND id = ?)", Boolean.class, tenant, order, quote))) return null;
-        var recipient = jdbc.queryForMap("""
-                SELECT c.name AS customer_name, t.name AS company_name, w.number, q.version,
-                    (SELECT value FROM public.customer_contacts cc WHERE cc.tenant_id = c.tenant_id AND cc.customer_id = c.id
-                        AND cc.type = 'EMAIL' AND c.deleted_at IS NULL ORDER BY cc.position, cc.id LIMIT 1) AS email
-                FROM public.work_orders w JOIN public.customers c ON c.tenant_id = w.tenant_id AND c.id = w.customer_id
-                JOIN public.tenants t ON t.id = w.tenant_id
-                JOIN public.quotes q ON q.tenant_id = w.tenant_id AND q.id = ? AND q.work_order_id = w.id
-                WHERE w.tenant_id = ? AND w.id = ?
-                """, quote, tenant, order);
-        String email = (String) recipient.get("email");
-        try {
-            if (email == null || email.contains("\r") || email.contains("\n")) throw new IllegalArgumentException();
-            var address = new jakarta.mail.internet.InternetAddress(email, true); address.validate();
-            if (!email.contains("@")) throw new IllegalArgumentException();
-        } catch (jakarta.mail.internet.AddressException | IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Cadastre um e-mail válido para o cliente antes de enviar o orçamento.");
-        }
-        byte[] random = new byte[32]; new java.security.SecureRandom().nextBytes(random);
-        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(random);
-        String tokenHash;
-        try { tokenHash = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(token.getBytes(java.nio.charset.StandardCharsets.UTF_8))); }
-        catch (java.security.NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
+        var secret = QuoteTokenSecrets.generate();
         var defaults = defaults(tenant, at);
         int changed = jdbc.update("""
                 UPDATE public.quotes SET status = 'SENT', sent_at = ?, valid_until = ?, warranty_terms = ?, logo_data_url = ?
@@ -170,10 +157,9 @@ public class JdbcQuotes implements Quotes, QuoteWorkflow {
                 """, Timestamp.from(at), Timestamp.from(defaults.until()), defaults.terms(), defaults.logo(), tenant, order, quote);
         if (changed != 1) throw new ResponseStatusException(HttpStatus.CONFLICT, "O orçamento já foi enviado.");
         jdbc.update("INSERT INTO public.quote_access_tokens(tenant_id, quote_id, token_hash, expires_at, read_until) VALUES (?, ?, ?, ?, ?)",
-                tenant, quote, tokenHash, Timestamp.from(defaults.until()), Timestamp.from(defaults.until().plus(90, ChronoUnit.DAYS)));
-        jdbc.update("UPDATE public.work_order_transition_facts SET quote_status = 'SENT', quote_valid_until = ?, quote_token_hash = ? WHERE tenant_id = ? AND work_order_id = ?", Timestamp.from(defaults.until()), tokenHash, tenant, order);
-        return links.seal(new QuoteLinkProtection.Notification(email, (String) recipient.get("company_name"), (String) recipient.get("customer_name"),
-                ((Number) recipient.get("number")).longValue(), ((Number) recipient.get("version")).intValue(), token, defaults.until()), tenant, quote);
+                tenant, quote, secret.hash(), Timestamp.from(defaults.until()), Timestamp.from(defaults.until().plus(90, ChronoUnit.DAYS)));
+        jdbc.update("UPDATE public.work_order_transition_facts SET quote_status = 'SENT', quote_valid_until = ?, quote_token_hash = ? WHERE tenant_id = ? AND work_order_id = ?", Timestamp.from(defaults.until()), secret.hash(), tenant, order);
+        return emails.seal(tenant, order, quote, secret.token(), defaults.until());
     }
     @Override public void revoke(UUID tenant, UUID order) {
         jdbc.update("UPDATE public.quote_access_tokens a SET revoked_at = clock_timestamp() FROM public.quotes q WHERE q.tenant_id = a.tenant_id AND q.id = a.quote_id AND q.tenant_id = ? AND q.work_order_id = ? AND a.revoked_at IS NULL", tenant, order);
