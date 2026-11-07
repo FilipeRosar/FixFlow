@@ -40,6 +40,36 @@ describe('Work order details', () => {
     }),
   );
   afterEach(() => TestBed.inject(HttpTestingController).verify());
+  it('requires a channel and justification before manual approval', () => {
+    const fixture = TestBed.createComponent(WorkOrderDetail); fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/v1/work-orders/order').flush({ ...order, status: 'AGUARDANDO_APROVACAO', version: 6 });
+    const component = fixture.componentInstance; component['target'] = 'APROVADA';
+    component['changeStatus'](); expect(component['transitionError']()).toContain('canal e a justificativa');
+    component['approvalChannel'] = 'PHONE'; component['reason'] = '   '; component['changeStatus']();
+    http.expectNone('/api/v1/work-orders/order/approve');
+  });
+  it('posts manual approval with the selected channel, trimmed justification and current version', () => {
+    const fixture = TestBed.createComponent(WorkOrderDetail); fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/v1/work-orders/order').flush({ ...order, status: 'AGUARDANDO_APROVACAO', version: 6 });
+    const component = fixture.componentInstance; component['target'] = 'APROVADA'; component['approvalChannel'] = 'COUNTER'; component['reason'] = '  Cliente autorizou no balcão  ';
+    component['changeStatus'](); component['changeStatus']();
+    const request = http.expectOne('/api/v1/work-orders/order/approve'); expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ version: 6, channel: 'COUNTER', justification: 'Cliente autorizou no balcão' });
+    request.flush({ ...order, status: 'APROVADA', version: 7 }); fixture.detectChanges();
+    expect(component['order']()?.status).toBe('APROVADA');
+    expect(component['approvalChannel']).toBe('');
+    expect(fixture.nativeElement.textContent).toContain('Aprovação manual registrada');
+  });
+  it('does not offer manual approval to technicians', () => {
+    TestBed.overrideProvider(SessionService, { useValue: { session: signal({ role: 'TECHNICIAN' }) } });
+    const fixture = TestBed.createComponent(WorkOrderDetail); fixture.detectChanges();
+    TestBed.inject(HttpTestingController).expectOne('/api/v1/work-orders/order').flush({ ...order, status: 'AGUARDANDO_APROVACAO', version: 6 });
+    const component = fixture.componentInstance;
+    expect(component['targets']('AGUARDANDO_APROVACAO')).not.toContain('APROVADA');
+    component['target'] = 'APROVADA'; component['approvalChannel'] = 'PHONE'; component['reason'] = 'Autorizado'; component['changeStatus']();
+  });
   it('requests the entry PDF as a blob and offers retry after failure', () => {
     const fixture = TestBed.createComponent(WorkOrderDetail);
     fixture.detectChanges();

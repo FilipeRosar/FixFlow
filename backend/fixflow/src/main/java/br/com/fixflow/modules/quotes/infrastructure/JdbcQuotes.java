@@ -178,9 +178,20 @@ public class JdbcQuotes implements Quotes, QuoteWorkflow {
     @Override public void revoke(UUID tenant, UUID order) {
         jdbc.update("UPDATE public.quote_access_tokens a SET revoked_at = clock_timestamp() FROM public.quotes q WHERE q.tenant_id = a.tenant_id AND q.id = a.quote_id AND q.tenant_id = ? AND q.work_order_id = ? AND a.revoked_at IS NULL", tenant, order);
     }
-    @Override public void decided(UUID tenant, UUID quote, String status) {
+    @Override public ManualApproval approveManually(UUID tenant, UUID order, UUID quote, UUID actor, String channel, String reason, String ip, String userAgent, Instant at) {
+        String json = jdbc.queryForObject("SELECT public.record_manual_quote_approval(?, ?, ?, ?, ?, ?, ?, ?, ?)::text", String.class,
+                tenant, order, quote, actor, channel, reason, ip, userAgent, Timestamp.from(at));
+        var result = mapper.readTree(json);
+        int status = result.get("status").asInt();
+        if (status == 403) throw new AccessDeniedException("Aprovação manual não autorizada.");
+        if (status == 404) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Orçamento vigente não encontrado nesta OS.");
+        if (status == 400) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe canal e justificativa válidos para a aprovação manual.");
+        if (status != 200) throw new ResponseStatusException(HttpStatus.CONFLICT, "A proposta não está disponível para aprovação manual. Confira o estado e a validade.");
+        return mapper.readValue(result.get("approval").toString(), ManualApproval.class);
+    }
+    @Override public void decided(UUID tenant, UUID quote, String status, Instant at) {
         if (!Set.of("APPROVED", "REJECTED").contains(status)) throw new IllegalArgumentException("Decisão inválida");
         jdbc.update("UPDATE public.quotes SET status = ? WHERE tenant_id = ? AND id = ? AND status = 'SENT'", status, tenant, quote);
-        jdbc.update("UPDATE public.quote_access_tokens SET read_until = clock_timestamp() + interval '90 days' WHERE tenant_id = ? AND quote_id = ? AND revoked_at IS NULL", tenant, quote);
+        jdbc.update("UPDATE public.quote_access_tokens SET read_until = ? WHERE tenant_id = ? AND quote_id = ? AND revoked_at IS NULL", Timestamp.from(at.plus(90, ChronoUnit.DAYS)), tenant, quote);
     }
 }

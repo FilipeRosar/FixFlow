@@ -1638,3 +1638,86 @@ recarga, `Retry-After` e troca de link durante uma decisão pendente.
 ```bash
 ./mvnw -Dtest='PublicQuoteDecisionT2T3IntegrationTest,ArchitectureTest' test
 ```
+
+
+## US-034 — Aprovação manual por telefone ou balcão
+
+Na consulta da OS, em **Próxima etapa → Aprovada**, proprietário ou atendente
+escolhe o canal **Telefone** ou **Balcão** e informa justificativa obrigatória.
+A ação **Registrar aprovação manual** identifica o responsável autenticado e
+preserva canal, justificativa, instante e conteúdo da versão aprovada. Técnico
+não pode aprovar manualmente.
+
+Conforme a seção 14.2, a OS deve estar em `AGUARDANDO_APROVACAO`, com proposta
+vigente `SENT`, não expirada e ainda não decidida. Um rascunho não é aprovado
+diretamente por esta ação. A dependência US-030 fornece os itens e valores;
+o estado de envio segue o fluxo existente da OS.
+
+### API e autorização
+
+`POST /api/v1/work-orders/{id}/approve` exige autenticação e recebe:
+
+```json
+{
+  "version": 6,
+  "channel": "PHONE",
+  "justification": "Cliente autorizou o reparo por telefone durante o atendimento."
+}
+```
+
+`channel` aceita `PHONE` e `COUNTER`. Justificativa ausente, vazia ou composta
+somente por espaços, canal ausente/inválido ou texto acima de 2.000 caracteres
+retornam 400. O servidor normaliza espaços nas extremidades. Permissão
+`quote:manual_approve` é revalidada no vínculo atual: proprietário/atendente
+podem executar; técnico recebe 403. OS de outra empresa ou inexistente retorna
+404. Estado, validade, versão antiga ou decisão já registrada retornam 409.
+
+Tenant, autor e nome do responsável não vêm do body: são derivados da sessão e
+do cadastro autorizado. IP e user-agent vêm da requisição HTTP, sem confiar
+diretamente em headers de encaminhamento. A versão otimista continua sendo a
+versão da OS retornada pela consulta. O PATCH genérico para `APROVADA` em uma
+proposta nativa retorna 409 orientando a usar o fluxo manual, evitando uma
+aprovação sem canal. Projeções legadas sem orçamento nativo mantêm compatibilidade
+com o guard anterior de justificativa.
+
+### Evidência, auditoria e concorrência
+
+A V40 amplia `quote_decisions` para os canais manuais. Uma aprovação manual
+exige no banco decisão `APPROVED`, justificativa e autor/nome não nulos. A mesma
+unicidade por orçamento, RLS e proteção contra alteração da US-033 continuam
+válidas. O registro guarda o documento comercial canônico/hash, versão, data,
+IP/UA e snapshots do autor e do canal. Alterar o nome da conta posteriormente
+não reescreve o responsável registrado.
+
+A operação usa a transação autorizada e o bloqueio da OS do fluxo existente,
+seguido de projeção, proposta e evidência. Depois das validações, grava a
+aprovação, muda OS para `APROVADA`, proposta/projeção para `APPROVED`, incrementa
+a versão da OS e registra histórico de origem `USER`. Também grava
+`QUOTE_MANUALLY_APPROVED`, com autor autenticado, canal, justificativa, IDs,
+versão e hash do conteúdo, além do audit de estado e de um único `QuoteApproved`
+na outbox. O prazo de leitura do link conta 90 dias do instante da decisão.
+
+A timeline exibe aprovação manual por telefone/balcão, responsável e justificativa,
+sem duplicar o evento de transição. Evidência e evento são únicos mesmo quando
+uma aprovação manual concorre com a resposta do cliente pelo link; uma requisição
+vence e a outra recebe conflito. Repetições não criam outro registro. Falha de
+auditoria desfaz decisão, estado, histórico e outbox na mesma transação.
+
+A consulta pública permanece em modo somente leitura após a aprovação. Ela não
+expõe autor, canal interno, IP/UA nem a justificativa da equipe: o campo público
+`decision.reason` fica nulo para canais manuais. O motivo informado pelo próprio
+cliente em uma rejeição pública mantém o comportamento da US-033.
+
+### Validação
+
+`QuoteManualApprovalIntegrationTest` cobre proprietário/telefone, atendente/balcão,
+justificativa/canal obrigatórios, permissão, isolamento, estado/validade,
+impedimento do PATCH sem canal, snapshots, auditoria, timeline, privacidade do
+link público, repetição, disputa com aprovação pública e rollback de auditoria.
+A suíte herda T10 e a regressão comercial. A regressão T2/T3 também é executada.
+Os testes da interface cobrem validação, endpoint/corpo, perfis e indicação do
+canal/responsável no histórico.
+
+```bash
+./mvnw -Dtest='QuoteManualApprovalIntegrationTest,PublicQuoteDecisionT2T3IntegrationTest,ArchitectureTest' test
+```

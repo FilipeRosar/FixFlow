@@ -153,14 +153,24 @@ public class JdbcWorkOrders implements WorkOrders, br.com.fixflow.modules.quotes
         return rows.isEmpty() ? WorkOrderFacts.empty() : rows.getFirst();
     }
     @Override public WorkOrder transition(UUID id, String toStatus, int version, String reason, boolean paymentOverride) {
-        return tenants.execute(tenant(), m -> transition(m, id, toStatus, version, reason, paymentOverride, null, false));
+        return tenants.execute(tenant(), m -> transition(m, id, toStatus, version, reason, paymentOverride, null, false, null));
     }
     @Override public WorkOrder deliver(UUID id, int version, int warrantyDays, String reason, boolean paymentOverride) {
         if (warrantyDays < 0 || warrantyDays > 3650) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Prazo adicional deve estar entre 0 e 3650 dias.");
-        return tenants.execute(tenant(), m -> transition(m, id, "ENTREGUE", version, reason, paymentOverride, warrantyDays, false));
+        return tenants.execute(tenant(), m -> transition(m, id, "ENTREGUE", version, reason, paymentOverride, warrantyDays, false, null));
+    }
+    private record ManualRequest(String channel, String ip, String userAgent) { }
+    @Override public WorkOrder approveManually(UUID id, int version, String channel, String justification, String ip, String userAgent) {
+        return tenants.execute(tenant(), member -> {
+            if (!RolePermissions.forRole(member.role().name()).contains("quote:manual_approve")) throw new AccessDeniedException("Aprovação manual não autorizada.");
+            if (channel == null || !java.util.Set.of("PHONE", "COUNTER").contains(channel) || justification == null || justification.isBlank() || justification.length() > 2000)
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Canal e justificativa são obrigatórios para aprovação manual.");
+            return transition(member, id, "APROVADA", version, justification.strip(), false, null, false,
+                    new ManualRequest(channel, ip, userAgent == null ? "" : userAgent.substring(0, Math.min(1024, userAgent.length()))));
+        });
     }
     private WorkOrder transition(AuthorizedMembership m, UUID id, String toStatus, int version, String reason,
-                                 boolean paymentOverride, Integer requestedWarrantyDays, boolean dispatch) {
+                                 boolean paymentOverride, Integer requestedWarrantyDays, boolean dispatch, ManualRequest manual) {
         var ids = jdbc.queryForList("SELECT id FROM public.work_orders WHERE tenant_id = ? AND id = ? FOR UPDATE", UUID.class, m.tenantId(), id);
         if (ids.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "OS não encontrada.");
         WorkOrder order = read(m.tenantId(), id);
@@ -177,10 +187,15 @@ public class JdbcWorkOrders implements WorkOrders, br.com.fixflow.modules.quotes
         if (target == WorkOrderStatus.AGUARDANDO_APROVACAO && !dispatch && Boolean.TRUE.equals(jdbc.queryForObject(
                 "SELECT EXISTS(SELECT 1 FROM public.quotes WHERE tenant_id = ? AND work_order_id = ?)", Boolean.class, m.tenantId(), id)))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Use Enviar orçamento para enviar a proposta com segurança.");
+        if (target == WorkOrderStatus.APROVADA && manual == null && Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM public.quotes WHERE tenant_id = ? AND id = ?)", Boolean.class, m.tenantId(), facts.quoteId())))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Use a aprovação manual para registrar o canal e a justificativa.");
         if (requestedWarrantyDays != null && from != WorkOrderStatus.PRONTA && requestedWarrantyDays != 0)
             throw new InvalidStateTransitionException("Devoluções sem reparo não recebem prazo adicional de garantia.");
         int warrantyDays = from == WorkOrderStatus.PRONTA ? (requestedWarrantyDays == null ? facts.warrantyDays() : requestedWarrantyDays) : 0;
         java.time.Instant occurredAt = jdbc.queryForObject("SELECT clock_timestamp()", (rs, row) -> rs.getTimestamp(1).toInstant());
+        var manualApproval = manual == null ? null : quotes.approveManually(m.tenantId(), id, facts.quoteId(), m.userId(),
+                manual.channel(), reason, manual.ip(), manual.userAgent(), occurredAt);
         java.time.LocalDate warrantyUntil = target == WorkOrderStatus.ENTREGUE ? DeliveryWarranty.until(occurredAt, warrantyDays) : null;
         boolean exceptionUsed = target == WorkOrderStatus.ENTREGUE && paymentOverride && !facts.paymentSettled();
         String actorName = target == WorkOrderStatus.ENTREGUE ? jdbc.queryForObject("SELECT full_name FROM public.work_order_team(?) WHERE user_id = ?", String.class, m.tenantId(), m.userId()) : null;
@@ -206,7 +221,7 @@ public class JdbcWorkOrders implements WorkOrders, br.com.fixflow.modules.quotes
         String encryptedNotification = target == WorkOrderStatus.AGUARDANDO_APROVACAO ? quotes.sent(m.tenantId(), id, facts.quoteId(), occurredAt) : null;
         if (target == WorkOrderStatus.AGUARDANDO_ORCAMENTO || target == WorkOrderStatus.CANCELADA) quotes.revoke(m.tenantId(), id);
         if (target == WorkOrderStatus.APROVADA || target == WorkOrderStatus.ORCAMENTO_REJEITADO)
-            quotes.decided(m.tenantId(), facts.quoteId(), target == WorkOrderStatus.APROVADA ? "APPROVED" : "REJECTED");
+            quotes.decided(m.tenantId(), facts.quoteId(), target == WorkOrderStatus.APROVADA ? "APPROVED" : "REJECTED", occurredAt);
         String publicToken = null;
         if (target == WorkOrderStatus.AGUARDANDO_APROVACAO && encryptedNotification == null) {
             byte[] bytes = new byte[32]; new java.security.SecureRandom().nextBytes(bytes);
@@ -242,6 +257,12 @@ public class JdbcWorkOrders implements WorkOrders, br.com.fixflow.modules.quotes
             payload.put("deliveredAt", occurredAt.toString()); payload.put("warrantyDays", warrantyDays);
             payload.put("warrantyUntil", warrantyUntil == null ? null : warrantyUntil.toString());
         }
+        if (manualApproval != null) {
+            payload.put("approvalChannel", manual.channel()); payload.put("quoteId", manualApproval.quoteId()); payload.put("quoteVersion", manualApproval.quoteVersion());
+            payload.put("decisionId", manualApproval.id()); payload.put("quoteContentHash", manualApproval.contentHash());
+            payload.put("approvedByName", manualApproval.actorName()); payload.put("approvedAt", occurredAt.toString());
+            audit.record(m.userId(), "QUOTE_MANUALLY_APPROVED", "WORK_ORDER", id, mapper.writeValueAsString(payload));
+        }
         audit.record(m.userId(), "WORK_ORDER_STATUS_CHANGED", "WORK_ORDER", id, mapper.writeValueAsString(payload));
         if (exceptionUsed) audit.record(m.userId(), "WORK_ORDER_UNPAID_DELIVERY_AUTHORIZED", "WORK_ORDER", id, mapper.writeValueAsString(payload));
         if (encryptedNotification != null) {
@@ -272,7 +293,7 @@ public class JdbcWorkOrders implements WorkOrders, br.com.fixflow.modules.quotes
             }
             var active = jdbc.queryForList("SELECT quote_id FROM public.work_order_transition_facts WHERE tenant_id = ? AND work_order_id = ?", UUID.class, member.tenantId(), order);
             if (active.isEmpty() || !quote.equals(active.getFirst())) throw new ResponseStatusException(HttpStatus.CONFLICT, "Envie somente a versão vigente do orçamento.");
-            var updated = transition(member, order, "AGUARDANDO_APROVACAO", version, null, false, null, true);
+            var updated = transition(member, order, "AGUARDANDO_APROVACAO", version, null, false, null, true, null);
             var until = jdbc.queryForObject("SELECT valid_until FROM public.quotes WHERE tenant_id = ? AND id = ?", (rs, row) -> rs.getTimestamp(1).toInstant(), member.tenantId(), quote);
             var result = new br.com.fixflow.modules.quotes.application.QuoteSending.Receipt(order, quote, updated.version(), updated.status(), "QUEUED", until);
             jdbc.update("UPDATE public.quote_send_requests SET response = ?::jsonb WHERE tenant_id = ? AND key_hash = ?", mapper.writeValueAsString(result), member.tenantId(), keyHash);

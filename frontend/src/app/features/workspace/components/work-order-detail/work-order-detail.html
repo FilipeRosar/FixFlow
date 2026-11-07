@@ -16,12 +16,20 @@
       <span class="order-status">{{ statusLabel(item.status) }}</span>
     </div>
     <div class="pdf-actions">
-      <button type="button" [disabled]="downloadingPdf()" (click)="downloadPdf('ENTRY')">Baixar termo de entrada (PDF)</button>
+      <button type="button" [disabled]="downloadingPdf()" (click)="downloadPdf('ENTRY')">
+        Baixar termo de entrada (PDF)
+      </button>
       @if (item.status === 'ENTREGUE') {
-        <button type="button" [disabled]="downloadingPdf()" (click)="downloadPdf('DELIVERY')">Baixar termo de entrega (PDF)</button>
+        <button type="button" [disabled]="downloadingPdf()" (click)="downloadPdf('DELIVERY')">
+          Baixar termo de entrega (PDF)
+        </button>
       }
-      @if (downloadingPdf()) { <p role="status">Gerando PDF…</p> }
-      @if (pdfError()) { <p role="alert">{{ pdfError() }}</p> }
+      @if (downloadingPdf()) {
+        <p role="status">Gerando PDF…</p>
+      }
+      @if (pdfError()) {
+        <p role="alert">{{ pdfError() }}</p>
+      }
     </div>
     <div class="detail-grid">
       <article class="card">
@@ -364,6 +372,26 @@
               }
             </select></label
           >
+          @if (target === 'APROVADA') {
+            <div class="delivery-confirmation">
+              <h3>Registrar aprovação manual</h3>
+              <p>
+                Registre a autorização recebida do cliente. Seu nome, o canal e a justificativa
+                ficarão no histórico da OS.
+              </p>
+              <label
+                >Canal da aprovação<select
+                  name="approvalChannel"
+                  [(ngModel)]="approvalChannel"
+                  required
+                >
+                  <option value="">Selecione como o cliente aprovou</option>
+                  <option value="PHONE">Telefone</option>
+                  <option value="COUNTER">Balcão</option>
+                </select></label
+              >
+            </div>
+          }
           @if (target === 'ENTREGUE') {
             <div class="delivery-confirmation">
               <h3>Confirmar entrega do equipamento</h3>
@@ -397,7 +425,11 @@
               [(ngModel)]="reason"
               maxlength="2000"
               [required]="
-                target === 'ENTREGUE' && role === 'OWNER' && paymentOverride && !item.paymentSettled
+                target === 'APROVADA' ||
+                (target === 'ENTREGUE' &&
+                  role === 'OWNER' &&
+                  paymentOverride &&
+                  !item.paymentSettled)
               "
               rows="3"
               placeholder="Obrigatório para cancelar, declarar sem reparo ou aprovar manualmente."
@@ -418,15 +450,18 @@
                 !target ||
                 changing() ||
                 statusForm.invalid ||
+                (target === 'APROVADA' && (!reason.trim() || !approvalChannel)) ||
                 (target === 'ENTREGUE' && !canConfirmDelivery(item))
               "
             >
               {{
                 changing()
                   ? 'Atualizando…'
-                  : target === 'ENTREGUE'
-                    ? 'Confirmar entrega'
-                    : 'Confirmar transição'
+                  : target === 'APROVADA'
+                    ? 'Registrar aprovação manual'
+                    : target === 'ENTREGUE'
+                      ? 'Confirmar entrega'
+                      : 'Confirmar transição'
               }}
             </button>
           </div>

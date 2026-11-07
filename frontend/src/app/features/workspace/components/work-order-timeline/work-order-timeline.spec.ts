@@ -42,6 +42,25 @@ describe('Work order timeline', () => {
   function response(content = [entry], page = 0, totalElements = 1) {
     return { content, page, totalElements, size: 20 };
   }
+  it('shows the channel and recorded responsible person for manual approval', () => {
+    const { fixture, request, page } = setup();
+    request.flush(response([{ ...entry, fromStatus: 'AGUARDANDO_APROVACAO', toStatus: 'APROVADA', reason: 'Cliente confirmou a proposta', details: { approvalChannel: 'PHONE', approvedByName: 'Ana Souza' } }]));
+    fixture.detectChanges();
+    expect(page.querySelector('.event-heading h3')?.textContent).toBe('Orçamento aprovado manualmente');
+    expect(page.textContent).toContain('Aprovação manual por telefone');
+    expect(page.textContent).toContain('Ana Souza'); expect(page.textContent).toContain('Cliente confirmou a proposta');
+  });
+  it('identifies historical staff approvals without labelling customer decisions as manual', () => {
+    const { fixture, request, page } = setup();
+    request.flush(response([
+      { ...entry, id: 'manual', toStatus: 'APROVADA' },
+      { ...entry, id: 'public', toStatus: 'APROVADA', origin: 'CUSTOMER' },
+    ]));
+    fixture.detectChanges();
+    const headings = page.querySelectorAll('.event-heading h3');
+    expect(headings[0].textContent).toBe('Orçamento aprovado manualmente');
+    expect(headings[1].textContent).toBe('Etapa do atendimento alterada');
+  });
   it('shows the original author, timestamp, transition and exact reason without editing controls', () => {
     const { fixture, request, page } = setup();
     request.flush(response());

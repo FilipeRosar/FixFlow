@@ -7,5 +7,7 @@ import java.util.UUID;
 public interface QuoteWorkflow {
     String sent(UUID tenant, UUID order, UUID quote, Instant at);
     void revoke(UUID tenant, UUID order);
-    void decided(UUID tenant, UUID quote, String status);
+    record ManualApproval(UUID id, UUID quoteId, int quoteVersion, String contentHash, String actorName) { }
+    ManualApproval approveManually(UUID tenant, UUID order, UUID quote, UUID actor, String channel, String reason, String ip, String userAgent, Instant at);
+    void decided(UUID tenant, UUID quote, String status, Instant at);
 }

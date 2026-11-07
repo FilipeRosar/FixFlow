@@ -70,34 +70,46 @@ export class WorkOrderDetail implements OnInit {
     const view = this.viewRequest;
     this.downloadingPdf.set(true);
     this.pdfError.set('');
-    this.http.get(`/api/v1/work-orders/${order.id}/pdf`, {
-      params: { type }, responseType: 'blob',
-    }).pipe(takeUntilDestroyed(this.destroy)).subscribe({
-      next: (blob) => {
-        if (view !== this.viewRequest) return;
-        this.downloadingPdf.set(false);
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `os-${order.number}-${type === 'ENTRY' ? 'entrada' : 'entrega'}.pdf`;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      },
-      error: () => {
-        if (view !== this.viewRequest) return;
-        this.downloadingPdf.set(false);
-        this.pdfError.set('Não foi possível gerar o PDF. Tente novamente.');
-      },
-    });
+    this.http
+      .get(`/api/v1/work-orders/${order.id}/pdf`, {
+        params: { type },
+        responseType: 'blob',
+      })
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe({
+        next: (blob) => {
+          if (view !== this.viewRequest) return;
+          this.downloadingPdf.set(false);
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `os-${order.number}-${type === 'ENTRY' ? 'entrada' : 'entrega'}.pdf`;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        },
+        error: () => {
+          if (view !== this.viewRequest) return;
+          this.downloadingPdf.set(false);
+          this.pdfError.set('Não foi possível gerar o PDF. Tente novamente.');
+        },
+      });
   }
   private readonly http = inject(HttpClient);
   protected readonly role = inject(SessionService).session()?.role;
   protected readonly timelineRevision = signal(0);
   protected readonly quotesSaving = signal(false);
   protected readonly itemsSaving = signal(false);
-  protected quoteSent(receipt: { workOrderId: string; workOrderVersion: number; status: string }): void {
-    this.order.update(order => order && order.id === receipt.workOrderId ? { ...order, version: receipt.workOrderVersion, status: receipt.status } : order);
-    this.timelineRevision.update(value => value + 1);
+  protected quoteSent(receipt: {
+    workOrderId: string;
+    workOrderVersion: number;
+    status: string;
+  }): void {
+    this.order.update((order) =>
+      order && order.id === receipt.workOrderId
+        ? { ...order, version: receipt.workOrderVersion, status: receipt.status }
+        : order,
+    );
+    this.timelineRevision.update((value) => value + 1);
     this.target = '';
   }
   protected updateItemsVersion(version: number): void {
@@ -110,6 +122,7 @@ export class WorkOrderDetail implements OnInit {
   protected readonly transitionNotice = signal('');
   protected target = '';
   protected reason = '';
+  protected approvalChannel = '';
   protected paymentOverride = false;
   protected warrantyDays = 0;
   protected canConfirmDelivery(order: WorkOrder): boolean {
@@ -326,6 +339,16 @@ export class WorkOrderDetail implements OnInit {
       this.quotesSaving()
     )
       return;
+    const approving = this.target === 'APROVADA';
+    if (
+      approving &&
+      (!this.reason.trim() ||
+        !['PHONE', 'COUNTER'].includes(this.approvalChannel) ||
+        (this.role !== 'OWNER' && this.role !== 'ATTENDANT'))
+    ) {
+      this.transitionError.set('Informe o canal e a justificativa da aprovação manual.');
+      return;
+    }
     const delivering = this.target === 'ENTREGUE';
     const days = order.status === 'PRONTA' ? this.warrantyDays : 0;
     if (delivering && (!Number.isInteger(days) || days < 0 || days > 3650)) {
@@ -341,28 +364,39 @@ export class WorkOrderDetail implements OnInit {
     this.changing.set(true);
     this.transitionError.set('');
     this.transitionNotice.set('');
-    const request = delivering
-      ? this.http.post<WorkOrder>(`/api/v1/work-orders/${order.id}/deliver`, {
+    const request = approving
+      ? this.http.post<WorkOrder>(`/api/v1/work-orders/${order.id}/approve`, {
           version: order.version,
-          warrantyDays: days,
-          reason: this.reason.trim() || null,
-          paymentOverride: this.role === 'OWNER' && !order.paymentSettled && this.paymentOverride,
+          channel: this.approvalChannel,
+          justification: this.reason.trim(),
         })
-      : this.http.patch<WorkOrder>(`/api/v1/work-orders/${order.id}/status`, {
-          toStatus: this.target,
-          version: order.version,
-          reason: this.reason.trim() || null,
-          paymentOverride: false,
-        });
+      : delivering
+        ? this.http.post<WorkOrder>(`/api/v1/work-orders/${order.id}/deliver`, {
+            version: order.version,
+            warrantyDays: days,
+            reason: this.reason.trim() || null,
+            paymentOverride: this.role === 'OWNER' && !order.paymentSettled && this.paymentOverride,
+          })
+        : this.http.patch<WorkOrder>(`/api/v1/work-orders/${order.id}/status`, {
+            toStatus: this.target,
+            version: order.version,
+            reason: this.reason.trim() || null,
+            paymentOverride: false,
+          });
     request.pipe(takeUntilDestroyed(this.destroy)).subscribe({
       next: (updated) => {
         this.order.set(updated);
         this.changing.set(false);
         this.target = '';
         this.reason = '';
+        this.approvalChannel = '';
         this.paymentOverride = false;
         this.transitionNotice.set(
-          delivering ? 'Entrega confirmada. A OS foi encerrada.' : 'Estado da OS atualizado.',
+          approving
+            ? 'Aprovação manual registrada com justificativa.'
+            : delivering
+              ? 'Entrega confirmada. A OS foi encerrada.'
+              : 'Estado da OS atualizado.',
         );
       },
       error: (error) => {
@@ -430,6 +464,7 @@ export class WorkOrderDetail implements OnInit {
           this.assignmentNotice.set('');
           this.target = '';
           this.reason = '';
+          this.approvalChannel = '';
           this.paymentOverride = false;
           this.warrantyDays = 0;
           this.order.set(null);

@@ -31,6 +31,11 @@ public class WorkOrderController {
         return orders.transition(id, request.toStatus(), request.version(),
                 request.reason() == null ? null : request.reason().strip(), Boolean.TRUE.equals(request.paymentOverride()));
     }
+    public record ManualApprovalRequest(@NotNull @Min(0) Integer version, @NotNull @Pattern(regexp = "PHONE|COUNTER") String channel,
+                                        @NotBlank @Size(max = 2000) String justification) { }
+    @PostMapping("/{id}/approve") public WorkOrder approve(@PathVariable UUID id, @Valid @RequestBody ManualApprovalRequest request, jakarta.servlet.http.HttpServletRequest http) {
+        return orders.approveManually(id, request.version(), request.channel(), request.justification().strip(), http.getRemoteAddr(), http.getHeader("User-Agent"));
+    }
     public record DeliveryRequest(@NotNull @Min(0) Integer version, @NotNull @DecimalMin("0") @DecimalMax("3650") @Digits(integer = 4, fraction = 0) java.math.BigDecimal warrantyDays,
                                   @Size(max = 2000) String reason, Boolean paymentOverride) { }
     @PostMapping("/{id}/deliver") public WorkOrder deliver(@PathVariable UUID id, @Valid @RequestBody DeliveryRequest request) {

@@ -96,6 +96,10 @@ class QuoteIntegrationTest {
     }
     org.springframework.test.web.servlet.ResultActions list(UUID order) throws Exception { return mvc.perform(get(orders + order + "/quotes").header("Authorization", "Bearer " + token)); }
     org.springframework.test.web.servlet.ResultActions transition(UUID id, String target, int version) throws Exception {
+        if (target.equals("APROVADA")) {
+            return mvc.perform(post(orders + id + "/approve").header("Authorization", "Bearer " + token).contentType("application/json")
+                    .content(mapper.writeValueAsString(Map.of("version", version, "channel", "PHONE", "justification", "Cliente autorizou por telefone"))));
+        }
         if (target.equals("AGUARDANDO_APROVACAO")) {
             var quote = new java.util.concurrent.atomic.AtomicReference<UUID>();
             inTenant(fixture.tenantA, () -> quote.set(admin.queryForObject("SELECT id FROM quotes WHERE tenant_id = ? AND work_order_id = ? ORDER BY version DESC LIMIT 1", UUID.class, fixture.tenantA, id)));

@@ -36,7 +36,7 @@
               <span class="event-dot" aria-hidden="true"></span>
               <article>
                 <div class="event-heading">
-                  <h3>{{ label(entry.eventType) }}</h3>
+                  <h3>{{ eventLabel(entry) }}</h3>
                   <time [attr.datetime]="entry.occurredAt">{{
                     entry.occurredAt | date: 'dd/MM/yyyy · HH:mm:ss'
                   }}</time>
@@ -60,6 +60,15 @@
                     }
                     <strong>{{ status(entry.toStatus) }}</strong>
                   </div>
+                }
+                @if (entry.details.approvalChannel) {
+                  <p class="event-detail">
+                    Aprovação manual por
+                    {{ entry.details.approvalChannel === 'PHONE' ? 'telefone' : 'balcão' }}
+                    @if (entry.details.approvedByName) {
+                      · {{ entry.details.approvedByName }}
+                    }
+                  </p>
                 }
                 @if (entry.details.technicianName) {
                   <p class="event-detail">

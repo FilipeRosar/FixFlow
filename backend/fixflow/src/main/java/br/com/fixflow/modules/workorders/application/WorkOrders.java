@@ -13,6 +13,7 @@ public interface WorkOrders {
     record Technician(UUID userId, String fullName) { }
     List<Technician> technicians();
     WorkOrder assignTechnician(UUID id, UUID technicianId, int version);
+    WorkOrder approveManually(UUID id, int version, String channel, String justification, String ip, String userAgent);
     WorkOrder deliver(UUID id, int version, int warrantyDays, String reason, boolean paymentOverride);
     WorkOrder transition(UUID id, String toStatus, int version, String reason, boolean paymentOverride);
 }
