@@ -14,6 +14,11 @@ interface Entry {
   toStatus: string | null;
   reason: string | null;
   details: {
+    approvalChannel?: string;
+    approvedByName?: string;
+    paymentOverride?: boolean;
+    warrantyDays?: number;
+    warrantyUntil?: string | null;
     technicianName?: string;
     revision?: number;
     description?: string;
@@ -70,6 +75,12 @@ export class WorkOrderTimelinePanel {
           this.error.set('Não foi possível carregar a timeline. Tente novamente.');
         },
       });
+  }
+  protected eventLabel(entry: Entry): string {
+    if (entry.eventType === 'WORK_ORDER_STATUS_CHANGED' && entry.toStatus === 'APROVADA' && entry.origin === 'USER') {
+      return 'Orçamento aprovado manualmente';
+    }
+    return this.label(entry.eventType);
   }
   protected label(type: string): string {
     const labels: Record<string, string> = {

@@ -36,7 +36,7 @@
               <span class="event-dot" aria-hidden="true"></span>
               <article>
                 <div class="event-heading">
-                  <h3>{{ label(entry.eventType) }}</h3>
+                  <h3>{{ eventLabel(entry) }}</h3>
                   <time [attr.datetime]="entry.occurredAt">{{
                     entry.occurredAt | date: 'dd/MM/yyyy · HH:mm:ss'
                   }}</time>
@@ -61,6 +61,15 @@
                     <strong>{{ status(entry.toStatus) }}</strong>
                   </div>
                 }
+                @if (entry.details.approvalChannel) {
+                  <p class="event-detail">
+                    Aprovação manual por
+                    {{ entry.details.approvalChannel === 'PHONE' ? 'telefone' : 'balcão' }}
+                    @if (entry.details.approvedByName) {
+                      · {{ entry.details.approvedByName }}
+                    }
+                  </p>
+                }
                 @if (entry.details.technicianName) {
                   <p class="event-detail">
                     Responsável: <strong>{{ entry.details.technicianName }}</strong>
@@ -80,6 +89,19 @@
                 }
                 @if (entry.details.filename) {
                   <p class="event-detail">{{ entry.details.filename }}</p>
+                }
+                @if (entry.details.paymentOverride) {
+                  <p class="event-payment-exception">
+                    Entrega autorizada pelo proprietário com pagamento pendente.
+                  </p>
+                }
+                @if (entry.details.warrantyDays) {
+                  <p class="event-detail">
+                    Prazo adicional: {{ entry.details.warrantyDays }} dias
+                    @if (entry.details.warrantyUntil) {
+                      · Até {{ entry.details.warrantyUntil | date: 'dd/MM/yyyy' }}
+                    }
+                  </p>
                 }
                 @if (entry.reason) {
                   <div class="event-reason">

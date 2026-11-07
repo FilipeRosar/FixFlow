@@ -41,3 +41,5 @@ __pycache__/
 
 /.local/
 /application-auth-local.properties
+
+/application-quote-mail-local.properties

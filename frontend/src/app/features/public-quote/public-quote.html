@@ -1,0 +1,221 @@
+<div class="public-shell">
+  <div class="public-brand">
+    <span class="brand-mark" aria-hidden="true">F</span
+    ><span>FixFlow<span class="brand-caption">ORÇAMENTO ONLINE</span></span
+    ><span class="private-badge">Link pessoal</span>
+  </div>
+  @if (loading()) {
+    <section class="state-card" aria-live="polite" aria-busy="true">
+      <span class="state-symbol" aria-hidden="true">…</span>
+      <h1>Buscando sua proposta</h1>
+      <p role="status">Carregando orçamento…</p>
+    </section>
+  } @else if (error()) {
+    <section class="state-card">
+      <span class="state-symbol" aria-hidden="true">!</span>
+      <h1>Não foi possível abrir a proposta</h1>
+      <p role="alert">{{ error() }}</p>
+      @if (retryable()) {
+        <button type="button" (click)="load()" [disabled]="retryAfter() > 0">
+          {{ retryAfter() > 0 ? 'Tente novamente em ' + retryAfter() + ' s' : 'Tentar novamente' }}
+        </button>
+      } @else {
+        <p class="state-hint">Confira o link recebido ou entre em contato com a assistência.</p>
+      }
+    </section>
+  } @else if (view(); as item) {
+    <header class="proposal-heading">
+      <p class="eyebrow">PROPOSTA DE SERVIÇO</p>
+      <h1>{{ item.companyName }}</h1>
+      <div class="proposal-meta">
+        <span>OS nº {{ item.workOrderNumber }}</span
+        ><span>Versão {{ item.quote.version }}</span
+        ><span class="status" [class.decided]="item.readOnly">{{
+          statusLabel(item.quote.status)
+        }}</span>
+      </div>
+    </header>
+    <section class="equipment-card" aria-labelledby="equipment-title">
+      <span class="equipment-icon" aria-hidden="true">⌘</span>
+      <div>
+        <h2 id="equipment-title">Seu equipamento</h2>
+        <p>{{ item.equipmentLabel || 'Equipamento registrado na ordem de serviço' }}</p>
+      </div>
+      <div class="service-status">
+        <span>Atendimento</span><strong>{{ statusLabel(item.workOrderStatus) }}</strong>
+      </div>
+    </section>
+    <div class="proposal-layout">
+      <div>
+        <section class="items-card" aria-labelledby="items-title">
+          <div class="card-heading">
+            <div>
+              <h2 id="items-title">O que está incluído</h2>
+              <p>Serviços e peças previstos nesta proposta.</p>
+            </div>
+            <span class="item-count"
+              >{{ item.quote.items.length }}
+              {{ item.quote.items.length === 1 ? 'item' : 'itens' }}</span
+            >
+          </div>
+          <ul class="proposal-items">
+            @for (line of item.quote.items; track $index) {
+              <li>
+                <span class="line-number">{{ $index + 1 }}</span>
+                <div class="line-description">
+                  <span class="line-type">{{ line.type === 'SERVICE' ? 'SERVIÇO' : 'PEÇA' }}</span>
+                  <h3>{{ line.description }}</h3>
+                </div>
+                <div class="line-price">
+                  <strong>{{ line.unitPrice | currency: 'BRL' }}</strong
+                  ><span
+                    >{{ line.quantity | number: '1.0-3' }}
+                    {{ line.quantity === 1 ? 'unidade' : 'unidades' }} · preço unitário</span
+                  >
+                </div>
+              </li>
+            }
+          </ul>
+        </section>
+        @if (item.quote.warrantyTerms) {
+          <section class="terms-card" aria-labelledby="terms-title">
+            <h2 id="terms-title">Termos e garantia</h2>
+            <p>{{ item.quote.warrantyTerms }}</p>
+          </section>
+        }
+      </div>
+      <aside class="summary-card" aria-labelledby="summary-title">
+        <h2 id="summary-title">Resumo da proposta</h2>
+        <dl>
+          <div>
+            <dt>Mão de obra</dt>
+            <dd>{{ item.quote.laborSubtotal | currency: 'BRL' }}</dd>
+          </div>
+          <div>
+            <dt>Peças</dt>
+            <dd>{{ item.quote.partsSubtotal | currency: 'BRL' }}</dd>
+          </div>
+          <div class="discount">
+            <dt>Desconto</dt>
+            <dd>− {{ item.quote.discountAmount | currency: 'BRL' }}</dd>
+          </div>
+        </dl>
+        <div class="total">
+          <span>Valor total</span><strong>{{ item.quote.total | currency: 'BRL' }}</strong>
+        </div>
+        <div class="validity">
+          <span>Validade da proposta</span
+          ><strong>{{ item.quote.validUntil | date: 'dd/MM/yyyy · HH:mm' : '-0300' }}</strong
+          ><small>Horário de Brasília</small>
+        </div>
+        @if (decisionNotice()) {
+          <p class="decision-notice" role="status">{{ decisionNotice() }}</p>
+        }
+        @if (item.decision; as decision) {
+          <div class="decision-receipt">
+            <strong>Decisão registrada</strong
+            ><span>{{ decision.decidedAt | date: 'dd/MM/yyyy · HH:mm' : '-0300' }} · Brasília</span>
+            @if (decision.reason) {
+              <p>{{ decision.reason }}</p>
+            }
+          </div>
+        }
+        @if (!item.readOnly && item.contentHash) {
+          <section class="decision-actions" aria-labelledby="decision-title">
+            <h3 id="decision-title">Como deseja seguir?</h3>
+            @if (decisionError()) {
+              <p role="alert" class="decision-error">{{ decisionError() }}</p>
+            }
+            @if (decisionConflict()) {
+              <button type="button" (click)="load()" [disabled]="retryAfter() > 0">
+                Atualizar proposta
+              </button>
+            } @else if (choice(); as choice) {
+              <form (ngSubmit)="decide()">
+                <fieldset [disabled]="deciding()">
+                  <legend>
+                    {{ choice === 'APPROVED' ? 'Confirmar aprovação' : 'Confirmar rejeição' }}
+                  </legend>
+                  <p class="confirmation-summary">
+                    {{ choice === 'APPROVED' ? 'Você está aprovando' : 'Você está rejeitando' }} a
+                    versão {{ item.quote.version }}, no valor de
+                    {{ item.quote.total | currency: 'BRL' }}. Esta decisão encerra a resposta a esta
+                    proposta.
+                  </p>
+                  @if (choice === 'REJECTED') {
+                    <label class="reason-label"
+                      >Motivo (opcional)<textarea
+                        name="reason"
+                        [(ngModel)]="reason"
+                        maxlength="2000"
+                        rows="3"
+                        placeholder="Conte à assistência o motivo da sua decisão."
+                      ></textarea>
+                    </label>
+                  }
+                  <label class="confirmation-check"
+                    ><input
+                      type="checkbox"
+                      name="confirmed"
+                      [(ngModel)]="confirmed"
+                      required
+                    /><span
+                      >Li os itens, o valor e os termos e confirmo
+                      {{ choice === 'APPROVED' ? 'a aprovação' : 'a rejeição' }} desta
+                      proposta.</span
+                    ></label
+                  >
+                  <button
+                    type="submit"
+                    [class.reject]="choice === 'REJECTED'"
+                    [disabled]="!confirmed || retryAfter() > 0"
+                  >
+                    {{
+                      deciding()
+                        ? 'Registrando…'
+                        : choice === 'APPROVED'
+                          ? 'Confirmar aprovação'
+                          : 'Confirmar rejeição'
+                    }}
+                  </button>
+                  <button type="button" class="cancel-decision" (click)="cancelDecision()">
+                    Voltar
+                  </button>
+                </fieldset>
+              </form>
+            } @else {
+              <button type="button" (click)="choose('APPROVED')" [disabled]="retryAfter() > 0">
+                Aprovar orçamento
+              </button>
+              <button
+                type="button"
+                class="reject"
+                (click)="choose('REJECTED')"
+                [disabled]="retryAfter() > 0"
+              >
+                Rejeitar orçamento
+              </button>
+            }
+            @if (retryAfter() > 0) {
+              <p class="confirmation-summary" role="status">
+                Aguarde {{ retryAfter() }} s para tentar novamente.
+              </p>
+            }
+          </section>
+        }
+        <p class="read-note">
+          {{
+            item.readOnly
+              ? 'Esta proposta já foi decidida. Os valores desta versão estão preservados para consulta.'
+              : 'Confira os itens e as condições. Abrir este link não aprova o orçamento.'
+          }}
+        </p>
+      </aside>
+    </div>
+  }
+  <footer class="public-footer">
+    Uma proposta da sua assistência, organizada com FixFlow.<span
+      >Este link é pessoal. Compartilhe apenas com quem você confia.</span
+    >
+  </footer>
+</div>

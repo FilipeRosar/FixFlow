@@ -15,6 +15,22 @@
       </div>
       <span class="order-status">{{ statusLabel(item.status) }}</span>
     </div>
+    <div class="pdf-actions">
+      <button type="button" [disabled]="downloadingPdf()" (click)="downloadPdf('ENTRY')">
+        Baixar termo de entrada (PDF)
+      </button>
+      @if (item.status === 'ENTREGUE') {
+        <button type="button" [disabled]="downloadingPdf()" (click)="downloadPdf('DELIVERY')">
+          Baixar termo de entrega (PDF)
+        </button>
+      }
+      @if (downloadingPdf()) {
+        <p role="status">Gerando PDF…</p>
+      }
+      @if (pdfError()) {
+        <p role="alert">{{ pdfError() }}</p>
+      }
+    </div>
     <div class="detail-grid">
       <article class="card">
         <div class="directory-heading"><h2>Cliente e equipamento</h2></div>
@@ -54,13 +70,81 @@
         }
       </article>
     </div>
+    @if (item.status === 'ENTREGUE') {
+      <section class="card delivery-receipt" aria-labelledby="delivery-heading">
+        <div class="delivery-receipt-heading">
+          <div>
+            <p class="eyebrow">ATENDIMENTO ENCERRADO</p>
+            <h2 id="delivery-heading">Entrega e garantia</h2>
+          </div>
+          <span class="delivery-confirmed">✓ Entregue</span>
+        </div>
+        <dl class="delivery-summary">
+          <div>
+            <dt>Entregue em</dt>
+            <dd>
+              {{
+                item.deliveredAt
+                  ? (item.deliveredAt | date: 'dd/MM/yyyy · HH:mm')
+                  : 'Data não registrada'
+              }}
+            </dd>
+          </div>
+          <div>
+            <dt>Responsável pela entrega</dt>
+            <dd>{{ item.deliveredByName || 'Não registrado' }}</dd>
+          </div>
+          <div>
+            <dt>Prazo adicional</dt>
+            <dd>
+              {{
+                item.warrantyDays ? item.warrantyDays + ' dias' : 'Sem prazo adicional registrado'
+              }}
+            </dd>
+          </div>
+          <div>
+            <dt>Garantia até</dt>
+            <dd>
+              {{
+                item.warrantyUntil
+                  ? (item.warrantyUntil | date: 'dd/MM/yyyy')
+                  : 'Sem vencimento adicional'
+              }}
+            </dd>
+          </div>
+        </dl>
+        @if (item.deliveryPaymentOverride) {
+          <div class="delivery-exception">
+            <strong>Entrega autorizada com pagamento pendente</strong>
+            <p>{{ item.deliveryReason }}</p>
+          </div>
+        }
+        @if (item.warrantyTerms) {
+          <details class="delivery-terms">
+            <summary>Termos registrados na entrega</summary>
+            <p>{{ item.warrantyTerms }}</p>
+          </details>
+        }
+        <p class="delivery-terminal-note">
+          Esta ordem foi encerrada. A entrega e a garantia ficam preservadas no histórico.
+        </p>
+      </section>
+    }
     <app-work-order-attachments
       [orderId]="item.id"
       (changed)="timelineRevision.set(timelineRevision() + 1)"
     />
+    <app-work-order-quote
+      [order]="item"
+      [blocked]="changing() || assigning() || diagnosing() || itemsSaving()"
+      (versionChanged)="updateItemsVersion($event)"
+      (busyChanged)="quotesSaving.set($event)"
+      (saved)="timelineRevision.set(timelineRevision() + 1)"
+      (sent)="quoteSent($event)"
+    />
     <app-work-order-items
       [order]="item"
-      [blocked]="changing() || assigning() || diagnosing()"
+      [blocked]="changing() || assigning() || diagnosing() || quotesSaving()"
       (busyChanged)="itemsSaving.set($event)"
       (versionChanged)="updateItemsVersion($event)"
     />
@@ -76,7 +160,9 @@
                 [(ngModel)]="selectedTechnician"
                 (focus)="loadTechnicians()"
                 (click)="loadTechnicians()"
-                [disabled]="assigning() || changing() || diagnosing() || itemsSaving()"
+                [disabled]="
+                  assigning() || changing() || diagnosing() || itemsSaving() || quotesSaving()
+                "
                 required
               >
                 <option value="">
@@ -271,11 +357,13 @@
       <p class="error transition-message" role="alert">{{ transitionError() }}</p>
     }
     @if (targets(item.status).length) {
-      <form class="card status-editor" (ngSubmit)="changeStatus()">
+      <form class="card status-editor" #statusForm="ngForm" (ngSubmit)="changeStatus()">
         <div class="directory-heading">
           <div><h2>Próxima etapa do atendimento</h2></div>
         </div>
-        <fieldset [disabled]="changing() || assigning() || diagnosing() || itemsSaving()">
+        <fieldset
+          [disabled]="changing() || assigning() || diagnosing() || itemsSaving() || quotesSaving()"
+        >
           <label
             >Alterar estado para<select name="target" [(ngModel)]="target" required>
               <option value="">Selecione a próxima etapa</option>
@@ -284,16 +372,70 @@
               }
             </select></label
           >
+          @if (target === 'APROVADA') {
+            <div class="delivery-confirmation">
+              <h3>Registrar aprovação manual</h3>
+              <p>
+                Registre a autorização recebida do cliente. Seu nome, o canal e a justificativa
+                ficarão no histórico da OS.
+              </p>
+              <label
+                >Canal da aprovação<select
+                  name="approvalChannel"
+                  [(ngModel)]="approvalChannel"
+                  required
+                >
+                  <option value="">Selecione como o cliente aprovou</option>
+                  <option value="PHONE">Telefone</option>
+                  <option value="COUNTER">Balcão</option>
+                </select></label
+              >
+            </div>
+          }
+          @if (target === 'ENTREGUE') {
+            <div class="delivery-confirmation">
+              <h3>Confirmar entrega do equipamento</h3>
+              <p>A OS será encerrada e não poderá ser reaberta.</p>
+              <span class="payment-evidence" [class.settled]="item.paymentSettled">{{
+                item.paymentSettled ? '✓ Quitação registrada' : 'Quitação ainda não registrada'
+              }}</span>
+              @if (!item.paymentSettled) {
+                <p>A entrega requer quitação ou autorização justificada do proprietário.</p>
+              }
+              @if (item.status === 'PRONTA') {
+                <label
+                  >Prazo adicional de garantia (dias)<input
+                    name="warrantyDays"
+                    type="number"
+                    [(ngModel)]="warrantyDays"
+                    required
+                    min="0"
+                    max="3650"
+                    step="1"
+                  /><small>Informe 0 para não registrar um prazo adicional.</small></label
+                >
+              } @else {
+                <p>Devolução sem reparo: não será registrado prazo adicional de garantia.</p>
+              }
+            </div>
+          }
           <label
             >Motivo ou justificativa<textarea
               name="reason"
               [(ngModel)]="reason"
               maxlength="2000"
+              [required]="
+                target === 'APROVADA' ||
+                (target === 'ENTREGUE' &&
+                  role === 'OWNER' &&
+                  paymentOverride &&
+                  !item.paymentSettled)
+              "
               rows="3"
               placeholder="Obrigatório para cancelar, declarar sem reparo ou aprovar manualmente."
             ></textarea>
           </label>
-          @if (role === 'OWNER' && item.status === 'PRONTA' && target === 'ENTREGUE') {
+          @if (role === 'OWNER' && target === 'ENTREGUE' && !item.paymentSettled) {
             <label class="override"
               ><input type="checkbox" name="paymentOverride" [(ngModel)]="paymentOverride" />
               Autorizar entrega com pagamento pendente (exige justificativa)</label
@@ -301,8 +443,26 @@
           }
           <div class="status-actions">
             <p>Os requisitos da próxima etapa serão conferidos ao confirmar.</p>
-            <button class="primary" type="submit" [disabled]="!target || changing()">
-              {{ changing() ? 'Atualizando…' : 'Confirmar transição' }}
+            <button
+              class="primary"
+              type="submit"
+              [disabled]="
+                !target ||
+                changing() ||
+                statusForm.invalid ||
+                (target === 'APROVADA' && (!reason.trim() || !approvalChannel)) ||
+                (target === 'ENTREGUE' && !canConfirmDelivery(item))
+              "
+            >
+              {{
+                changing()
+                  ? 'Atualizando…'
+                  : target === 'APROVADA'
+                    ? 'Registrar aprovação manual'
+                    : target === 'ENTREGUE'
+                      ? 'Confirmar entrega'
+                      : 'Confirmar transição'
+              }}
             </button>
           </div>
         </fieldset>

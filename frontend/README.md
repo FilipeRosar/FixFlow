@@ -16,7 +16,7 @@ npm ci
 npm start
 ```
 
-Abra `http://localhost:4200`. O proxy encaminha `/api/**` para `localhost:8080`, mantendo
+Abra `http://localhost:4200`. O proxy encaminha `/api/**` e `/public/**` para `localhost:8080`, mantendo
 as chamadas na mesma origem do navegador. O proxy está configurado em `angular.json`,
 então funciona tanto com `npm start` quanto com `ng serve`. Reinicie o servidor
 Angular ao alterar a configuração de proxy. O backend deve aceitar essa origem em
@@ -30,6 +30,10 @@ em produção, use HTTPS e mantenha Secure=true.
   o vínculo ativo mais antigo; seleção de múltiplas empresas é uma evolução posterior.
 - `/inicio`: guard restaura a sessão por refresh ao recarregar a página. Um botão confirma
   o acesso ao tenant pela API existente. Funcionalidades de ordens de serviço ainda não existem.
+
+- `/orcamento#token=...`: consulta pública da proposta recebida por e-mail, sem conta,
+  com dados mínimos e limites de acesso. Aprovação/rejeição exigem confirmação explícita;
+  a decisão e seu recibo são preservados por versão (US-033).
 
 - `/recuperar-senha`: solicita o e-mail com resposta genérica e validade de 30 minutos.
 - `/redefinir-senha#token=...`: redefine a senha com confirmação e remove o token da URL.

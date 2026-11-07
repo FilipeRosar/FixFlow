@@ -55,6 +55,7 @@ class WorkOrderItemsT6T7IntegrationTest {
         });
     }
     @AfterEach void cleanup() {
+        if (fixture == null) return;
         for (var tenant : List.of(fixture.tenantA, fixture.tenantB)) inTenant(tenant, () -> {
             admin.update("DELETE FROM outbox_event WHERE tenant_id = ?", tenant);
             admin.update("DELETE FROM inventory_movements WHERE tenant_id = ?", tenant);

@@ -670,9 +670,10 @@ total, validade e decisão, serviços, consumo/baixa de peças, quitação, regi
 taxa, peça faltante e início de manutenção. Revisão revoga token e limpa a referência
 ao orçamento anterior, incrementando sua versão; um novo envio exige nova evidência.
 Envio gera token aleatório de 256 bits: só o hash SHA-256 fica na projeção; o token
-original segue no evento QuoteSent para o consumidor de notificação, sem auditoria
-ou logs. Aprovação, rejeição, cancelamento, revisão e entrega revogam o token.
-A API pública de orçamento e o consumo desse token não fazem parte desta US.
+original é protegido por AES-GCM no evento `QuoteSent`, conforme a US-031.
+A projeção limpa a autorização de decisão após aprovação/rejeição e encerramento;
+a tabela de tokens preserva o prazo de leitura usado pela US-032. Revisão e
+cancelamento revogam o link. A consulta pública está implementada na US-032.
 
 A tela de consulta oferece transições por perfil, justificativa e exceção de
 pagamento para o proprietário. A lista mostra as arestas possíveis; o servidor
@@ -1110,4 +1111,701 @@ recuperação de erro.
 
 ```bash
 ./mvnw -Dtest=WorkOrderTimelineIntegrationTest,WorkOrderT4IntegrationTest,WorkOrderDiagnosisIntegrationTest,WorkOrderItemsT6T7IntegrationTest,WorkOrderAttachmentsT12IntegrationTest,ArchitectureTest test
+```
+
+## US-027 — Entrega e garantia
+
+`POST /api/v1/work-orders/{id}/deliver` confirma a entrega com `version`,
+`warrantyDays` (inteiro de 0 a 3650), `reason` opcional e `paymentOverride` opcional.
+O prazo é obrigatório no endpoint dedicado. A resposta é a OS atualizada, com
+`readyAt`, `deliveredAt`, `warrantyDays`, `warrantyUntil`, `paymentSettled`,
+`deliveryPaymentOverride`, `deliveryReason`, `deliveredByName` e `warrantyTerms`.
+
+A operação reutiliza a máquina de estados e a mesma transação autorizada, sem
+abrir uma transação separada. Proprietário e atendente podem confirmar entrega;
+técnico não pode entregar, mesmo quando atribuído à OS. A OS é bloqueada antes
+de conferir estado, versão e evidências. Duas entregas concorrentes da mesma
+versão geram um sucesso e um `409`; repetir a entrega não altera datas nem gera
+um novo evento `WorkOrderDelivered`.
+
+### Pagamento e exceção
+
+Todas as entregas exigem `payment_settled=true`, inclusive devoluções de
+`SEM_REPARO` e `ORCAMENTO_REJEITADO`. A devolução sem reparo também mantém o guard
+independente de taxa de diagnóstico registrada (inclusive isenção explícita).
+Somente o Owner pode usar `paymentOverride=true`, com justificativa não vazia.
+Essa exceção não dispensa os demais guards e **não marca o pagamento como quitado**.
+
+O audit log mantém `WORK_ORDER_STATUS_CHANGED` e, quando a exceção realmente foi
+necessária, acrescenta `WORK_ORDER_UNPAID_DELIVERY_AUTHORIZED`, com autor, data,
+OS, motivo e snapshot da garantia. Se o pagamento já estava quitado, a flag
+histórica de exceção permanece falsa. A timeline da transição de entrega recebe
+`paymentOverride`, prazo e vencimento por sua projeção segura, sem duplicar o
+evento de estado. Falha na auditoria da exceção desfaz entrega, garantia,
+histórico, timeline e outbox na mesma transação.
+
+**Dependência US-050:** o registro real de pagamentos ainda não existe neste
+código. A US-027 usa a evidência server-side de quitação já estabelecida pela
+US-021 em `work_order_transition_facts`. A US-050 deverá calcular essa evidência
+com pagamentos confirmados/parciais e total aprovado, atualizando-a sob o mesmo
+bloqueio de OS. Não há endpoint ou checkbox que aceite `paymentSettled` ou
+`financialStatus` do cliente como comprovação. Na ausência da evidência, a entrega
+normal é bloqueada; a autorização justificada do proprietário continua disponível.
+Esta implementação não representa a entrega da US-050.
+
+### Datas e snapshots
+
+O instante da entrega vem de `clock_timestamp()` do PostgreSQL, obtido depois
+do bloqueio da OS. `DeliveryWarranty` calcula a data usando o calendário de
+`America/Sao_Paulo`: `data local da entrega + warrantyDays`, sem depender do relógio
+ou fuso do navegador. Zero representa ausência de **prazo adicional registrado**,
+com `warrantyUntil=null`. Devoluções sem reparo usam zero e rejeitam prazo positivo.
+
+Na confirmação são preservados o nome do responsável, o motivo da exceção e os
+termos de garantia atuais da empresa. Alterar o nome da conta ou os termos da
+empresa depois não reescreve o comprovante. O endpoint legado
+`PATCH /work-orders/{id}/status` continua usando os mesmos guards; quando usado
+para entrega de reparo, usa o prazo da projeção server-side existente.
+
+A migration `V34` adiciona esses snapshots e recupera responsável/motivo/flag de
+exceção das entregas legadas quando já registrados na timeline/auditoria. Datas
+antigas são preservadas, e termos antigos não conhecidos não são inventados.
+Um trigger impede mudar o estado de uma OS `ENTREGUE` ou reescrever seus campos
+de entrega/garantia, inclusive por UPDATE direto. Os registros financeiros
+futuros podem ser atualizados sem reabrir a OS. O estado `ENTREGUE` continua sem
+transições de saída, inclusive para ele mesmo.
+
+### Interface e validação
+
+Em **Próxima etapa → Entregue**, a tela apresenta a evidência de quitação,
+solicita o prazo adicional para serviços prontos e informa que a OS será encerrada.
+A exceção e sua justificativa só são oferecidas ao proprietário. Após confirmar,
+**Entrega e garantia** mostra data, responsável, prazo/vencimento, termos
+preservados e a exceção, se utilizada. A timeline destaca a entrega com pagamento
+pendente e o prazo adicional. Ordens entregues não oferecem nova transição.
+
+`WorkOrderDeliveryIntegrationTest` cobre entrega paga, tentativa de falsificar
+quitação, perfis, justificativa, exceção auditada, datas, prazo zero/inválido,
+devolução sem reparo, terminalidade, proteção no banco, concorrência, rollback,
+snapshots e compatibilidade do PATCH. `DeliveryWarrantyTest` cobre virada do dia
+no fuso brasileiro, anos bissextos, mudança de mês e limites. Os testes Angular
+cobrem endpoint de entrega, bloqueio sem quitação, autorização do proprietário,
+comprovante, terminalidade, dias inteiros e destaque na timeline.
+
+```bash
+./mvnw -Dtest='WorkOrder*Test,DeliveryWarrantyTest,ArchitectureTest' test
+```
+
+## US-028 — Impressão PDF da OS
+
+A consulta da OS oferece **Baixar termo de entrada (PDF)** e, após a entrega,
+**Baixar termo de entrega (PDF)**. O arquivo pode ser aberto e impresso pelo leitor
+PDF do usuário. A geração ocorre no servidor, sem serviços externos.
+
+`GET /api/v1/work-orders/{id}/pdf?type=ENTRY|DELIVERY` retorna `application/pdf`,
+`Content-Disposition: attachment` e `Cache-Control: no-store`. `ENTRY` é o padrão;
+tipos desconhecidos retornam 400, e `DELIVERY` antes de uma entrega registrada
+retorna 409. A autorização segue a consulta da OS: proprietário/atendente e
+somente o técnico atribuído, com isolamento por tenant e RLS.
+
+Os documentos incluem nome, CPF/CNPJ, endereço, telefone e logo configurado da
+empresa, número da OS, cliente, equipamento/série, defeito, estado físico,
+acessórios, datas no fuso `America/Sao_Paulo` e campos de assinatura. Dados legados
+ausentes são identificados como não informados. A entrada usa os termos atuais
+da empresa. A entrega usa o snapshot de termos da US-027, responsável, data e
+prazo adicional/vencimento de garantia preservados na OS. Dados cadastrais da
+empresa, cliente e equipamento refletem o cadastro atual; não há snapshot de
+recebimento cadastral nesta história.
+
+PDFBox gera páginas A4 automaticamente para textos longos. A fonte Noto Sans
+embutida preserva acentos; caracteres sem glifo são substituídos por `?`. Texto
+é gravado literalmente, sem HTML, scripts ou recursos remotos. A fonte e sua
+licença estão em `src/main/resources/fonts`.
+
+Validação: `WorkOrderDeliveryIntegrationTest` verifica conteúdo extraído do PDF,
+headers, paginação, snapshot, parâmetros, autenticação, técnico e isolamento;
+`work-order-detail.spec.ts` verifica os botões, requisição binária e falha recuperável.
+
+## US-030 — Montar orçamento
+
+A US-023 está implementada. A montagem exige diagnóstico persistido e OS em
+`AGUARDANDO_ORCAMENTO`. O painel **Orçamento** na consulta da OS permite incluir
+serviços e peças, informar quantidade/preço negociado, aplicar desconto fixo ou
+percentual e salvar para calcular os totais no backend. Os totais exibidos são os
+**valores salvos**; campos ainda em edição não recalculam valores no navegador.
+Peças do catálogo preenchem descrição e preço sugerido, que podem ser negociados.
+
+### Cálculo e snapshots
+
+Conforme a seção 20.2, usa-se `BigDecimal`: soma dos produtos quantidade × preço
+por categoria, cada subtotal arredondado `HALF_UP` para duas casas, desconto e
+total = mão de obra + peças − desconto. No percentual, aplica-se o percentual ao
+subtotal arredondado e arredonda-se o desconto também `HALF_UP`. Quantidades têm
+até três casas; preços/desconto até duas. Quantidade deve ser positiva; preço
+pode ser zero. Desconto fixo não pode superar o subtotal, percentual fica entre
+0 e 100. Desconto integral e total zero são permitidos. Limite monetário do
+subtotal: R$ 999.999.999.999,99; de 1 a 100 itens por versão.
+
+A migration `V35` cria `quotes` e `quote_items`, com RLS e referências compostas
+por tenant. Descrição, quantidade e preço são snapshots próprios da proposta;
+renomear uma peça ou alterar seu preço de venda não muda o orçamento. Os itens
+executados da US-026 e os movimentos de estoque continuam separados da proposta:
+montar, revisar e enviar orçamento não consome nem reserva peças.
+
+### API, versões e envio
+
+- `GET /api/v1/work-orders/{orderId}/quotes`: histórico em ordem decrescente de
+  versão, com itens, totais, condições, validade e `workOrderVersion` atual.
+- `POST /api/v1/work-orders/{orderId}/quotes`: cria a primeira versão ou uma nova
+  revisão, retornando 201. Só pode existir um rascunho por OS.
+- `PUT /api/v1/work-orders/{orderId}/quotes/{quoteId}`: substitui os itens e o
+  desconto de um rascunho, preservando seu número de versão. Enviados retornam 409.
+
+Exemplo de corpo para POST/PUT:
+
+```json
+{
+  "workOrderVersion": 4,
+  "items": [
+    {"type": "SERVICE", "partId": null, "description": "Reparo da fonte", "quantity": 1, "unitPrice": 150.00}
+  ],
+  "discountType": "PERCENT",
+  "discountValue": 10.00
+}
+```
+
+O corpo recebe apenas componentes do cálculo; totais são definidos no servidor.
+`PART` exige ID de peça ativa da mesma empresa; `SERVICE` não aceita peça.
+Proprietário e atendente podem montar; técnico só pode rascunhar em OS atribuída.
+Todos os acessos revalidam o vínculo e o tenant. Ausência de diagnóstico, estado
+inadequado, rascunho duplicado, versão desatualizada ou edição após envio retornam
+409; dados de cálculo inválidos retornam 400, referências ausentes retornam 404.
+
+Salvar bloqueia a linha da OS, compara `workOrderVersion` e incrementa a versão
+da OS. Alteração comercial e auditoria `QUOTE_DRAFT_SAVED` são atômicas. A projeção
+`work_order_transition_facts` recebe ID, versão, contagem, total e validade reais,
+permitindo o envio pelo endpoint dedicado da US-031 para
+`AGUARDANDO_APROVACAO`. O mesmo bloqueio serializa edição e envio concorrentes.
+
+No envio, a proposta passa para `SENT`, recebe `sentAt` e preserva validade,
+termos e logo vigentes da empresa. A validade passa a contar desse instante.
+Aprovação/rejeição também atualizam o estado da proposta. Triggers impedem mudar
+os valores/condições de uma versão enviada ou inserir, alterar ou apagar seus
+itens; somente a decisão `SENT → APPROVED|REJECTED` é permitida. A role de execução
+não pode excluir cabeçalhos. Versões antigas continuam consultáveis.
+
+Para revisar uma proposta enviada/rejeitada, retorne a OS para
+`AGUARDANDO_ORCAMENTO` pelo fluxo existente e use **Criar nova versão**. A tela
+copia os dados para um novo rascunho, preservando a versão anterior. A API não
+reabre orçamento aprovado nem cria aditivos durante manutenção. As projeções
+legadas anteriores a este módulo continuam compatíveis com a máquina de estados,
+sem inventar itens comerciais. O envio por e-mail e a chave de idempotência
+estão implementados na US-031, descrita abaixo.
+
+### Validação
+
+`QuoteCalculationTest` cobre subtotais, `HALF_UP`, percentuais, limites, total zero
+e dados inválidos. `QuoteIntegrationTest` cobre o fluxo desde diagnóstico, preços
+preservados, edição de rascunho, histórico, envio/decisão, proteção no banco,
+permissões/RLS, isolamento, concorrência entre salvamentos e entre edição/envio,
+e rollback em falha de auditoria. `work-order-quote.spec.ts` cobre requisições,
+totais do servidor, histórico, nova versão, bloqueio após envio, conflito,
+recuperação de falhas e navegação durante uma consulta.
+
+```bash
+./mvnw -Dtest='Quote*Test,WorkOrder*Test,ArchitectureTest' test
+```
+
+
+## US-031 — Enviar orçamento
+
+As dependências US-030 e F-06 estão implementadas. No painel **Orçamento**, o
+proprietário/atendente pode enviar o rascunho salvo para o primeiro contato
+`EMAIL` do cliente, ordenado por posição e ID. Alterações em edição precisam ser
+salvas antes de enviar. Técnico pode montar o rascunho, mas não enviar.
+
+### Endpoint e idempotência
+
+`POST /api/v1/work-orders/{orderId}/quotes/{quoteId}/send` recebe:
+
+```http
+Idempotency-Key: 972e2476-755e-43a4-a7c9-8f9793b575c1
+Content-Type: application/json
+
+{"workOrderVersion": 5}
+```
+
+Retorna 200 com `workOrderId`, `quoteId`, `workOrderVersion`,
+`status=AGUARDANDO_APROVACAO`, `notificationStatus=QUEUED` e `validUntil`.
+`Cache-Control: no-store` impede cache da resposta. `QUEUED` confirma o registro
+transacional da notificação; não confirma a entrega na caixa postal.
+
+A chave aceita 8–128 caracteres ASCII: letras, números, ponto, hífen, dois-pontos
+ou sublinhado. O banco guarda seu hash, o hash de ordem/orçamento/versão e a
+resposta original. O escopo é a empresa; a validade lógica é de 24 horas.
+Repetir a mesma chave/corpo retorna a resposta original, inclusive após decisão,
+sem incrementar versões, trocar token, acrescentar histórico ou enfileirar outro
+e-mail. Mesma chave com outro corpo retorna 409. Requisições concorrentes com a
+mesma chave aguardam a mesma linha; a segunda recupera o resultado da primeira.
+Registros expirados são substituídos quando a chave volta a ser usada; expirar
+a chave não permite enviar novamente um orçamento já enviado.
+
+Estado, versão e autorização são validados no servidor. Somente a proposta
+vigente em rascunho pode ser enviada. E-mail ausente/inválido retorna 422;
+chave ausente/inválida retorna 400; versão/estado conflitante retorna 409;
+técnico retorna 403; referência de outra empresa retorna 404. Replays também
+revalidam a autorização atual. Falha antes do commit desfaz chave, estado,
+token, snapshots, histórico, auditoria e outbox juntos.
+
+O PATCH genérico de estado não envia propostas nativas da US-030: retorna 409
+orientando a usar o endpoint dedicado. Projeções legadas continuam compatíveis
+com os testes e transições antigas, sem inventar destinatários ou e-mails.
+A interface usa uma mesma chave durante tentativas com resultado incerto e
+atualiza o estado/versão da OS após confirmar o envio.
+
+### Token e entrega por e-mail
+
+O token usa `SecureRandom`, 256 bits, base64url sem padding (43 caracteres).
+`quote_access_tokens` e a projeção da OS guardam apenas SHA-256. A autorização de
+decisão expira na validade da proposta. Aprovação/rejeição registram prazo de
+leitura de 90 dias; revisão/cancelamento revogam os links anteriores.
+
+Para permitir retry persistente sem guardar um bearer token legível no banco,
+o destinatário e o token ficam em um envelope AES-256-GCM na outbox, com nonce
+aleatório e associação autenticada ao tenant e à proposta. A chave de criptografia
+é externa ao banco. A resposta HTTP, auditoria e logs não recebem o token.
+A V36 cria as tabelas de envio com RLS; a V37 remove `publicToken` em claro dos
+eventos antigos, que ainda não tinham consumidor de e-mail.
+
+O consumidor síncrono `QuoteSentEmailListener` usa SMTP e a outbox F-06. Falha no
+SMTP propaga para o publicador, que registra a classe do erro e tenta novamente
+com o backoff existente, até cinco tentativas. A OS permanece aguardando
+aprovação enquanto o e-mail aguarda nova tentativa. Eventos repetidos são
+ignorados pelo recibo por `event_id`; mensagens ainda pendentes para links
+revogados/expirados são marcadas `SKIPPED`. Mensagens iniciais de propostas já
+decididas também são ignoradas; a US-035 permite reenvio explícito para consulta.
+
+A entrega externa continua **pelo menos uma vez**: uma queda após o SMTP aceitar
+a mensagem e antes do commit do recibo pode repetir o e-mail. A idempotência
+HTTP e a deduplicação de eventos confirmados evitam duplicação nos retries
+normais; não se promete exatamente uma entrega SMTP.
+
+O e-mail contém empresa, número da OS, versão, validade no fuso brasileiro e o
+link `${APP_ORIGIN}/orcamento#token=...`. O fragmento evita enviar o token em
+uma requisição HTTP inicial. A página e a API de consulta estão implementadas na **US-032**; as decisões
+pelo cliente estão implementadas na **US-033**.
+Rotação/reenvio intencional com novo link está implementado na US-035.
+
+### Configuração local e produção
+
+Em `backend/fixflow`, execute uma vez:
+
+```bash
+python3 scripts/configure-quote-mail-local.py
+```
+
+O script cria `application-quote-mail-local.properties` com chave persistente de
+32 bytes, permissão 0600 e sem imprimir o segredo. O arquivo é ignorado pelo Git,
+importado apenas se existir e não é sobrescrito pelo script. Em produção/Compose,
+configure `QUOTE_LINK_ENCRYPTION_KEY` com 32 bytes aleatórios em base64, por um
+gerenciador de segredos. Sem chave, enviar retorna 503 e nenhuma alteração é
+confirmada. Preserve a chave enquanto houver notificações pendentes; trocá-la
+sem preservar a chave antiga impede descriptografar a fila anterior.
+
+SMTP usa a configuração existente `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
+`SMTP_PASSWORD`, `SMTP_AUTH`, `SMTP_STARTTLS` e `MAIL_FROM`. `APP_ORIGIN` define a
+origem do link. Para receber os e-mails em desenvolvimento, suba `mailpit` pelo
+Compose e consulte `http://localhost:8025` (SMTP no host: `localhost:1025`).
+
+### Validação
+
+`QuoteSendingIntegrationTest` cobre repetição, concorrência, resposta preservada
+após decisão, conflito/expiração de chave, falta de e-mail, permissões, proteção
+contra bypass pelo PATCH, revisão/revogação, falha de SMTP com retry e rollback
+por falha de auditoria. O SMTP é simulado nos testes; nenhum e-mail real é enviado.
+`QuoteLinkProtectionTest` cobre criptografia autenticada, nonce aleatório, vínculo
+a tenant/proposta, adulteração e ausência/chave inválida. Os testes Angular
+cobrem chave reutilizada, bloqueio de edição não salva, perfil e atualização da OS.
+
+```bash
+./mvnw -Dtest='Quote*Test,ArchitectureTest,OutboxIntegrationTest,WorkOrderT4IntegrationTest' test
+```
+
+
+## US-032 — Página pública do orçamento (T10)
+
+O link enviado pela US-031 abre `/orcamento#token=...`, sem login. A página usa o
+fragmento para consultar `GET /public/v1/work-orders/{token}`. O token permanece
+no fragmento para permitir recarregar a página, fica apenas em memória no código
+e não é salvo em localStorage/sessionStorage. Não é renderizado como texto.
+A rota tem layout próprio, sem navegação interna da oficina, e não tenta
+restaurar sessão nem envia JWT. Abrir o link não decide nem altera a OS.
+
+A página mostra empresa, número da OS, equipamento, versão/status, serviços,
+peças, quantidades/preços, subtotais, desconto, total, validade no horário de
+Brasília e termos preservados. O total vem do servidor; não é recalculado no
+navegador. Texto livre usa interpolação Angular, sem HTML executável.
+Não há nome/documento/endereço/contatos do cliente, custos, diagnóstico, série,
+notas internas, IDs de usuários, tenant, OS, orçamento ou peças na resposta.
+
+### Validação do token e isolamento
+
+A API aceita o token base64url de 43 caracteres gerado com 256 bits na US-031 e
+consulta apenas seu hash SHA-256. Não recebe tenant ou ID de OS como argumento
+comercial. Acrescentar IDs no caminho retorna 404; parâmetros/headers de tenant
+não ampliam a autorização. A cadeia de segurança pública é independente de JWT,
+inclusive se o navegador tiver credenciais antigas de uma conta interna.
+
+A V38 cria `read_public_quote(text)`, função `SECURITY DEFINER` com `search_path`
+fixo e execução restrita à role runtime. Uma policy **somente da role migradora**
+permite localizar o registro do hash. A função deriva o tenant do token, consulta
+com as referências compostas e RLS, produz JSON por uma lista explícita de campos
+públicos e restaura o contexto anterior antes de retornar. A role runtime não
+recebe leitura irrestrita das tabelas nem permissão para enumerar tenants/tokens.
+O Java não abre um `TenantScope` anônimo nem contorna o executor autorizado.
+
+Uma proposta enviada exige empresa ativa, token não revogado, versão vigente,
+OS aguardando aprovação, hash correspondente na projeção e validade ainda aberta.
+Depois de aprovada/rejeitada, permite consulta **somente leitura** até `read_until`
+(90 dias da decisão). Encerrado esse prazo, o link também fica indisponível.
+Revisão/cancelamento revogam o link anterior. A aprovação/rejeição com
+confirmação explícita está implementada na US-033, descrita abaixo.
+
+Token desconhecido, formato inválido, expirado, revogado ou empresa indisponível
+retornam o mesmo status e corpo, sem caminho/token em `instance`:
+
+```json
+{"status":404,"detail":"Orçamento não encontrado ou indisponível."}
+```
+
+A consulta registra `PUBLIC_QUOTE_VIEWED` ou `PUBLIC_QUOTE_ACCESS_DENIED` para
+hashes conhecidos, com tenant derivado, autor nulo, canal e versão, sem segredo
+ou dados pessoais. Falhas de tokens desconhecidos/malformados e recusas pelo
+limite não são atribuídas a um tenant inventado; ficam na observabilidade HTTP
+com status/método, sem URI/token. O histórico comercial não é alterado por GET.
+
+### Rate limit e headers
+
+O filtro anterior à segurança aplica janelas deslizantes exatas e concorrentes:
+**20 requisições/minuto por IP** e **60 requisições/hora por hash de token**.
+IPs são identificados por `getRemoteAddr()`, sem confiar diretamente em
+`X-Forwarded-For`/`Forwarded`. Tokens bem formados desconhecidos também contam;
+formatos inválidos contam no limite por IP. Ao exceder, retorna 429 com
+`Retry-After` em segundos. A página respeita esse intervalo e oferece nova
+consulta manual, sem loop de tentativas automáticas.
+
+O limitador é local ao processo, conforme o MVP de uma instância da seção 29.
+Usa duas estruturas limitadas a 10.000 chaves cada, guarda apenas hashes e
+janelas limitadas, remove entradas expiradas e recusa novas chaves com 429
+quando a capacidade está ocupada, sem expulsar limites ativos. Nesta rota,
+janelas deslizantes foram implementadas diretamente, sem nova dependência de
+Bucket4j. Reiniciar o processo reinicia as janelas. Para múltiplas instâncias,
+é necessário compartilhar o limitador (Redis/gateway), como prevê o ADR.
+Atrás de proxy, configure a obtenção de IP apenas de proxies conhecidos; não
+ative confiança irrestrita em headers fornecidos pelo cliente.
+
+Respostas públicas de sucesso, 404 e 429 incluem:
+
+- `Cache-Control: no-store`;
+- `Referrer-Policy: no-referrer`;
+- `X-Robots-Tag: noindex, nofollow, noarchive`;
+- `X-Content-Type-Options: nosniff`;
+- `X-Frame-Options: DENY`;
+- `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`.
+
+A página Angular também aplica metas `robots`/`referrer`, restauradas ao sair.
+No host de estáticos/SPA, aplique `no-store`, `no-referrer`, `noindex` e proteção
+contra frames ao documento `/orcamento`; a API entrega seus próprios headers.
+O proxy de desenvolvimento encaminha `/public/**`, além de `/api/**`, ao backend.
+Em produção, preserve esse prefixo no reverse proxy e desabilite/redija o URI
+nas access logs dessa rota, pois o token faz parte do caminho da API.
+
+### Testes T10
+
+`PublicQuoteT10IntegrationTest` usa PostgreSQL e role runtime com RLS para cobrir:
+404 idêntico, headers, limites de IP/token, spoof de headers de encaminhamento,
+IDs acrescentados à URL, ausência de autenticação, dois tenants, dados mínimos,
+restauração de contexto no banco, auditoria, revisão, empresa suspensa e janela
+de leitura após decisão. A suíte também executa a regressão comercial herdada.
+`PublicQuoteRateLimiterTest` cobre concorrência, janelas exatas, expiração e
+capacidade de memória. Os testes Angular verificam consulta anônima, metadados,
+textos literais, mudança de token, cancelamento, erros e `Retry-After`.
+
+```bash
+./mvnw -Dtest='PublicQuote*Test,ArchitectureTest' test
+```
+
+
+## US-033 — Aprovar/rejeitar via link (T2 e T3)
+
+A página pública oferece **Aprovar orçamento** e **Rejeitar orçamento** para
+propostas enviadas e disponíveis. Selecionar uma opção abre a confirmação com
+versão, valor e checkbox de concordância com itens e termos. Somente confirmar
+o formulário dispara um POST; abrir/visualizar/pré-carregar o link não decide.
+A rejeição permite motivo opcional de até 2.000 caracteres. Depois da resposta,
+a página mostra o resultado e o horário de Brasília, em modo somente leitura.
+
+### API e confirmação do conteúdo
+
+`POST /public/v1/work-orders/{token}/approve` ou `/reject` recebe JSON:
+
+```http
+Idempotency-Key: 40151f40-18d1-4446-99f0-08dfcd5c61da
+Content-Type: application/json
+
+{"confirmed":true,"contentHash":"<hash retornado na consulta>","reason":null}
+```
+
+`confirmed=true`, hash de 64 caracteres hexadecimais e chave com 8–128 caracteres
+ASCII são obrigatórios. O motivo é considerado somente na rejeição; valores em
+branco viram `null`. O servidor obtém IP por `getRemoteAddr()` e user-agent pelo
+header HTTP (limitado a 1.024 caracteres), independentemente de campos extras no
+body. Headers de encaminhamento não substituem o IP de origem por conta própria.
+
+A consulta da US-032 agora inclui `contentHash` e um resumo `decision`, quando
+houver. O hash SHA-256 é calculado pelo PostgreSQL sobre o documento comercial
+canônico em JSONB: empresa, número da OS, equipamento, versão, itens ordenados,
+quantidade/preço, subtotais, desconto, total, validade em UTC e termos. Estado
+da OS, estado de decisão e metadados de navegação ficam fora do hash. O cliente
+não calcula ou fornece preços/totais para o comando de decisão.
+
+No POST, o servidor reconstrói esse documento e compara o hash da consulta.
+Conteúdo diferente retorna 409 `QUOTE_CONTENT_CHANGED`; o cliente precisa
+atualizar a página e conferir novamente. A evidência preserva o documento exato,
+inclusive nome da empresa/equipamento exibidos. Após decidir, as consultas usam
+esse snapshot comercial, com o estado atual do atendimento separado; renomear
+cadastros não reescreve o conteúdo aceito ou rejeitado.
+
+### Decisão única e atomicidade
+
+A V39 cria `quote_decisions` com unicidade por orçamento, RLS, conteúdo/hash,
+versão, decisão, motivo, canal `PUBLIC_LINK`, IP, UA e instante do banco. A role
+runtime pode consultar com RLS, mas não inserir/editar/apagar evidências
+diretamente. Um trigger também impede UPDATE. A tabela de histórico admite
+autor nulo somente para origem `CUSTOMER`, identificada como Cliente na timeline.
+
+`decide_public_quote` deriva o tenant do hash do token e usa a mesma ordem de
+bloqueios do fluxo interno: OS, projeção, proposta e autorização do link. A
+validade é reavaliada com o relógio do banco depois dos bloqueios. É necessário
+um link vigente/não revogado, empresa ativa, proposta atual `SENT` e OS em
+`AGUARDANDO_APROVACAO`. Não há ID de OS/tenant no comando público.
+
+Na mesma transação, grava evidência e decisão, atualiza proposta/projeção e
+incrementa a versão da OS, registra histórico/auditoria e inclui a outbox:
+
+- aprovação: OS `APROVADA`, proposta `APPROVED`, evento `QuoteApproved`;
+- rejeição: OS `ORCAMENTO_REJEITADO`, proposta `REJECTED`, evento `QuoteRejected`.
+
+A máquina de estados existente continua impedindo ir de rejeitada para
+`EM_MANUTENCAO`. Não há evento de aprovação e de rejeição para uma mesma versão.
+Falha em histórico, auditoria, outbox ou recibo desfaz toda a operação. Tentativas
+recusadas/repetidas para tokens conhecidos recebem auditoria sem expor o segredo.
+
+### Idempotência, erros e proteção pública
+
+O escopo da chave é empresa + proposta. O hash da chave e o hash de decisão,
+conteúdo e motivo ficam com a resposta original por 24 horas. Repetir a mesma
+chave/corpo recupera o recibo, sem recriar evidência, evento, histórico ou alterar
+IP/UA originais. A chave não depende do IP/UA da nova tentativa. Chave reutilizada
+com outro corpo retorna 409 `IDEMPOTENCY_KEY_REUSED`. Outra chave após a decisão
+retorna 409 `QUOTE_ALREADY_DECIDED`. Duas decisões opostas simultâneas produzem
+um sucesso e um conflito; duas iguais com a mesma chave recuperam o mesmo recibo.
+Revogação ou fim da autorização de leitura mantém o 404, mesmo para replays.
+
+Sucesso retorna decisão, estado da OS, versão, instante e hash, sem IP/UA ou IDs
+internos. O link continua somente leitura por 90 dias da decisão. Token inválido,
+expirado ou revogado mantém o 404 idêntico da US-032. Os limites por IP/token e
+headers públicos também se aplicam aos POSTs. `Retry-After` é respeitado na UI.
+Erros públicos, inclusive 500 e JSON malformado, não incluem a URI com o token.
+
+Os POSTs são JSON, sem cookies/JWT, com confirmação e chave explícitas. A cadeia
+pública permite somente essas duas rotas de mutação; a exceção ao token CSRF
+padrão é limitada a elas. `Origin` diferente de `APP_ORIGIN` ou
+`Sec-Fetch-Site: cross-site` retorna 403. GET nas rotas de decisão retorna 404;
+submissões de formulário não JSON retornam 415. Solicitações de API sem Origin
+continuam possíveis, sempre exigindo bearer token, chave e confirmação no JSON.
+O user-agent é evidência declarada pelo cliente, não comprovação de identidade.
+
+### Validação
+
+`PublicQuoteDecisionT2T3IntegrationTest` cobre T2/T3, conteúdo, evidências,
+repetição, conflitos, decisões concorrentes iguais/opostas, rejeição sem início
+de manutenção, validade/revogação, confirmação/origem/método, evidência imutável,
+rollback completo em falha de outbox e ausência do token nas respostas de erro.
+A suíte herda T10 e a regressão comercial. Os testes Angular cobrem confirmação,
+rejeição/motivo, recibo, chave reutilizada após resultado incerto, conflito com
+recarga, `Retry-After` e troca de link durante uma decisão pendente.
+
+```bash
+./mvnw -Dtest='PublicQuoteDecisionT2T3IntegrationTest,ArchitectureTest' test
+```
+
+
+## US-034 — Aprovação manual por telefone ou balcão
+
+Na consulta da OS, em **Próxima etapa → Aprovada**, proprietário ou atendente
+escolhe o canal **Telefone** ou **Balcão** e informa justificativa obrigatória.
+A ação **Registrar aprovação manual** identifica o responsável autenticado e
+preserva canal, justificativa, instante e conteúdo da versão aprovada. Técnico
+não pode aprovar manualmente.
+
+Conforme a seção 14.2, a OS deve estar em `AGUARDANDO_APROVACAO`, com proposta
+vigente `SENT`, não expirada e ainda não decidida. Um rascunho não é aprovado
+diretamente por esta ação. A dependência US-030 fornece os itens e valores;
+o estado de envio segue o fluxo existente da OS.
+
+### API e autorização
+
+`POST /api/v1/work-orders/{id}/approve` exige autenticação e recebe:
+
+```json
+{
+  "version": 6,
+  "channel": "PHONE",
+  "justification": "Cliente autorizou o reparo por telefone durante o atendimento."
+}
+```
+
+`channel` aceita `PHONE` e `COUNTER`. Justificativa ausente, vazia ou composta
+somente por espaços, canal ausente/inválido ou texto acima de 2.000 caracteres
+retornam 400. O servidor normaliza espaços nas extremidades. Permissão
+`quote:manual_approve` é revalidada no vínculo atual: proprietário/atendente
+podem executar; técnico recebe 403. OS de outra empresa ou inexistente retorna
+404. Estado, validade, versão antiga ou decisão já registrada retornam 409.
+
+Tenant, autor e nome do responsável não vêm do body: são derivados da sessão e
+do cadastro autorizado. IP e user-agent vêm da requisição HTTP, sem confiar
+diretamente em headers de encaminhamento. A versão otimista continua sendo a
+versão da OS retornada pela consulta. O PATCH genérico para `APROVADA` em uma
+proposta nativa retorna 409 orientando a usar o fluxo manual, evitando uma
+aprovação sem canal. Projeções legadas sem orçamento nativo mantêm compatibilidade
+com o guard anterior de justificativa.
+
+### Evidência, auditoria e concorrência
+
+A V40 amplia `quote_decisions` para os canais manuais. Uma aprovação manual
+exige no banco decisão `APPROVED`, justificativa e autor/nome não nulos. A mesma
+unicidade por orçamento, RLS e proteção contra alteração da US-033 continuam
+válidas. O registro guarda o documento comercial canônico/hash, versão, data,
+IP/UA e snapshots do autor e do canal. Alterar o nome da conta posteriormente
+não reescreve o responsável registrado.
+
+A operação usa a transação autorizada e o bloqueio da OS do fluxo existente,
+seguido de projeção, proposta e evidência. Depois das validações, grava a
+aprovação, muda OS para `APROVADA`, proposta/projeção para `APPROVED`, incrementa
+a versão da OS e registra histórico de origem `USER`. Também grava
+`QUOTE_MANUALLY_APPROVED`, com autor autenticado, canal, justificativa, IDs,
+versão e hash do conteúdo, além do audit de estado e de um único `QuoteApproved`
+na outbox. O prazo de leitura do link conta 90 dias do instante da decisão.
+
+A timeline exibe aprovação manual por telefone/balcão, responsável e justificativa,
+sem duplicar o evento de transição. Evidência e evento são únicos mesmo quando
+uma aprovação manual concorre com a resposta do cliente pelo link; uma requisição
+vence e a outra recebe conflito. Repetições não criam outro registro. Falha de
+auditoria desfaz decisão, estado, histórico e outbox na mesma transação.
+
+A consulta pública permanece em modo somente leitura após a aprovação. Ela não
+expõe autor, canal interno, IP/UA nem a justificativa da equipe: o campo público
+`decision.reason` fica nulo para canais manuais. O motivo informado pelo próprio
+cliente em uma rejeição pública mantém o comportamento da US-033.
+
+### Validação
+
+`QuoteManualApprovalIntegrationTest` cobre proprietário/telefone, atendente/balcão,
+justificativa/canal obrigatórios, permissão, isolamento, estado/validade,
+impedimento do PATCH sem canal, snapshots, auditoria, timeline, privacidade do
+link público, repetição, disputa com aprovação pública e rollback de auditoria.
+A suíte herda T10 e a regressão comercial. A regressão T2/T3 também é executada.
+Os testes da interface cobrem validação, endpoint/corpo, perfis e indicação do
+canal/responsável no histórico.
+
+```bash
+./mvnw -Dtest='QuoteManualApprovalIntegrationTest,PublicQuoteDecisionT2T3IntegrationTest,ArchitectureTest' test
+```
+
+
+## US-035 — Revogar e reenviar link
+
+O painel **Orçamento → Link público** mostra o estado do acesso (`Ativo`,
+`Revogado`, `Expirado` ou `Sem link`) e oferece **Revogar link** e **Reenviar novo
+link** ao proprietário/atendente. As ações têm confirmação explícita e operam
+somente sobre a proposta vigente. Técnico e versões históricas não oferecem
+esses controles. A autorização e a referência são revalidadas no servidor.
+
+### API e efeito no link anterior
+
+As rotas autenticadas são:
+
+- `POST /api/v1/work-orders/{orderId}/quotes/{quoteId}/revoke-link`;
+- `POST /api/v1/work-orders/{orderId}/quotes/{quoteId}/resend-link`.
+
+Ambas exigem `Idempotency-Key` e corpo `{"workOrderVersion": 6}`. A validação da
+chave, o prazo de replay de 24 horas e o hash do request seguem a US-031, usando
+a mesma tabela de recibos com a operação no fingerprint. Mesma chave/corpo
+retorna a resposta original; mesma chave com outra ação ou dados retorna 409.
+Novas operações com versão antiga também retornam 409.
+
+Revogar marca o token atual como revogado e limpa sua autorização de decisão
+na projeção. Nenhum e-mail é enfileirado. O link anterior retorna o 404 idêntico
+da US-032, tanto na consulta quanto nas decisões, inclusive quando a proposta
+já estava aprovada/rejeitada e o link era somente leitura. Revogação repetida
+com a mesma chave não duplica efeitos; se já estiver revogado, outra solicitação
+com a versão atual também não altera novamente a versão da OS.
+
+Reenviar revoga o acesso anterior, gera outro token de 256 bits e atualiza o hash
+da projeção quando ainda há decisão pendente. O token é enviado ao contato
+`EMAIL` atual do cliente pela outbox, com envelope AES-GCM. O hash anterior
+permanece apenas para histórico/auditoria e nunca é reativado. A V41 substitui a
+unicidade de token por proposta por um índice parcial que permite **um único
+token não revogado**, mantendo os hashes revogados. A role runtime e o RLS
+permanecem iguais.
+
+A resposta traz IDs internos da operação autenticada, versão atualizada da OS,
+estado da OS, `linkStatus`, `notificationStatus` (`QUEUED` no reenvio, `NONE` na
+revogação) e prazo do acesso. Nenhum token ou URL pública em claro é retornado à
+interface. A consulta interna de versões inclui `linkStatus`.
+
+### Preservação da proposta e concorrência
+
+A operação não altera itens, preços, desconto, termos, número de versão do
+orçamento, `sentAt`, validade comercial ou decisão. Atualiza somente autorização
+do link e versão otimista da OS, preservando seu estado. Para propostas `SENT`,
+é necessário que a OS siga aguardando aprovação e a validade ainda esteja
+aberta. Reenviar não estende orçamento expirado: nesse caso retorna 409.
+
+Para propostas aprovadas/rejeitadas, o novo link é **somente leitura**, com o
+mesmo limite de 90 dias da decisão. A decisão/evidência é preservada; não é
+possível aprovar novamente pelo reenvio. O prazo da resposta de reenvio nessa
+situação é o prazo do acesso de consulta, não uma nova validade comercial.
+A interface mantém a validade comercial original no resumo da proposta.
+Propostas canceladas ou substituídas não podem ter o acesso reativado.
+
+A chave de idempotência é bloqueada antes da OS, como no envio inicial; depois
+são bloqueadas OS, projeção e proposta. A troca do token, auditoria
+`QUOTE_LINK_REVOKED`/`QUOTE_LINK_RESENT`, outbox e recibo são atômicos. E-mail
+inválido, falta de configuração ou falha de auditoria desfazem a operação e
+preservam o link anterior. Rotação concorrente com decisão pública usa o mesmo
+bloqueio: se a rotação vencer, a decisão pelo token antigo recebe 404; se a
+aprovação vencer, o comando com versão antiga recebe conflito.
+
+### Fila de e-mails e validação
+
+O consumidor trata `QuoteSent` e `QuoteLinkResent`. Ele confere **o hash do token
+contido naquela mensagem** e a proposta vigente antes de enviar. A existência
+de outro token ativo da mesma proposta não libera uma mensagem antiga. Eventos
+pendentes com token revogado ficam `SKIPPED`; eventos já entregues são
+deduplicados por ID. O e-mail de um reenvio após decisão informa que o link é de
+consulta e que a decisão está preservada. Falha SMTP mantém o novo link ativo e
+a notificação no retry da F-06; o link antigo continua revogado.
+
+`QuoteLinkRotationIntegrationTest` cobre 404 do link antigo, novo link válido
+para consulta/decisão, reenvio idempotente, revogação sem e-mail, e-mails antigos
+ignorados, deduplicação, acesso somente leitura após decisão, rollback,
+permissões/referências/versão, prazo expirado, rotações simultâneas e disputa com
+aprovação pública. A suíte herda T10 e regressão comercial. Os testes Angular
+cobrem confirmação, chave reutilizada após falha, estado do link, perfis e
+preservação da decisão/validade.
+
+```bash
+./mvnw -Dtest='Quote*Test,PublicQuote*Test,ArchitectureTest' test
 ```

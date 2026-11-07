@@ -41,7 +41,7 @@ public final class WorkOrderStateMachine {
         if (!customerApproval && !role.equals("OWNER") && !(transition.technical() ? role.equals("TECHNICIAN") : role.equals("ATTENDANT")))
             throw new WorkOrderTransitionDeniedException();
         if (role.equals("TECHNICIAN") && !actor.equals(facts.technicianId())) throw new WorkOrderTransitionDeniedException();
-        if (paymentOverride && (!role.equals("OWNER") || from != PRONTA || to != ENTREGUE))
+        if (paymentOverride && (!role.equals("OWNER") || to != ENTREGUE))
             throw new WorkOrderTransitionDeniedException();
         if (paymentOverride) require(hasText(reason), "Registre a justificativa da exceção de pagamento.");
         if (to == CANCELADA) {
@@ -68,7 +68,7 @@ public final class WorkOrderStateMachine {
             require(facts.serviceCount() > 0, "Registre os serviços executados.");
             require(!facts.partsConsumed() || facts.partsWrittenOff(), "Efetue a baixa das peças consumidas.");
         }
-        if (to == ENTREGUE && from == PRONTA) {
+        if (to == ENTREGUE) {
             require(facts.paymentSettled() || paymentOverride && hasText(reason), "Quite o pagamento ou registre a exceção do proprietário.");
         }
         if (to == ENTREGUE && from != PRONTA) require(facts.diagnosticFeeRegistered(), "Registre a taxa de diagnóstico, inclusive quando isenta.");

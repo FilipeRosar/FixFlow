@@ -31,6 +31,17 @@ public class WorkOrderController {
         return orders.transition(id, request.toStatus(), request.version(),
                 request.reason() == null ? null : request.reason().strip(), Boolean.TRUE.equals(request.paymentOverride()));
     }
+    public record ManualApprovalRequest(@NotNull @Min(0) Integer version, @NotNull @Pattern(regexp = "PHONE|COUNTER") String channel,
+                                        @NotBlank @Size(max = 2000) String justification) { }
+    @PostMapping("/{id}/approve") public WorkOrder approve(@PathVariable UUID id, @Valid @RequestBody ManualApprovalRequest request, jakarta.servlet.http.HttpServletRequest http) {
+        return orders.approveManually(id, request.version(), request.channel(), request.justification().strip(), http.getRemoteAddr(), http.getHeader("User-Agent"));
+    }
+    public record DeliveryRequest(@NotNull @Min(0) Integer version, @NotNull @DecimalMin("0") @DecimalMax("3650") @Digits(integer = 4, fraction = 0) java.math.BigDecimal warrantyDays,
+                                  @Size(max = 2000) String reason, Boolean paymentOverride) { }
+    @PostMapping("/{id}/deliver") public WorkOrder deliver(@PathVariable UUID id, @Valid @RequestBody DeliveryRequest request) {
+        return orders.deliver(id, request.version(), request.warrantyDays().intValueExact(), request.reason() == null ? null : request.reason().strip(),
+                Boolean.TRUE.equals(request.paymentOverride()));
+    }
     @GetMapping public WorkOrders.Page search(@RequestParam(required = false) UUID technicianId,
             @RequestParam(required = false) String status, @RequestParam(defaultValue = "true") boolean openOnly,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
@@ -42,4 +53,11 @@ public class WorkOrderController {
         return orders.assignTechnician(id, request.technicianId(), request.version());
     }
     @GetMapping("/{id}") public WorkOrder get(@PathVariable UUID id) { return orders.get(id); }
+    @GetMapping(value = "/{id}/pdf", produces = "application/pdf")
+    public ResponseEntity<byte[]> pdf(@PathVariable UUID id, @RequestParam(defaultValue = "ENTRY") String type) {
+        if (!type.equals("ENTRY") && !type.equals("DELIVERY"))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Tipo de termo inválido.");
+        return ResponseEntity.ok().header("Content-Disposition", "attachment; filename=\"os-" + id + "-" + type.toLowerCase(java.util.Locale.ROOT) + ".pdf\"")
+                .header("Cache-Control", "no-store").body(orders.pdf(id, type.equals("DELIVERY")));
+    }
 }

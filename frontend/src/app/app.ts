@@ -18,6 +18,6 @@ export class App {
     { initialValue: this.isOperational() },
   );
   private isOperational(): boolean {
-    return /^\/inicio(?:[/?#]|$)/.test(this.router.url);
+    return /^\/(?:inicio|orcamento)(?:[/?#]|$)/.test(this.router.url);
   }
 }

@@ -1,3 +1,4 @@
+import { WorkOrderQuotePanel } from '../work-order-quote/work-order-quote';
 import { WorkOrderTimelinePanel } from '../work-order-timeline/work-order-timeline';
 import { WorkOrderAttachmentsPanel } from '../work-order-attachments/work-order-attachments';
 import { WorkOrderItemsPanel } from '../work-order-items/work-order-items';
@@ -36,6 +37,15 @@ interface WorkOrder {
   technicianId: string | null;
   technicianName: string | null;
   diagnosis: Diagnosis | null;
+  readyAt: string | null;
+  deliveredAt: string | null;
+  warrantyDays: number | null;
+  warrantyUntil: string | null;
+  paymentSettled: boolean;
+  deliveryPaymentOverride: boolean;
+  deliveryReason: string | null;
+  deliveredByName: string | null;
+  warrantyTerms: string;
 }
 @Component({
   selector: 'app-work-order-detail',
@@ -44,6 +54,7 @@ interface WorkOrder {
     RouterLink,
     FormsModule,
     WorkOrderItemsPanel,
+    WorkOrderQuotePanel,
     WorkOrderAttachmentsPanel,
     WorkOrderTimelinePanel,
   ],
@@ -51,10 +62,56 @@ interface WorkOrder {
   styleUrls: ['../customers/customers.css', './work-order-detail.css'],
 })
 export class WorkOrderDetail implements OnInit {
+  protected readonly downloadingPdf = signal(false);
+  protected readonly pdfError = signal('');
+  protected downloadPdf(type: 'ENTRY' | 'DELIVERY'): void {
+    const order = this.order();
+    if (!order || this.downloadingPdf()) return;
+    const view = this.viewRequest;
+    this.downloadingPdf.set(true);
+    this.pdfError.set('');
+    this.http
+      .get(`/api/v1/work-orders/${order.id}/pdf`, {
+        params: { type },
+        responseType: 'blob',
+      })
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe({
+        next: (blob) => {
+          if (view !== this.viewRequest) return;
+          this.downloadingPdf.set(false);
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `os-${order.number}-${type === 'ENTRY' ? 'entrada' : 'entrega'}.pdf`;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        },
+        error: () => {
+          if (view !== this.viewRequest) return;
+          this.downloadingPdf.set(false);
+          this.pdfError.set('Não foi possível gerar o PDF. Tente novamente.');
+        },
+      });
+  }
   private readonly http = inject(HttpClient);
   protected readonly role = inject(SessionService).session()?.role;
   protected readonly timelineRevision = signal(0);
+  protected readonly quotesSaving = signal(false);
   protected readonly itemsSaving = signal(false);
+  protected quoteSent(receipt: {
+    workOrderId: string;
+    workOrderVersion: number;
+    status: string;
+  }): void {
+    this.order.update((order) =>
+      order && order.id === receipt.workOrderId
+        ? { ...order, version: receipt.workOrderVersion, status: receipt.status }
+        : order,
+    );
+    this.timelineRevision.update((value) => value + 1);
+    this.target = '';
+  }
   protected updateItemsVersion(version: number): void {
     this.order.update((order) =>
       order ? { ...order, version: Math.max(order.version, version) } : null,
@@ -65,7 +122,15 @@ export class WorkOrderDetail implements OnInit {
   protected readonly transitionNotice = signal('');
   protected target = '';
   protected reason = '';
+  protected approvalChannel = '';
   protected paymentOverride = false;
+  protected warrantyDays = 0;
+  protected canConfirmDelivery(order: WorkOrder): boolean {
+    return (
+      !!order.paymentSettled ||
+      (this.role === 'OWNER' && this.paymentOverride && !!this.reason.trim())
+    );
+  }
   protected readonly canAssign = this.role === 'OWNER' || this.role === 'ATTENDANT';
   protected readonly technicians = signal<{ userId: string; fullName: string }[]>([]);
   protected readonly techniciansLoading = signal(false);
@@ -103,6 +168,7 @@ export class WorkOrderDetail implements OnInit {
       !this.selectedTechnician ||
       this.assigning() ||
       this.itemsSaving() ||
+      this.quotesSaving() ||
       this.changing() ||
       this.diagnosing()
     )
@@ -159,6 +225,7 @@ export class WorkOrderDetail implements OnInit {
       this.changing() ||
       this.assigning() ||
       this.itemsSaving() ||
+      this.quotesSaving() ||
       !this.findings.trim() ||
       !this.probableCause.trim() ||
       !this.proposedSolution.trim()
@@ -243,7 +310,7 @@ export class WorkOrderDetail implements OnInit {
     const reception: Record<string, string[]> = {
       RECEBIDA: ['CANCELADA'],
       EM_DIAGNOSTICO: ['CANCELADA'],
-      AGUARDANDO_ORCAMENTO: ['AGUARDANDO_APROVACAO', 'CANCELADA'],
+      AGUARDANDO_ORCAMENTO: ['CANCELADA'],
       AGUARDANDO_APROVACAO: [
         'APROVADA',
         'ORCAMENTO_REJEITADO',
@@ -268,45 +335,82 @@ export class WorkOrderDetail implements OnInit {
       this.changing() ||
       this.assigning() ||
       this.diagnosing() ||
-      this.itemsSaving()
+      this.itemsSaving() ||
+      this.quotesSaving()
     )
       return;
+    const approving = this.target === 'APROVADA';
+    if (
+      approving &&
+      (!this.reason.trim() ||
+        !['PHONE', 'COUNTER'].includes(this.approvalChannel) ||
+        (this.role !== 'OWNER' && this.role !== 'ATTENDANT'))
+    ) {
+      this.transitionError.set('Informe o canal e a justificativa da aprovação manual.');
+      return;
+    }
+    const delivering = this.target === 'ENTREGUE';
+    const days = order.status === 'PRONTA' ? this.warrantyDays : 0;
+    if (delivering && (!Number.isInteger(days) || days < 0 || days > 3650)) {
+      this.transitionError.set('Informe um prazo adicional entre 0 e 3650 dias inteiros.');
+      return;
+    }
+    if (delivering && !this.canConfirmDelivery(order)) {
+      this.transitionError.set(
+        'A entrega exige quitação registrada ou autorização justificada do proprietário.',
+      );
+      return;
+    }
     this.changing.set(true);
     this.transitionError.set('');
     this.transitionNotice.set('');
-    this.http
-      .patch<WorkOrder>(`/api/v1/work-orders/${order.id}/status`, {
-        toStatus: this.target,
-        version: order.version,
-        reason: this.reason.trim() || null,
-        paymentOverride:
-          this.role === 'OWNER' &&
-          order.status === 'PRONTA' &&
-          this.target === 'ENTREGUE' &&
-          this.paymentOverride,
-      })
-      .pipe(takeUntilDestroyed(this.destroy))
-      .subscribe({
-        next: (updated) => {
-          this.order.set(updated);
-          this.changing.set(false);
-          this.target = '';
-          this.reason = '';
-          this.paymentOverride = false;
-          this.transitionNotice.set('Estado da OS atualizado.');
-        },
-        error: (error) => {
-          this.changing.set(false);
-          this.transitionError.set(
-            error.status === 409 && typeof error.error?.detail === 'string'
-              ? error.error.detail
-              : error.status === 403
-                ? 'Você não tem permissão para esta transição.'
-                : 'Não foi possível atualizar a OS. Tente novamente.',
-          );
-          if (error.error?.code === 'WORK_ORDER_VERSION_CONFLICT') this.retry.next();
-        },
-      });
+    const request = approving
+      ? this.http.post<WorkOrder>(`/api/v1/work-orders/${order.id}/approve`, {
+          version: order.version,
+          channel: this.approvalChannel,
+          justification: this.reason.trim(),
+        })
+      : delivering
+        ? this.http.post<WorkOrder>(`/api/v1/work-orders/${order.id}/deliver`, {
+            version: order.version,
+            warrantyDays: days,
+            reason: this.reason.trim() || null,
+            paymentOverride: this.role === 'OWNER' && !order.paymentSettled && this.paymentOverride,
+          })
+        : this.http.patch<WorkOrder>(`/api/v1/work-orders/${order.id}/status`, {
+            toStatus: this.target,
+            version: order.version,
+            reason: this.reason.trim() || null,
+            paymentOverride: false,
+          });
+    request.pipe(takeUntilDestroyed(this.destroy)).subscribe({
+      next: (updated) => {
+        this.order.set(updated);
+        this.changing.set(false);
+        this.target = '';
+        this.reason = '';
+        this.approvalChannel = '';
+        this.paymentOverride = false;
+        this.transitionNotice.set(
+          approving
+            ? 'Aprovação manual registrada com justificativa.'
+            : delivering
+              ? 'Entrega confirmada. A OS foi encerrada.'
+              : 'Estado da OS atualizado.',
+        );
+      },
+      error: (error) => {
+        this.changing.set(false);
+        this.transitionError.set(
+          error.status === 409 && typeof error.error?.detail === 'string'
+            ? error.error.detail
+            : error.status === 403
+              ? 'Você não tem permissão para esta transição.'
+              : 'Não foi possível atualizar a OS. Tente novamente.',
+        );
+        if (error.error?.code === 'WORK_ORDER_VERSION_CONFLICT') this.retry.next();
+      },
+    });
   }
   private readonly route = inject(ActivatedRoute);
   private readonly destroy = inject(DestroyRef);
@@ -345,7 +449,10 @@ export class WorkOrderDetail implements OnInit {
             this.transitionNotice.set('');
           }
           this.viewRequest++;
+          this.downloadingPdf.set(false);
+          this.pdfError.set('');
           this.itemsSaving.set(false);
+          this.quotesSaving.set(false);
           this.diagnosing.set(false);
           this.historyLoading.set(false);
           this.historyShown.set(false);
@@ -357,7 +464,9 @@ export class WorkOrderDetail implements OnInit {
           this.assignmentNotice.set('');
           this.target = '';
           this.reason = '';
+          this.approvalChannel = '';
           this.paymentOverride = false;
+          this.warrantyDays = 0;
           this.order.set(null);
           this.loading.set(true);
           this.error.set('');

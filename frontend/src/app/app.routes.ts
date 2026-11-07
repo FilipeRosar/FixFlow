@@ -7,6 +7,11 @@ export const routes: Routes = [
     loadComponent: () => import('./features/home/pages/home/home').then((m) => m.Home),
   },
   {
+    path: 'orcamento',
+    title: 'Seu orçamento — FixFlow',
+    loadComponent: () => import('./features/public-quote/public-quote').then((m) => m.PublicQuote),
+  },
+  {
     path: 'entrar',
     title: 'Entrar — FixFlow',
     loadComponent: () => import('./features/auth/pages/login/login').then((m) => m.Login),

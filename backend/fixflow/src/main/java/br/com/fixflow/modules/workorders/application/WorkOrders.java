@@ -7,10 +7,13 @@ import java.util.UUID;
 public interface WorkOrders {
     WorkOrder open(UUID customerId, UUID equipmentId, String reportedIssue, List<String> receivedAccessories, String physicalCondition);
     WorkOrder get(UUID id);
+    byte[] pdf(UUID id, boolean delivery);
     record Page(List<WorkOrder> content, long totalElements, int page, int size) { }
     Page search(UUID technicianId, String status, boolean openOnly, int page, int size);
     record Technician(UUID userId, String fullName) { }
     List<Technician> technicians();
     WorkOrder assignTechnician(UUID id, UUID technicianId, int version);
+    WorkOrder approveManually(UUID id, int version, String channel, String justification, String ip, String userAgent);
+    WorkOrder deliver(UUID id, int version, int warrantyDays, String reason, boolean paymentOverride);
     WorkOrder transition(UUID id, String toStatus, int version, String reason, boolean paymentOverride);
 }
