@@ -25,6 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class WorkOrderItemsT6T7IntegrationTest {
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
     br.com.fixflow.shared.application.audit.AuditService audit;
+    @Autowired br.com.fixflow.modules.inventory.infrastructure.InventoryReconciliationJob reconciliation;
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
     @Autowired Environment environment;
@@ -148,6 +149,60 @@ class WorkOrderItemsT6T7IntegrationTest {
             assertEquals(0, new java.math.BigDecimal(expected).compareTo(admin.queryForObject("SELECT coalesce(sum(quantity),0) FROM inventory_movements WHERE part_id = ?", java.math.BigDecimal.class, part)));
         });
     }
+    @Test void reconciliationDetectsPerTenantAndResolvesWithoutChangingStockOrLedger() throws Exception {
+        UUID local = part(fixture.tenantA, "2.125"), foreign = part(fixture.tenantB, "3"), empty = part(fixture.tenantA, "0");
+        reconciliation.reconcileAll();
+        inTenant(fixture.tenantA, () -> assertEquals(0, admin.queryForObject(
+                "SELECT count(*) FROM inventory_reconciliation_alerts WHERE tenant_id = ?", Integer.class, fixture.tenantA)));
+        inTenant(fixture.tenantA, () -> admin.update("UPDATE parts SET quantity_on_hand = 1.125 WHERE id = ?", local));
+        inTenant(fixture.tenantB, () -> admin.update("UPDATE parts SET quantity_on_hand = 4, active = false WHERE id = ?", foreign));
+        reconciliation.reconcileAll();
+        var result = mvc.perform(get("/api/v1/parts/reconciliation-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].partId").value(local.toString()))
+                .andExpect(jsonPath("$[0].movementQuantity").value(2.125))
+                .andExpect(jsonPath("$[0].quantityOnHand").value(1.125)).andReturn();
+        String alertId = mapper.readTree(result.getResponse().getContentAsString()).get(0).get("id").asText();
+        reconciliation.reconcileAll();
+        inTenant(fixture.tenantA, () -> {
+            assertEquals(1, admin.queryForObject("SELECT count(*) FROM inventory_reconciliation_alerts WHERE tenant_id = ?", Integer.class, fixture.tenantA));
+            assertEquals(new java.math.BigDecimal("1.125"), admin.queryForObject("SELECT quantity_on_hand FROM parts WHERE id = ?", java.math.BigDecimal.class, local));
+            assertEquals(1, admin.queryForObject("SELECT count(*) FROM inventory_movements WHERE part_id = ?", Integer.class, local));
+            admin.update("UPDATE parts SET quantity_on_hand = 2.125 WHERE id = ?", local);
+        });
+        inTenant(fixture.tenantB, () -> assertEquals(1, admin.queryForObject(
+                "SELECT count(*) FROM inventory_reconciliation_alerts WHERE part_id = ? AND resolved_at IS NULL", Integer.class, foreign)));
+        reconciliation.reconcileAll();
+        mvc.perform(get("/api/v1/parts/reconciliation-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        inTenant(fixture.tenantA, () -> {
+            assertNotNull(admin.queryForObject("SELECT resolved_at FROM inventory_reconciliation_alerts WHERE id = ?", java.sql.Timestamp.class, UUID.fromString(alertId)));
+            // Missing movements count as zero, including when a nonzero balance is present.
+            admin.update("UPDATE parts SET quantity_on_hand = -1 WHERE id = ?", empty);
+        });
+        reconciliation.reconcileAll();
+        mvc.perform(get("/api/v1/parts/reconciliation-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].partId").value(empty.toString())).andExpect(jsonPath("$[0].movementQuantity").value(0));
+    }
+
+    @Test void reconciliationSkipsLockedTenantAndProcessesOtherTenants() {
+        UUID local = part(fixture.tenantA, "1"), foreign = part(fixture.tenantB, "1");
+        inTenant(fixture.tenantA, () -> admin.update("UPDATE parts SET quantity_on_hand = 2 WHERE id = ?", local));
+        inTenant(fixture.tenantB, () -> admin.update("UPDATE parts SET quantity_on_hand = 2 WHERE id = ?", foreign));
+        inTenant(fixture.tenantA, () -> {
+            admin.queryForObject("SELECT pg_try_advisory_xact_lock(hashtextextended(?, 43043))", Boolean.class, fixture.tenantA.toString());
+            reconciliation.reconcileAll();
+            assertEquals(0, admin.queryForObject("SELECT count(*) FROM inventory_reconciliation_alerts WHERE part_id = ?", Integer.class, local));
+        });
+        inTenant(fixture.tenantB, () -> assertEquals(1, admin.queryForObject(
+                "SELECT count(*) FROM inventory_reconciliation_alerts WHERE part_id = ?", Integer.class, foreign)));
+        reconciliation.reconcileAll();
+        inTenant(fixture.tenantA, () -> assertEquals(1, admin.queryForObject(
+                "SELECT count(*) FROM inventory_reconciliation_alerts WHERE part_id = ?", Integer.class, local)));
+        assertTrue(br.com.fixflow.shared.infrastructure.tenant.TenantContext.getTenantId().isEmpty());
+    }
+
     @Test void minimumStockAlertsIncludeEqualityResolveAndReopenWithoutDuplicates() throws Exception {
         UUID order = maintenanceOrder(), local = part(fixture.tenantA, "2"), itemId = UUID.randomUUID();
         part(fixture.tenantB, "0");

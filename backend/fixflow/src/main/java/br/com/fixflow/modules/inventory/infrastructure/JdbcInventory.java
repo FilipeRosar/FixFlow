@@ -60,6 +60,18 @@ public class JdbcInventory implements Parts, StockOperations {
                     rs.getBigDecimal("min_quantity"), rs.getTimestamp("created_at").toInstant()), m.tenantId());
         });
     }
+    @Override public List<Parts.ReconciliationAlert> reconciliationAlerts() {
+        return tenants.execute(tenant(), m -> {
+            requirePermission(m.role().name(), "inventory:read");
+            return jdbc.query("""
+                    SELECT a.*, p.sku, p.name FROM public.inventory_reconciliation_alerts a
+                    JOIN public.parts p ON p.tenant_id = a.tenant_id AND p.id = a.part_id
+                    WHERE a.tenant_id = ? AND a.resolved_at IS NULL ORDER BY a.created_at DESC, a.id
+                    """, (rs, n) -> new Parts.ReconciliationAlert(rs.getObject("id", UUID.class), rs.getObject("part_id", UUID.class),
+                    rs.getString("sku"), rs.getString("name"), rs.getBigDecimal("movement_quantity"), rs.getBigDecimal("quantity_on_hand"),
+                    rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("last_checked_at").toInstant()), m.tenantId());
+        });
+    }
     @Override public Part create(String sku, String name, String unit, BigDecimal cost, BigDecimal price, BigDecimal minimum) {
         return tenants.execute(tenant(), m -> {
             if (!RolePermissions.forRole(m.role().name()).contains("inventory:write")) throw new AccessDeniedException("Cadastro de peças não autorizado.");

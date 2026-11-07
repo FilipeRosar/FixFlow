@@ -46,6 +46,7 @@ public class PartController {
     }
     @GetMapping("/below-minimum") public List<Part> belowMinimum() { return parts.belowMinimum(); }
     @GetMapping("/stock-alerts") public List<Parts.StockAlert> alerts() { return parts.alerts(); }
+    @GetMapping("/reconciliation-alerts") public List<Parts.ReconciliationAlert> reconciliationAlerts() { return parts.reconciliationAlerts(); }
     @GetMapping("/{id}") public Part get(@PathVariable UUID id) { return parts.get(id); }
     @PutMapping("/{id}") public Part update(@PathVariable UUID id, @Valid @RequestBody Request request) {
         if (request.version() == null) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST, "Versão obrigatória.");

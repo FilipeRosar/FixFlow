@@ -11,6 +11,9 @@ public interface Parts {
     record StockAlert(UUID id, UUID partId, String sku, String name, BigDecimal quantityOnHand,
                       BigDecimal minQuantity, java.time.Instant createdAt) { }
     List<StockAlert> alerts();
+    record ReconciliationAlert(UUID id, UUID partId, String sku, String name, BigDecimal movementQuantity,
+                               BigDecimal quantityOnHand, java.time.Instant createdAt, java.time.Instant lastCheckedAt) { }
+    List<ReconciliationAlert> reconciliationAlerts();
     Part create(String sku, String name, String unit, BigDecimal cost, BigDecimal salePrice,
                 BigDecimal minimum);
     Part get(UUID id);

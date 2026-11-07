@@ -21,6 +21,29 @@
     </div>
     <p>Custos, preços e disponibilidade<br />em um só lugar.</p>
   </div>
+  @if (reconciliationError()) {
+    <p role="alert">{{ reconciliationError() }}</p>
+  }
+  @if (reconciliationAlerts().length) {
+    <aside class="reconciliation-alert" role="alert" aria-labelledby="reconciliation-title">
+      <h2 id="reconciliation-title">Divergência no estoque</h2>
+      <p>
+        A conferência automática encontrou diferenças entre o saldo e as movimentações. Revise o
+        histórico das peças.
+      </p>
+      <ul>
+        @for (alert of reconciliationAlerts(); track alert.id) {
+          <li>
+            <strong>{{ alert.name }}</strong> <span class="sku">{{ alert.sku }}</span>
+            <span
+              >Saldo registrado: {{ alert.quantityOnHand | number: '1.0-3' }} · Soma das
+              movimentações: {{ alert.movementQuantity | number: '1.0-3' }}</span
+            >
+          </li>
+        }
+      </ul>
+    </aside>
+  }
   @if (belowMinimum().length) {
     <aside class="stock-alert" aria-labelledby="stock-alert-title" role="status">
       <span class="stock-alert-icon" aria-hidden="true">!</span>

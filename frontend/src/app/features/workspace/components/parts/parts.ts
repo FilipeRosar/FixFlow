@@ -16,6 +16,14 @@ interface Part {
   quantityOnHand: number;
   version: number;
 }
+interface ReconciliationAlert {
+  id: string;
+  partId: string;
+  sku: string;
+  name: string;
+  movementQuantity: number;
+  quantityOnHand: number;
+}
 @Component({
   selector: 'app-parts',
   imports: [FormsModule, CurrencyPipe, DecimalPipe],
@@ -26,6 +34,8 @@ export class PartsPanel {
   private readonly http = inject(HttpClient);
   private readonly destroy = inject(DestroyRef);
   protected readonly owner = inject(SessionService).session()?.role === 'OWNER';
+  protected readonly reconciliationAlerts = signal<ReconciliationAlert[]>([]);
+  protected readonly reconciliationError = signal('');
   protected readonly parts = signal<Part[]>([]);
   protected readonly belowMinimum = computed(() =>
     this.parts().filter((part) => part.quantityOnHand <= part.minQuantity),
@@ -88,12 +98,28 @@ export class PartsPanel {
       .subscribe({
         next: (parts) => {
           this.parts.set(parts);
+          this.loadReconciliationAlerts();
           this.busy.set(false);
         },
         error: () => {
           this.busy.set(false);
           this.error.set('Não foi possível carregar as peças. Tente novamente.');
         },
+      });
+  }
+  private loadReconciliationAlerts(): void {
+    this.http
+      .get<ReconciliationAlert[]>('/api/v1/parts/reconciliation-alerts')
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe({
+        next: (alerts) => {
+          this.reconciliationAlerts.set(alerts);
+          this.reconciliationError.set('');
+        },
+        error: () =>
+          this.reconciliationError.set(
+            'Não foi possível atualizar os alertas de reconciliação. Atualize a lista para tentar novamente.',
+          ),
       });
   }
   protected edit(part: Part): void {
