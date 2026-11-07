@@ -31,6 +31,33 @@ export class PartsPanel {
   protected readonly error = signal('');
   protected readonly notice = signal('');
   protected readonly deleting = signal<Part | null>(null);
+  protected moving: Part | null = null;
+  protected movement = { type: 'ENTRY', quantity: 1, unitCost: 0, reason: '' };
+  protected startMovement(part: Part): void {
+    this.moving = part;
+    this.movement = { type: 'ENTRY', quantity: 1, unitCost: part.cost, reason: '' };
+  }
+  protected saveMovement(): void {
+    if (!this.owner || this.busy() || !this.moving) return;
+    const adjustment = this.movement.type === 'ADJUSTMENT';
+    if (!this.movement.quantity || (!adjustment && this.movement.quantity <= 0)
+        || (adjustment && !this.movement.reason.trim())) return;
+    this.busy.set(true);
+    this.error.set('');
+    this.notice.set('');
+    this.http.post<Part>(`/api/v1/parts/${this.moving.id}/${adjustment ? 'adjustments' : 'entries'}`, {
+      quantity: this.movement.quantity,
+      version: this.moving.version,
+      ...(adjustment ? { reason: this.movement.reason } : { unitCost: this.movement.unitCost }),
+    }).pipe(takeUntilDestroyed(this.destroy)).subscribe({
+      next: () => {
+        this.moving = null;
+        this.notice.set('Movimentação registrada.');
+        this.load();
+      },
+      error: (error) => this.fail(error.status),
+    });
+  }
   protected editing: Part | null = null;
   protected form = this.empty();
   constructor() {

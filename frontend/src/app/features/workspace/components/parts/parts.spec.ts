@@ -66,6 +66,31 @@ describe('Parts catalog', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Nenhuma peça cadastrada');
   });
+  it('posts entries with cost and version and refreshes the balance', () => {
+    const fixture = setup();
+    fixture.componentInstance['startMovement'](part);
+    fixture.componentInstance['movement'].quantity = 3;
+    fixture.componentInstance['movement'].unitCost = 20;
+    fixture.componentInstance['saveMovement']();
+    const request = http.expectOne('/api/v1/parts/p1/entries');
+    expect(request.request.body).toEqual({ quantity: 3, unitCost: 20, version: 3 });
+    request.flush({ ...part, quantityOnHand: 8 });
+    http.expectOne('/api/v1/parts').flush([{ ...part, quantityOnHand: 8 }]);
+    expect(fixture.componentInstance['moving']).toBeNull();
+  });
+  it('requires a reason for adjustments and sends the signed quantity', () => {
+    const fixture = setup();
+    fixture.componentInstance['startMovement'](part);
+    fixture.componentInstance['movement'] = { type: 'ADJUSTMENT', quantity: -1, unitCost: 0, reason: ' ' };
+    fixture.componentInstance['saveMovement']();
+    http.expectNone('/api/v1/parts/p1/adjustments');
+    fixture.componentInstance['movement'].reason = 'Contagem física';
+    fixture.componentInstance['saveMovement']();
+    const request = http.expectOne('/api/v1/parts/p1/adjustments');
+    expect(request.request.body).toEqual({ quantity: -1, reason: 'Contagem física', version: 3 });
+    request.flush({}, { status: 409, statusText: 'Conflict' });
+    expect(fixture.componentInstance['moving']).toEqual(part);
+  });
   it('shows balances without write controls for attendants', () => {
     const fixture = setup('ATTENDANT');
     expect(fixture.nativeElement.querySelector('form')).toBeNull();

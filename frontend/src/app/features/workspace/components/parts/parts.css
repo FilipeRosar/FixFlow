@@ -441,3 +441,117 @@ tbody tr:hover {
     transition: none;
   }
 }
+
+.movement-editor {
+  border-color: #a490ed45;
+}
+.movement-editor .card-heading {
+  background: linear-gradient(110deg, #a490ed10, transparent 80%);
+}
+.movement-editor .eyebrow {
+  margin: 0 0 6px;
+  font-size: 8px;
+}
+.movement-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 22px 24px 0;
+  padding: 16px 18px;
+  background: #121721;
+  border: 1px solid #303749;
+  border-radius: 9px;
+}
+.movement-part {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.movement-part strong {
+  font-size: 14px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.movement-balance {
+  display: grid;
+  gap: 6px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.movement-balance > span {
+  color: #94a0b6;
+  font-size: 10px;
+}
+.movement-balance strong {
+  color: #a9dfc8;
+  font-size: 22px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+.movement-balance small {
+  color: #94a0b6;
+  font-size: 10px;
+  font-weight: 400;
+}
+.movement-editor fieldset {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.movement-editor select,
+.movement-editor textarea {
+  width: 100%;
+  min-height: 41px;
+  padding: 11px 12px;
+  border: 1px solid #353d50;
+  border-radius: 7px;
+  background: #121721;
+  color: #e4eaf5;
+  font: inherit;
+  font-size: 12px;
+  color-scheme: dark;
+}
+.movement-editor textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+.movement-editor textarea::placeholder {
+  color: #707e96;
+}
+.movement-editor select:focus,
+.movement-editor textarea:focus {
+  border-color: #a490ed;
+  outline: 2px solid #a490ed25;
+  outline-offset: 1px;
+}
+.movement-reason,
+.movement-info {
+  grid-column: 1 / -1;
+}
+.movement-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px 14px;
+  border-radius: 7px;
+  color: #b6a5d9;
+  background: #a490ed0c;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.movement-info p {
+  margin: 0;
+}
+@media (max-width: 850px) {
+  .movement-editor fieldset {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 540px) {
+  .movement-editor fieldset {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .movement-summary {
+    margin: 18px 18px 0;
+    padding: 14px;
+  }
+}

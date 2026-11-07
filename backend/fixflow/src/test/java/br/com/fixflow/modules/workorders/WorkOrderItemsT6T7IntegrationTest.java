@@ -66,6 +66,33 @@ class WorkOrderItemsT6T7IntegrationTest {
         });
         fixture.close();
     }
+    @Test void receivesAtWeightedAverageAndRequiresOwnerAdjustmentReason() throws Exception {
+        var created = mvc.perform(post("/api/v1/parts").header("Authorization", "Bearer " + token)
+                .contentType("application/json").content("{\"sku\":\"ENTRY-TEST\",\"name\":\"Peça\",\"unit\":\"UN\",\"cost\":10,\"salePrice\":30,\"minQuantity\":0}"))
+                .andExpect(status().isCreated()).andReturn();
+        String partId = mapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
+        String endpoint = "/api/v1/parts/" + partId;
+        mvc.perform(post(endpoint + "/entries").header("Authorization", "Bearer " + token).contentType("application/json")
+                .content("{\"quantity\":2,\"unitCost\":10,\"version\":0}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.cost").value(10));
+        mvc.perform(post(endpoint + "/entries").header("Authorization", "Bearer " + token).contentType("application/json")
+                .content("{\"quantity\":3,\"unitCost\":20,\"version\":1}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.cost").value(16)).andExpect(jsonPath("$.quantityOnHand").value(5));
+        mvc.perform(post(endpoint + "/adjustments").header("Authorization", "Bearer " + token).contentType("application/json")
+                .content("{\"quantity\":-1,\"reason\":\" \",\"version\":2}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post(endpoint + "/adjustments").header("Authorization", "Bearer " + token).contentType("application/json")
+                .content("{\"quantity\":-1,\"reason\":\"Contagem física\",\"version\":2}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.cost").value(16)).andExpect(jsonPath("$.quantityOnHand").value(4));
+        mvc.perform(post(endpoint + "/entries").header("Authorization", "Bearer " + token).contentType("application/json")
+                .content("{\"quantity\":1,\"unitCost\":10,\"version\":2}"))
+                .andExpect(status().isConflict());
+        role("ATTENDANT");
+        mvc.perform(post(endpoint + "/adjustments").header("Authorization", "Bearer " + token).contentType("application/json")
+                .content("{\"quantity\":1,\"reason\":\"Contagem\",\"version\":3}"))
+                .andExpect(status().isForbidden());
+    }
+
     UUID customer(UUID tenant, String name) {
         UUID id = UUID.randomUUID();
         inTenant(tenant, () -> admin.update("INSERT INTO customers(id, tenant_id, name) VALUES (?, ?, ?)", id, tenant, name));

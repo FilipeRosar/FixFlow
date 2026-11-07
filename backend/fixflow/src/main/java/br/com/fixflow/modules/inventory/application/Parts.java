@@ -11,5 +11,7 @@ public interface Parts {
                 BigDecimal minimum);
     Part get(UUID id);
     Part update(UUID id, String sku, String name, String unit, BigDecimal cost, BigDecimal salePrice, BigDecimal minimum, int version);
+    Part receive(UUID id, BigDecimal quantity, BigDecimal unitCost, int version);
+    Part adjust(UUID id, BigDecimal quantity, String reason, int version);
     void delete(UUID id, int version);
 }

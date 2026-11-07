@@ -99,6 +99,46 @@ public class JdbcInventory implements Parts, StockOperations {
             return null;
         });
     }
+    @Override public Part receive(UUID id, BigDecimal quantity, BigDecimal unitCost, int version) {
+        return changeStock(id, quantity, unitCost, null, version);
+    }
+    @Override public Part adjust(UUID id, BigDecimal quantity, String reason, int version) {
+        if (reason == null || reason.isBlank() || reason.length() > 500)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o motivo do ajuste.");
+        return changeStock(id, quantity, null, reason.strip(), version);
+    }
+    private Part changeStock(UUID id, BigDecimal quantity, BigDecimal unitCost, String reason, int version) {
+        return tenants.execute(tenant(), m -> {
+            requirePermission(m.role().name(), "inventory:write");
+            if (!m.role().name().equals("OWNER")) throw new AccessDeniedException("Operação exclusiva do Owner.");
+            var rows = jdbc.query("SELECT * FROM public.parts WHERE tenant_id = ? AND id = ? AND active FOR UPDATE", ROW, m.tenantId(), id);
+            if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Peça não encontrada.");
+            Part current = rows.getFirst();
+            if (current.version() != version) throw new ResponseStatusException(HttpStatus.CONFLICT, "Peça alterada. Atualize os dados.");
+            BigDecimal balance = current.quantityOnHand().add(quantity);
+            if (balance.signum() < 0 && !Boolean.TRUE.equals(jdbc.queryForObject(
+                    "SELECT coalesce((SELECT allow_negative_stock FROM public.tenant_settings WHERE tenant_id = ?), false)", Boolean.class, m.tenantId())))
+                throw new InsufficientStockException();
+            BigDecimal cost = current.cost();
+            if (unitCost != null) {
+                // A depleted or negative balance has no remaining stock value to carry forward.
+                BigDecimal available = current.quantityOnHand().max(BigDecimal.ZERO);
+                cost = available.multiply(cost).add(quantity.multiply(unitCost))
+                        .divide(available.add(quantity), 2, java.math.RoundingMode.HALF_UP);
+            }
+            Part updated = jdbc.query("""
+                    UPDATE public.parts SET quantity_on_hand = ?, cost = ?, version = version + 1
+                    WHERE tenant_id = ? AND id = ? RETURNING *
+                    """, ROW, balance, cost, m.tenantId(), id).getFirst();
+            jdbc.update("""
+                    INSERT INTO public.inventory_movements(id, tenant_id, part_id, type, quantity, unit_cost, created_by, reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, UUID.randomUUID(), m.tenantId(), id, unitCost == null ? "ADJUSTMENT" : "ENTRY",
+                    quantity, unitCost == null ? cost : unitCost, m.userId(), reason);
+            audit.record(m.userId(), unitCost == null ? "STOCK_ADJUSTED" : "STOCK_RECEIVED", "PART", id, "{}");
+            return updated;
+        });
+    }
     @Override @Transactional(propagation = Propagation.MANDATORY)
     public Part consume(UUID tenant, UUID actor, UUID part, UUID order, UUID item, BigDecimal quantity) {
         var exists = jdbc.queryForList("SELECT id FROM public.parts WHERE tenant_id = ? AND id = ? AND active", tenant, part);
