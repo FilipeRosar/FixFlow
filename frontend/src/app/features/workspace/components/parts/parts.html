@@ -21,6 +21,26 @@
     </div>
     <p>Custos, preços e disponibilidade<br />em um só lugar.</p>
   </div>
+  @if (belowMinimum().length) {
+    <aside class="stock-alert" aria-labelledby="stock-alert-title" role="status">
+      <span class="stock-alert-icon" aria-hidden="true">!</span>
+      <div>
+        <h2 id="stock-alert-title">Estoque precisa de atenção</h2>
+        <p>
+          {{ belowMinimum().length }}
+          {{
+            belowMinimum().length === 1
+              ? 'peça com saldo menor ou igual ao mínimo.'
+              : 'peças com saldo menor ou igual ao mínimo.'
+          }}
+          Confira os itens para planejar a reposição.
+        </p>
+      </div>
+      <button type="button" (click)="onlyBelowMinimum.set(true)">
+        Ver peças em alerta <span aria-hidden="true">↓</span>
+      </button>
+    </aside>
+  }
   @if (error()) {
     <p role="alert">{{ error() }}</p>
   }
@@ -245,10 +265,29 @@
       <div>
         <p class="eyebrow">SEU INVENTÁRIO</p>
         <h2>
-          Peças ativas <span class="count">{{ parts().length }}</span>
+          {{ onlyBelowMinimum() ? 'Peças no mínimo ou abaixo' : 'Peças ativas' }}
+          <span class="count">{{ visibleParts().length }}</span>
         </h2>
       </div>
       <span class="read-only-note">Saldo atualizado por movimentações</span>
+    </div>
+    <div class="stock-filters" role="group" aria-label="Filtrar peças por saldo">
+      <button
+        type="button"
+        [class.selected]="!onlyBelowMinimum()"
+        [attr.aria-pressed]="!onlyBelowMinimum()"
+        (click)="onlyBelowMinimum.set(false)"
+      >
+        Todas as peças <span>{{ parts().length }}</span>
+      </button>
+      <button
+        type="button"
+        [class.selected]="onlyBelowMinimum()"
+        [attr.aria-pressed]="onlyBelowMinimum()"
+        (click)="onlyBelowMinimum.set(true)"
+      >
+        No mínimo ou abaixo <span>{{ belowMinimum().length }}</span>
+      </button>
     </div>
     <div class="table-scroll" [attr.aria-busy]="busy()">
       <table>
@@ -270,7 +309,7 @@
           </tr>
         </thead>
         <tbody>
-          @for (part of parts(); track part.id) {
+          @for (part of visibleParts(); track part.id) {
             <tr>
               <td>
                 <span class="sku">{{ part.sku }}</span>
@@ -282,9 +321,12 @@
               <td>{{ part.cost | currency: 'BRL' }}</td>
               <td>{{ part.salePrice | currency: 'BRL' }}</td>
               <td>
-                <span class="stock" [class.low]="part.quantityOnHand < part.minQuantity">{{
+                <span class="stock" [class.low]="part.quantityOnHand <= part.minQuantity">{{
                   part.quantityOnHand | number: '1.0-3'
                 }}</span>
+                @if (part.quantityOnHand <= part.minQuantity) {
+                  <span class="stock-warning">Repor estoque</span>
+                }
               </td>
               <td>{{ part.minQuantity | number: '1.0-3' }}</td>
               @if (owner) {
@@ -305,7 +347,13 @@
           } @empty {
             <tr>
               <td colspan="8" class="empty-state">
-                {{ busy() ? 'Carregando peças…' : 'Nenhuma peça cadastrada.' }}
+                {{
+                  busy()
+                    ? 'Carregando peças…'
+                    : onlyBelowMinimum()
+                      ? 'Nenhuma peça com saldo no mínimo ou abaixo.'
+                      : 'Nenhuma peça cadastrada.'
+                }}
               </td>
             </tr>
           }

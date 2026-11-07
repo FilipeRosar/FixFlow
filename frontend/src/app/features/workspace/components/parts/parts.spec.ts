@@ -81,7 +81,12 @@ describe('Parts catalog', () => {
   it('requires a reason for adjustments and sends the signed quantity', () => {
     const fixture = setup();
     fixture.componentInstance['startMovement'](part);
-    fixture.componentInstance['movement'] = { type: 'ADJUSTMENT', quantity: -1, unitCost: 0, reason: ' ' };
+    fixture.componentInstance['movement'] = {
+      type: 'ADJUSTMENT',
+      quantity: -1,
+      unitCost: 0,
+      reason: ' ',
+    };
     fixture.componentInstance['saveMovement']();
     http.expectNone('/api/v1/parts/p1/adjustments');
     fixture.componentInstance['movement'].reason = 'Contagem física';
@@ -90,6 +95,31 @@ describe('Parts catalog', () => {
     expect(request.request.body).toEqual({ quantity: -1, reason: 'Contagem física', version: 3 });
     request.flush({}, { status: 409, statusText: 'Conflict' });
     expect(fixture.componentInstance['moving']).toEqual(part);
+  });
+  it('alerts at equality and filters out parts above the minimum', () => {
+    const fixture = setup();
+    fixture.componentInstance['parts'].set([
+      part,
+      { ...part, id: 'p2', name: 'Tela', quantityOnHand: 2 },
+      { ...part, id: 'p3', name: 'Bateria', quantityOnHand: 1 },
+    ]);
+    fixture.detectChanges();
+    expect(fixture.componentInstance['belowMinimum']().length).toBe(2);
+    expect(fixture.nativeElement.querySelector('.stock-alert').textContent).toContain('2 peças');
+    expect(fixture.nativeElement.querySelectorAll('.stock.low').length).toBe(2);
+    fixture.nativeElement.querySelector('.stock-alert button').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('tbody tr').length).toBe(2);
+    expect(fixture.componentInstance['visibleParts']().map((item) => item.name)).toEqual([
+      'Tela',
+      'Bateria',
+    ]);
+    fixture.componentInstance['parts'].set([{ ...part, id: 'p2', quantityOnHand: 3 }]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.stock-alert')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain(
+      'Nenhuma peça com saldo no mínimo ou abaixo.',
+    );
   });
   it('shows balances without write controls for attendants', () => {
     const fixture = setup('ATTENDANT');

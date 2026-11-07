@@ -1,4 +1,4 @@
-import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { CurrencyPipe, DecimalPipe } from '@angular/common';
@@ -27,6 +27,13 @@ export class PartsPanel {
   private readonly destroy = inject(DestroyRef);
   protected readonly owner = inject(SessionService).session()?.role === 'OWNER';
   protected readonly parts = signal<Part[]>([]);
+  protected readonly belowMinimum = computed(() =>
+    this.parts().filter((part) => part.quantityOnHand <= part.minQuantity),
+  );
+  protected readonly onlyBelowMinimum = signal(false);
+  protected readonly visibleParts = computed(() =>
+    this.onlyBelowMinimum() ? this.belowMinimum() : this.parts(),
+  );
   protected readonly busy = signal(false);
   protected readonly error = signal('');
   protected readonly notice = signal('');
@@ -40,23 +47,30 @@ export class PartsPanel {
   protected saveMovement(): void {
     if (!this.owner || this.busy() || !this.moving) return;
     const adjustment = this.movement.type === 'ADJUSTMENT';
-    if (!this.movement.quantity || (!adjustment && this.movement.quantity <= 0)
-        || (adjustment && !this.movement.reason.trim())) return;
+    if (
+      !this.movement.quantity ||
+      (!adjustment && this.movement.quantity <= 0) ||
+      (adjustment && !this.movement.reason.trim())
+    )
+      return;
     this.busy.set(true);
     this.error.set('');
     this.notice.set('');
-    this.http.post<Part>(`/api/v1/parts/${this.moving.id}/${adjustment ? 'adjustments' : 'entries'}`, {
-      quantity: this.movement.quantity,
-      version: this.moving.version,
-      ...(adjustment ? { reason: this.movement.reason } : { unitCost: this.movement.unitCost }),
-    }).pipe(takeUntilDestroyed(this.destroy)).subscribe({
-      next: () => {
-        this.moving = null;
-        this.notice.set('Movimentação registrada.');
-        this.load();
-      },
-      error: (error) => this.fail(error.status),
-    });
+    this.http
+      .post<Part>(`/api/v1/parts/${this.moving.id}/${adjustment ? 'adjustments' : 'entries'}`, {
+        quantity: this.movement.quantity,
+        version: this.moving.version,
+        ...(adjustment ? { reason: this.movement.reason } : { unitCost: this.movement.unitCost }),
+      })
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe({
+        next: () => {
+          this.moving = null;
+          this.notice.set('Movimentação registrada.');
+          this.load();
+        },
+        error: (error) => this.fail(error.status),
+      });
   }
   protected editing: Part | null = null;
   protected form = this.empty();

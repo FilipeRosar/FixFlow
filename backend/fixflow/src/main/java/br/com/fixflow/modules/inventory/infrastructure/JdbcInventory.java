@@ -41,6 +41,25 @@ public class JdbcInventory implements Parts, StockOperations {
             return jdbc.query("SELECT * FROM public.parts WHERE tenant_id = ? AND active ORDER BY name, id", ROW, m.tenantId());
         });
     }
+    @Override public List<Part> belowMinimum() {
+        return tenants.execute(tenant(), m -> {
+            requirePermission(m.role().name(), "inventory:read");
+            return jdbc.query("SELECT * FROM public.parts WHERE tenant_id = ? AND active AND quantity_on_hand <= min_quantity ORDER BY name, id", ROW, m.tenantId());
+        });
+    }
+    @Override public List<Parts.StockAlert> alerts() {
+        return tenants.execute(tenant(), m -> {
+            requirePermission(m.role().name(), "inventory:read");
+            return jdbc.query("""
+                    SELECT a.id, a.part_id, p.sku, p.name, p.quantity_on_hand, p.min_quantity, a.created_at
+                    FROM public.inventory_alerts a JOIN public.parts p ON p.tenant_id = a.tenant_id AND p.id = a.part_id
+                    WHERE a.tenant_id = ? AND a.resolved_at IS NULL AND p.active
+                    ORDER BY a.created_at DESC, a.id
+                    """, (rs, n) -> new Parts.StockAlert(rs.getObject("id", UUID.class), rs.getObject("part_id", UUID.class),
+                    rs.getString("sku"), rs.getString("name"), rs.getBigDecimal("quantity_on_hand"),
+                    rs.getBigDecimal("min_quantity"), rs.getTimestamp("created_at").toInstant()), m.tenantId());
+        });
+    }
     @Override public Part create(String sku, String name, String unit, BigDecimal cost, BigDecimal price, BigDecimal minimum) {
         return tenants.execute(tenant(), m -> {
             if (!RolePermissions.forRole(m.role().name()).contains("inventory:write")) throw new AccessDeniedException("Cadastro de peças não autorizado.");

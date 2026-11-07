@@ -41,7 +41,11 @@ public class PartController {
         if (request.quantity().signum() == 0) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantidade deve ser diferente de zero.");
         return parts.adjust(id, request.quantity(), request.reason(), request.version());
     }
-    @GetMapping public List<Part> list() { return parts.list(); }
+    @GetMapping public List<Part> list(@RequestParam(defaultValue = "false") boolean belowMinimum) {
+        return belowMinimum ? parts.belowMinimum() : parts.list();
+    }
+    @GetMapping("/below-minimum") public List<Part> belowMinimum() { return parts.belowMinimum(); }
+    @GetMapping("/stock-alerts") public List<Parts.StockAlert> alerts() { return parts.alerts(); }
     @GetMapping("/{id}") public Part get(@PathVariable UUID id) { return parts.get(id); }
     @PutMapping("/{id}") public Part update(@PathVariable UUID id, @Valid @RequestBody Request request) {
         if (request.version() == null) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST, "Versão obrigatória.");

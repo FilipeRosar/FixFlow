@@ -148,6 +148,38 @@ class WorkOrderItemsT6T7IntegrationTest {
             assertEquals(0, new java.math.BigDecimal(expected).compareTo(admin.queryForObject("SELECT coalesce(sum(quantity),0) FROM inventory_movements WHERE part_id = ?", java.math.BigDecimal.class, part)));
         });
     }
+    @Test void minimumStockAlertsIncludeEqualityResolveAndReopenWithoutDuplicates() throws Exception {
+        UUID order = maintenanceOrder(), local = part(fixture.tenantA, "2"), itemId = UUID.randomUUID();
+        part(fixture.tenantB, "0");
+        mvc.perform(get("/api/v1/parts?belowMinimum=true").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(get("/api/v1/parts/stock-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        add(order, item(itemId, local, 0, "2")).andExpect(status().isCreated());
+        mvc.perform(get("/api/v1/parts?belowMinimum=true").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(local.toString()));
+        var alert = mvc.perform(get("/api/v1/parts/stock-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)).andReturn();
+        String alertId = mapper.readTree(alert.getResponse().getContentAsString()).get(0).get("id").asText();
+        inTenant(fixture.tenantA, () -> admin.update("UPDATE parts SET min_quantity = 1 WHERE id = ?", local));
+        mvc.perform(get("/api/v1/parts/stock-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(alertId));
+        remove(order, itemId, 1).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/parts/stock-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        inTenant(fixture.tenantA, () -> admin.update("UPDATE parts SET min_quantity = 2 WHERE id = ?", local));
+        mvc.perform(get("/api/v1/parts/below-minimum").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
+        inTenant(fixture.tenantA, () -> {
+            assertEquals(2, admin.queryForObject("SELECT count(*) FROM inventory_alerts WHERE part_id = ?", Integer.class, local));
+            assertEquals(1, admin.queryForObject("SELECT count(*) FROM inventory_alerts WHERE part_id = ? AND resolved_at IS NULL", Integer.class, local));
+            admin.update("UPDATE parts SET active = false WHERE id = ?", local);
+        });
+        mvc.perform(get("/api/v1/parts/stock-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+    }
+
     @Test void t6ConsumesAndReturnsAtomicallyWithIdempotentRetriesAndSnapshotCost() throws Exception {
         UUID order = maintenanceOrder(), part = part(fixture.tenantA, "2"), item = UUID.randomUUID();
         var body = item(item, part, 0, "1.25");
