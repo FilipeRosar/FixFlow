@@ -80,7 +80,6 @@ export class WorkOrderItemsPanel {
   protected partName = '';
   protected partCost = 0;
   protected partPrice = 0;
-  protected initialQuantity = 0;
   protected toggle(): void {
     this.open.update((value) => !value);
     if (this.open() && !this.loaded()) this.load();
@@ -233,7 +232,6 @@ export class WorkOrderItemsPanel {
         unit: 'UN',
         cost: this.partCost,
         salePrice: this.partPrice,
-        quantity: this.initialQuantity,
         minQuantity: 0,
       })
       .pipe(takeUntilDestroyed(this.destroy))
@@ -246,7 +244,6 @@ export class WorkOrderItemsPanel {
           this.selectPart();
           this.sku = '';
           this.partName = '';
-          this.initialQuantity = 0;
           this.notice.set('Peça cadastrada. Adicione o item para registrar o consumo na OS.');
         },
         error: (error) => this.fail(error),

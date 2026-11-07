@@ -233,15 +233,52 @@ class WorkOrderItemsT6T7IntegrationTest {
         });
     }
     @Test void catalogNormalizesSkuAndEnforcesTenantUniquenessAndOwnerWrites() throws Exception {
-        var body = Map.of("sku", " tela-1 ", "name", "Tela", "unit", "UN", "cost", 10, "salePrice", 20, "quantity", 3, "minQuantity", 1);
+        var body = Map.of("sku", " tela-1 ", "name", "Tela", "unit", "UN", "cost", 10, "salePrice", 20, "minQuantity", 1);
         mvc.perform(post("/api/v1/parts").header("Authorization", "Bearer " + token).contentType("application/json").content(mapper.writeValueAsString(body)))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.sku").value("TELA-1")).andExpect(jsonPath("$.quantityOnHand").value(3));
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.sku").value("TELA-1")).andExpect(jsonPath("$.quantityOnHand").value(0));
         mvc.perform(post("/api/v1/parts").header("Authorization", "Bearer " + token).contentType("application/json").content(mapper.writeValueAsString(body)))
                 .andExpect(status().isConflict());
         role("ATTENDANT");
         mvc.perform(get("/api/v1/parts").header("Authorization", "Bearer " + token)).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
         mvc.perform(post("/api/v1/parts").header("Authorization", "Bearer " + token).contentType("application/json").content(mapper.writeValueAsString(body)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test void partCrudPreservesBalanceAndSoftDeletesWithVersionControl() throws Exception {
+        UUID id = part(fixture.tenantA, "5");
+        String path = "/api/v1/parts/" + id;
+        var body = new HashMap<String, Object>(Map.of("sku", " NEW-SKU ", "name", "Nova peça", "unit", "UN",
+                "cost", 12, "salePrice", 30, "minQuantity", 2, "version", 0));
+        mvc.perform(get(path).header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        body.put("quantityOnHand", 100);
+        mvc.perform(put(path).header("Authorization", "Bearer " + token).contentType("application/json").content(mapper.writeValueAsString(body))).andExpect(status().isBadRequest());
+        body.remove("quantityOnHand");
+        mvc.perform(put(path).header("Authorization", "Bearer " + token).contentType("application/json").content(mapper.writeValueAsString(body)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1)).andExpect(jsonPath("$.sku").value("NEW-SKU"));
+        balance(id, "5");
+        mvc.perform(put(path).header("Authorization", "Bearer " + token).contentType("application/json").content(mapper.writeValueAsString(body))).andExpect(status().isConflict());
+        mvc.perform(delete(path).param("version", "0").header("Authorization", "Bearer " + token)).andExpect(status().isConflict());
+        mvc.perform(delete(path).param("version", "1").header("Authorization", "Bearer " + token)).andExpect(status().isNoContent());
+        mvc.perform(get(path).header("Authorization", "Bearer " + token)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/parts").header("Authorization", "Bearer " + token)).andExpect(jsonPath("$.length()").value(0));
+        balance(id, "5");
+        inTenant(fixture.tenantA, () -> assertEquals(false, admin.queryForObject("SELECT active FROM parts WHERE id = ?", Boolean.class, id)));
+        mvc.perform(post("/api/v1/parts").header("Authorization", "Bearer " + token).contentType("application/json").content(mapper.writeValueAsString(body))).andExpect(status().isConflict());
+    }
+    @Test void partCrudIsolatesTenantsAndRejectsInitialBalance() throws Exception {
+        UUID foreign = part(fixture.tenantB, "2");
+        var body = new HashMap<String, Object>(Map.of("sku", "NEW", "name", "Tela", "unit", "UN",
+                "cost", 10, "salePrice", 20, "minQuantity", 1, "version", 0));
+        String path = "/api/v1/parts/" + foreign;
+        mvc.perform(get(path).header("Authorization", "Bearer " + token)).andExpect(status().isNotFound());
+        mvc.perform(put(path).header("Authorization", "Bearer " + token).contentType("application/json").content(mapper.writeValueAsString(body))).andExpect(status().isNotFound());
+        mvc.perform(delete(path).param("version", "0").header("Authorization", "Bearer " + token)).andExpect(status().isNotFound());
+        body.put("quantity", 3);
+        mvc.perform(post("/api/v1/parts").header("Authorization", "Bearer " + token).contentType("application/json").content(mapper.writeValueAsString(body))).andExpect(status().isBadRequest());
+        body.remove("quantity");
+        role("TECHNICIAN");
+        mvc.perform(put(path).header("Authorization", "Bearer " + token).contentType("application/json").content(mapper.writeValueAsString(body))).andExpect(status().isForbidden());
+        mvc.perform(delete(path).param("version", "0").header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
     }
 
 }

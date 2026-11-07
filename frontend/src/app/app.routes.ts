@@ -57,6 +57,14 @@ export const routes: Routes = [
       import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
   },
   {
+    path: 'inicio/pecas',
+    title: 'Peças e estoque — FixFlow',
+    data: { page: 'parts' },
+    canActivate: [sessionGuard],
+    loadComponent: () =>
+      import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
+  },
+  {
     path: 'inicio/equipamentos',
     title: 'Equipamentos — FixFlow',
     data: { page: 'equipment' },
