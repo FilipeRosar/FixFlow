@@ -186,20 +186,11 @@
                         [(ngModel)]="partPrice"
                         required
                         min="0"
-                        step="0.01" /></label
-                    ><label
-                      >Saldo inicial<input
-                        name="initialQuantity"
-                        type="number"
-                        [(ngModel)]="initialQuantity"
-                        required
-                        min="0"
-                        step="0.001"
+                        step="0.01"
                     /></label>
                   </div>
                   <p class="item-hint">
-                    O saldo inicial gera uma entrada de estoque. O consumo só ocorre ao adicionar a
-                    peça à OS.
+                    O saldo começa em zero e é alterado por movimentações de estoque.
                   </p>
                   <button
                     type="submit"

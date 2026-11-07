@@ -1,3 +1,4 @@
+import { PartsPanel } from '../../components/parts/parts';
 import { Overview } from '../../components/overview/overview';
 import { WorkOrderQueue } from '../../components/work-order-queue/work-order-queue';
 import { WorkOrderDetail } from '../../components/work-order-detail/work-order-detail';
@@ -22,6 +23,7 @@ import { Membership } from '../../../../core/auth/dto/session';
   selector: 'app-workspace',
   imports: [
     Overview,
+    PartsPanel,
     WorkOrderQueue,
     WorkOrderDetail,
     WorkOrdersPanel,
@@ -51,6 +53,10 @@ export class Workspace implements OnInit {
   );
   protected readonly ordersPage = toSignal(
     inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'orders')),
+    { initialValue: false },
+  );
+  protected readonly partsPage = toSignal(
+    inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'parts')),
     { initialValue: false },
   );
   protected readonly equipmentPage = toSignal(
@@ -99,6 +105,7 @@ export class Workspace implements OnInit {
     { label: 'Ordens de serviço', icon: 'orders' },
     { label: 'Clientes', icon: 'clients' },
     { label: 'Equipamentos', icon: 'devices' },
+    { label: 'Peças e estoque', icon: 'parts' },
     { label: 'Financeiro', icon: 'finance' },
     { label: 'Configurações', icon: 'settings' },
   ];

@@ -41,18 +41,62 @@ public class JdbcInventory implements Parts, StockOperations {
             return jdbc.query("SELECT * FROM public.parts WHERE tenant_id = ? AND active ORDER BY name, id", ROW, m.tenantId());
         });
     }
-    @Override public Part create(String sku, String name, String unit, BigDecimal cost, BigDecimal price, BigDecimal quantity, BigDecimal minimum) {
+    @Override public Part create(String sku, String name, String unit, BigDecimal cost, BigDecimal price, BigDecimal minimum) {
         return tenants.execute(tenant(), m -> {
             if (!RolePermissions.forRole(m.role().name()).contains("inventory:write")) throw new AccessDeniedException("Cadastro de peças não autorizado.");
             UUID id = UUID.randomUUID();
             var rows = jdbc.query("""
-                    INSERT INTO public.parts(id, tenant_id, sku, name, unit, cost, sale_price, quantity_on_hand, min_quantity)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (tenant_id, sku) DO NOTHING RETURNING *
-                    """, ROW, id, m.tenantId(), sku, name, unit, cost, price, quantity, minimum);
+                    INSERT INTO public.parts(id, tenant_id, sku, name, unit, cost, sale_price, min_quantity)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (tenant_id, sku) DO NOTHING RETURNING *
+                    """, ROW, id, m.tenantId(), sku, name, unit, cost, price, minimum);
             if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.CONFLICT, "SKU já cadastrado nesta empresa.");
-            if (quantity.signum() > 0) movement(m.tenantId(), m.userId(), id, null, null, "ENTRY", quantity, cost);
             audit.record(m.userId(), "PART_CREATED", "PART", id, "{}");
             return rows.getFirst();
+        });
+    }
+    @Override public Part get(UUID id) {
+        return tenants.execute(tenant(), m -> {
+            requirePermission(m.role().name(), "inventory:read");
+            return find(m.tenantId(), id);
+        });
+    }
+    private void requirePermission(String role, String permission) {
+        if (!RolePermissions.forRole(role).contains(permission)) throw new AccessDeniedException("Operação de peças não autorizada.");
+    }
+    private Part find(UUID tenant, UUID id) {
+        var rows = jdbc.query("SELECT * FROM public.parts WHERE tenant_id = ? AND id = ? AND active", ROW, tenant, id);
+        if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Peça não encontrada.");
+        return rows.getFirst();
+    }
+    @Override public Part update(UUID id, String sku, String name, String unit, BigDecimal cost, BigDecimal price, BigDecimal minimum, int version) {
+        try {
+            return tenants.execute(tenant(), m -> {
+                requirePermission(m.role().name(), "inventory:write");
+                find(m.tenantId(), id);
+                var rows = jdbc.query("""
+                        UPDATE public.parts SET sku = ?, name = ?, unit = ?, cost = ?, sale_price = ?,
+                            min_quantity = ?, version = version + 1
+                        WHERE tenant_id = ? AND id = ? AND active AND version = ? RETURNING *
+                        """, ROW, sku, name, unit, cost, price, minimum, m.tenantId(), id, version);
+                if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Peça alterada. Atualize os dados.");
+                audit.record(m.userId(), "PART_UPDATED", "PART", id, "{}");
+                return rows.getFirst();
+            });
+        } catch (org.springframework.dao.DuplicateKeyException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "SKU já cadastrado nesta empresa.");
+        }
+    }
+    @Override public void delete(UUID id, int version) {
+        tenants.execute(tenant(), m -> {
+            requirePermission(m.role().name(), "inventory:write");
+            find(m.tenantId(), id);
+            int changed = jdbc.update("""
+                    UPDATE public.parts SET active = false, version = version + 1
+                    WHERE tenant_id = ? AND id = ? AND active AND version = ?
+                    """, m.tenantId(), id, version);
+            if (changed == 0) throw new ResponseStatusException(HttpStatus.CONFLICT, "Peça alterada. Atualize os dados.");
+            audit.record(m.userId(), "PART_DELETED", "PART", id, "{}");
+            return null;
         });
     }
     @Override @Transactional(propagation = Propagation.MANDATORY)

@@ -94,6 +94,7 @@
           !settingsPage() &&
           !customersPage() &&
           !equipmentPage() &&
+          !partsPage() &&
           !ordersPage() &&
           !orderDetailPage() &&
           !queuePage()
@@ -103,6 +104,7 @@
           !settingsPage() &&
           !customersPage() &&
           !equipmentPage() &&
+          !partsPage() &&
           !ordersPage() &&
           !orderDetailPage() &&
           !queuePage()
@@ -152,6 +154,16 @@
               <svg class="icon" aria-hidden="true"><use href="#op-settings" /></svg
               ><span>Configurações</span>
             </a>
+          } @else if (item.icon === 'parts') {
+            <a
+              class="nav-item"
+              routerLink="/inicio/pecas"
+              [class.active]="partsPage()"
+              [attr.aria-current]="partsPage() ? 'page' : null"
+              (click)="closeMenu()"
+              ><svg class="icon" aria-hidden="true"><use href="#op-devices" /></svg
+              ><span>Peças e estoque</span></a
+            >
           } @else if (item.icon === 'devices') {
             <a
               class="nav-item"
@@ -238,17 +250,19 @@
               ? historyPage()
                 ? 'Histórico do cliente'
                 : 'Clientes'
-              : equipmentPage()
-                ? 'Equipamentos'
-                : ordersPage()
-                  ? 'Abrir OS'
-                  : orderDetailPage()
-                    ? 'Consultar OS'
-                    : queuePage()
-                      ? session()?.role === 'TECHNICIAN'
-                        ? 'Minha fila'
-                        : 'Ordens de serviço'
-                      : 'Visão geral'
+              : partsPage()
+                ? 'Peças e estoque'
+                : equipmentPage()
+                  ? 'Equipamentos'
+                  : ordersPage()
+                    ? 'Abrir OS'
+                    : orderDetailPage()
+                      ? 'Consultar OS'
+                      : queuePage()
+                        ? session()?.role === 'TECHNICIAN'
+                          ? 'Minha fila'
+                          : 'Ordens de serviço'
+                        : 'Visão geral'
         }}</strong>
       </div>
       <span class="development"><span aria-hidden="true">●</span> Em desenvolvimento</span>
@@ -260,6 +274,8 @@
         <app-work-order-detail />
       } @else if (ordersPage()) {
         <app-work-orders />
+      } @else if (partsPage()) {
+        <app-parts />
       } @else if (equipmentPage()) {
         <app-equipment />
       } @else if (historyPage()) {
@@ -499,9 +515,7 @@
         <section class="connection-panel" aria-label="Acesso à empresa">
           <div>
             <h2>Seu ambiente de trabalho</h2>
-            <p>
-              Gerencie clientes, equipamentos e ordens de serviço da sua empresa.
-            </p>
+            <p>Gerencie clientes, equipamentos e ordens de serviço da sua empresa.</p>
           </div>
           <button
             id="verify-access"

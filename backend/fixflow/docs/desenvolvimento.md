@@ -1809,3 +1809,36 @@ preservação da decisão/validade.
 ```bash
 ./mvnw -Dtest='Quote*Test,PublicQuote*Test,ArchitectureTest' test
 ```
+
+## CRUD de peças (US-040)
+
+O catálogo usa `/api/v1/parts`, sempre no tenant do JWT e dentro do executor
+autorizado com RLS. Owner pode cadastrar, editar e excluir; Atendente e Técnico
+podem consultar.
+
+- `GET /api/v1/parts`: lista as peças ativas.
+- `GET /api/v1/parts/{id}`: consulta uma peça ativa; inexistente, excluída ou de
+  outro tenant retorna `404`.
+- `POST /api/v1/parts`: recebe `sku`, `name`, `unit`, `cost`, `salePrice` e
+  `minQuantity`; retorna `201` e `Location`.
+- `PUT /api/v1/parts/{id}`: recebe os mesmos campos e `version` obrigatória.
+- `DELETE /api/v1/parts/{id}?version=...`: retorna `204`, marca `active=false` e
+  preserva saldo, movimentações e referências das ordens de serviço.
+
+SKU é normalizado para maiúsculas sem espaços nas extremidades e permanece único
+por tenant, inclusive após exclusão. Conflitos de SKU ou de versão retornam `409`.
+Edição e exclusão incrementam a versão; movimentações também alteram a versão.
+Valores negativos, precisão excedida e campos obrigatórios inválidos retornam `400`.
+Custo e preço têm duas casas decimais; mínimo tem três.
+
+O saldo nasce em zero: `quantity` e `quantityOnHand` não podem receber valores no
+cadastro ou na edição (`400`). O CRUD não cria movimentações nem altera saldo.
+As entradas e os ajustes pertencem à US-041. A US-024 mantém consumo e devolução
+atômicos com movimentações. Exclusão, edição e cadastro são auditados na mesma
+transação. A estrutura existente da migration V31 atende esta história.
+
+A interface está em **Peças e estoque** (`/inicio/pecas`), com saldo somente para
+consulta, formulário de cadastro/edição para Owner e confirmação de exclusão.
+
+Validação: `./mvnw -Dtest=WorkOrderItemsT6T7IntegrationTest,ArchitectureTest test`;
+no frontend, `npm test -- --watch=false` e `npm run build`.

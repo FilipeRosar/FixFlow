@@ -1,0 +1,202 @@
+<section aria-labelledby="parts-title">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">CATÁLOGO DA OFICINA</p>
+      <h1 id="parts-title">Peças e estoque<span>.</span></h1>
+      <p class="subtitle">Cada peça no lugar certo. Mais controle para o próximo reparo.</p>
+    </div>
+    <button class="refresh" type="button" (click)="load()" [disabled]="busy()">
+      <span aria-hidden="true">↻</span> {{ busy() ? 'Atualizando…' : 'Atualizar lista' }}
+    </button>
+  </header>
+  <div class="catalog-summary">
+    <div class="summary-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="m12 3 9 5-9 5-9-5 9-5ZM3 8v9l9 5 9-5V8M12 13v9M7.5 5.5l9 5" />
+      </svg>
+    </div>
+    <div>
+      <span>CATÁLOGO ATIVO</span
+      ><strong>{{ busy() ? '…' : parts().length }} <small>peças cadastradas</small></strong>
+    </div>
+    <p>Custos, preços e disponibilidade<br />em um só lugar.</p>
+  </div>
+  @if (error()) {
+    <p role="alert">{{ error() }}</p>
+  }
+  @if (notice()) {
+    <p role="status">{{ notice() }}</p>
+  }
+  @if (owner) {
+    <form #partForm="ngForm" (ngSubmit)="save()" class="editor">
+      <div class="card-heading">
+        <span class="section-icon" aria-hidden="true">{{ editing ? '✎' : '+' }}</span>
+        <div>
+          <h2>{{ editing ? 'Editar peça' : 'Uma nova peça no catálogo' }}</h2>
+          <p>
+            {{
+              editing
+                ? 'Atualize os dados de ' + editing.name + '.'
+                : 'Preencha os detalhes para deixar tudo organizado.'
+            }}
+          </p>
+        </div>
+        <span class="tag">{{ editing ? 'EDIÇÃO' : 'NOVO CADASTRO' }}</span>
+      </div>
+      <fieldset [disabled]="busy()">
+        <legend>{{ editing ? 'Editar peça: ' + editing.name : 'Cadastrar peça' }}</legend>
+        <label
+          >SKU <span class="field-hint">Código único da peça</span
+          ><input
+            placeholder="Ex.: FNT-001"
+            name="sku"
+            [(ngModel)]="form.sku"
+            required
+            maxlength="80"
+        /></label>
+        <label class="name-field"
+          >Nome <span class="field-hint">Como a peça será identificada</span
+          ><input
+            placeholder="Ex.: Fonte de alimentação 65W"
+            name="name"
+            [(ngModel)]="form.name"
+            required
+            maxlength="200"
+        /></label>
+        <label
+          >Unidade <span class="field-hint">Ex.: UN, KG ou M</span
+          ><input name="unit" [(ngModel)]="form.unit" required maxlength="20"
+        /></label>
+        <label
+          >Custo (R$)<input
+            name="cost"
+            type="number"
+            [(ngModel)]="form.cost"
+            required
+            min="0"
+            max="999999999999.99"
+            step="0.01"
+        /></label>
+        <label
+          >Preço (R$)<input
+            name="price"
+            type="number"
+            [(ngModel)]="form.salePrice"
+            required
+            min="0"
+            max="999999999999.99"
+            step="0.01"
+        /></label>
+        <label
+          >Estoque mínimo<input
+            name="minimum"
+            type="number"
+            [(ngModel)]="form.minQuantity"
+            required
+            min="0"
+            max="99999999999.999"
+            step="0.001"
+        /></label>
+        <div class="form-footer">
+          <p class="balance-note">
+            <span aria-hidden="true">ⓘ</span> O saldo começa em zero e é alterado por movimentações
+            de estoque.
+          </p>
+          <div class="form-actions">
+            <button
+              class="primary"
+              type="submit"
+              [disabled]="
+                partForm.invalid || !form.sku.trim() || !form.name.trim() || !form.unit.trim()
+              "
+            >
+              {{ busy() ? 'Salvando…' : 'Salvar peça' }}
+            </button>
+            @if (editing) {
+              <button type="button" (click)="cancel()">Cancelar edição</button>
+            }
+          </div>
+        </div>
+      </fieldset>
+    </form>
+  }
+  @if (deleting(); as part) {
+    <div role="alert" class="delete-confirmation">
+      <p>Excluir a peça {{ part.name }}? O histórico será preservado.</p>
+      <button class="danger" type="button" (click)="remove()" [disabled]="busy()">
+        Confirmar exclusão
+      </button>
+      <button type="button" (click)="deleting.set(null)" [disabled]="busy()">Cancelar</button>
+    </div>
+  }
+  <div class="catalog-card">
+    <div class="list-heading">
+      <div>
+        <p class="eyebrow">SEU INVENTÁRIO</p>
+        <h2>
+          Peças ativas <span class="count">{{ parts().length }}</span>
+        </h2>
+      </div>
+      <span class="read-only-note">Saldo apenas para consulta</span>
+    </div>
+    <div class="table-scroll" [attr.aria-busy]="busy()">
+      <table>
+        <caption>
+          Peças ativas
+        </caption>
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Nome</th>
+            <th>Unidade</th>
+            <th>Custo</th>
+            <th>Preço</th>
+            <th>Saldo</th>
+            <th>Mínimo</th>
+            @if (owner) {
+              <th>Ações</th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (part of parts(); track part.id) {
+            <tr>
+              <td>
+                <span class="sku">{{ part.sku }}</span>
+              </td>
+              <td class="part-name">{{ part.name }}</td>
+              <td>
+                <span class="unit">{{ part.unit }}</span>
+              </td>
+              <td>{{ part.cost | currency: 'BRL' }}</td>
+              <td>{{ part.salePrice | currency: 'BRL' }}</td>
+              <td>
+                <span class="stock" [class.low]="part.quantityOnHand < part.minQuantity">{{
+                  part.quantityOnHand | number: '1.0-3'
+                }}</span>
+              </td>
+              <td>{{ part.minQuantity | number: '1.0-3' }}</td>
+              @if (owner) {
+                <td class="row-actions">
+                  <button type="button" (click)="edit(part)" [disabled]="busy()">
+                    <span aria-hidden="true">✎</span> Editar<span class="sr-only">
+                      {{ part.name }}</span
+                    ></button
+                  ><button type="button" (click)="deleting.set(part)" [disabled]="busy()">
+                    Excluir<span class="sr-only"> {{ part.name }}</span>
+                  </button>
+                </td>
+              }
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="8" class="empty-state">
+                {{ busy() ? 'Carregando peças…' : 'Nenhuma peça cadastrada.' }}
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
