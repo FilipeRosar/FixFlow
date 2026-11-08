@@ -24,6 +24,8 @@ public class ArchitectureTest {
     static final ArchRule only_authorized_executor_opens_tenant_scope = noClasses()
             .that().doNotHaveFullyQualifiedName("br.com.fixflow.shared.infrastructure.tenant.AuthorizedTenantExecutor")
             .and().doNotHaveFullyQualifiedName("br.com.fixflow.shared.infrastructure.outbox.OutboxPublisher")
+            // Trusted background worker: discovers IDs from the database, never from an HTTP request.
+            .and().doNotHaveFullyQualifiedName("br.com.fixflow.modules.inventory.infrastructure.InventoryReconciliationJob")
             .should().dependOnClassesThat()
             .haveFullyQualifiedName("br.com.fixflow.shared.infrastructure.tenant.TenantScope");
 

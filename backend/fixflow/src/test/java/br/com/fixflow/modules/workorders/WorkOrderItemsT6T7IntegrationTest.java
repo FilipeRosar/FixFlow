@@ -25,6 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class WorkOrderItemsT6T7IntegrationTest {
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
     br.com.fixflow.shared.application.audit.AuditService audit;
+    @Autowired br.com.fixflow.modules.inventory.infrastructure.InventoryReconciliationJob reconciliation;
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
     @Autowired Environment environment;
@@ -66,6 +67,33 @@ class WorkOrderItemsT6T7IntegrationTest {
         });
         fixture.close();
     }
+    @Test void receivesAtWeightedAverageAndRequiresOwnerAdjustmentReason() throws Exception {
+        var created = mvc.perform(post("/api/v1/parts").header("Authorization", "Bearer " + token)
+                .contentType("application/json").content("{\"sku\":\"ENTRY-TEST\",\"name\":\"Peça\",\"unit\":\"UN\",\"cost\":10,\"salePrice\":30,\"minQuantity\":0}"))
+                .andExpect(status().isCreated()).andReturn();
+        String partId = mapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
+        String endpoint = "/api/v1/parts/" + partId;
+        mvc.perform(post(endpoint + "/entries").header("Authorization", "Bearer " + token).contentType("application/json")
+                .content("{\"quantity\":2,\"unitCost\":10,\"version\":0}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.cost").value(10));
+        mvc.perform(post(endpoint + "/entries").header("Authorization", "Bearer " + token).contentType("application/json")
+                .content("{\"quantity\":3,\"unitCost\":20,\"version\":1}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.cost").value(16)).andExpect(jsonPath("$.quantityOnHand").value(5));
+        mvc.perform(post(endpoint + "/adjustments").header("Authorization", "Bearer " + token).contentType("application/json")
+                .content("{\"quantity\":-1,\"reason\":\" \",\"version\":2}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post(endpoint + "/adjustments").header("Authorization", "Bearer " + token).contentType("application/json")
+                .content("{\"quantity\":-1,\"reason\":\"Contagem física\",\"version\":2}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.cost").value(16)).andExpect(jsonPath("$.quantityOnHand").value(4));
+        mvc.perform(post(endpoint + "/entries").header("Authorization", "Bearer " + token).contentType("application/json")
+                .content("{\"quantity\":1,\"unitCost\":10,\"version\":2}"))
+                .andExpect(status().isConflict());
+        role("ATTENDANT");
+        mvc.perform(post(endpoint + "/adjustments").header("Authorization", "Bearer " + token).contentType("application/json")
+                .content("{\"quantity\":1,\"reason\":\"Contagem\",\"version\":3}"))
+                .andExpect(status().isForbidden());
+    }
+
     UUID customer(UUID tenant, String name) {
         UUID id = UUID.randomUUID();
         inTenant(tenant, () -> admin.update("INSERT INTO customers(id, tenant_id, name) VALUES (?, ?, ?)", id, tenant, name));
@@ -121,6 +149,92 @@ class WorkOrderItemsT6T7IntegrationTest {
             assertEquals(0, new java.math.BigDecimal(expected).compareTo(admin.queryForObject("SELECT coalesce(sum(quantity),0) FROM inventory_movements WHERE part_id = ?", java.math.BigDecimal.class, part)));
         });
     }
+    @Test void reconciliationDetectsPerTenantAndResolvesWithoutChangingStockOrLedger() throws Exception {
+        UUID local = part(fixture.tenantA, "2.125"), foreign = part(fixture.tenantB, "3"), empty = part(fixture.tenantA, "0");
+        reconciliation.reconcileAll();
+        inTenant(fixture.tenantA, () -> assertEquals(0, admin.queryForObject(
+                "SELECT count(*) FROM inventory_reconciliation_alerts WHERE tenant_id = ?", Integer.class, fixture.tenantA)));
+        inTenant(fixture.tenantA, () -> admin.update("UPDATE parts SET quantity_on_hand = 1.125 WHERE id = ?", local));
+        inTenant(fixture.tenantB, () -> admin.update("UPDATE parts SET quantity_on_hand = 4, active = false WHERE id = ?", foreign));
+        reconciliation.reconcileAll();
+        var result = mvc.perform(get("/api/v1/parts/reconciliation-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].partId").value(local.toString()))
+                .andExpect(jsonPath("$[0].movementQuantity").value(2.125))
+                .andExpect(jsonPath("$[0].quantityOnHand").value(1.125)).andReturn();
+        String alertId = mapper.readTree(result.getResponse().getContentAsString()).get(0).get("id").asText();
+        reconciliation.reconcileAll();
+        inTenant(fixture.tenantA, () -> {
+            assertEquals(1, admin.queryForObject("SELECT count(*) FROM inventory_reconciliation_alerts WHERE tenant_id = ?", Integer.class, fixture.tenantA));
+            assertEquals(new java.math.BigDecimal("1.125"), admin.queryForObject("SELECT quantity_on_hand FROM parts WHERE id = ?", java.math.BigDecimal.class, local));
+            assertEquals(1, admin.queryForObject("SELECT count(*) FROM inventory_movements WHERE part_id = ?", Integer.class, local));
+            admin.update("UPDATE parts SET quantity_on_hand = 2.125 WHERE id = ?", local);
+        });
+        inTenant(fixture.tenantB, () -> assertEquals(1, admin.queryForObject(
+                "SELECT count(*) FROM inventory_reconciliation_alerts WHERE part_id = ? AND resolved_at IS NULL", Integer.class, foreign)));
+        reconciliation.reconcileAll();
+        mvc.perform(get("/api/v1/parts/reconciliation-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        inTenant(fixture.tenantA, () -> {
+            assertNotNull(admin.queryForObject("SELECT resolved_at FROM inventory_reconciliation_alerts WHERE id = ?", java.sql.Timestamp.class, UUID.fromString(alertId)));
+            // Missing movements count as zero, including when a nonzero balance is present.
+            admin.update("UPDATE parts SET quantity_on_hand = -1 WHERE id = ?", empty);
+        });
+        reconciliation.reconcileAll();
+        mvc.perform(get("/api/v1/parts/reconciliation-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].partId").value(empty.toString())).andExpect(jsonPath("$[0].movementQuantity").value(0));
+    }
+
+    @Test void reconciliationSkipsLockedTenantAndProcessesOtherTenants() {
+        UUID local = part(fixture.tenantA, "1"), foreign = part(fixture.tenantB, "1");
+        inTenant(fixture.tenantA, () -> admin.update("UPDATE parts SET quantity_on_hand = 2 WHERE id = ?", local));
+        inTenant(fixture.tenantB, () -> admin.update("UPDATE parts SET quantity_on_hand = 2 WHERE id = ?", foreign));
+        inTenant(fixture.tenantA, () -> {
+            admin.queryForObject("SELECT pg_try_advisory_xact_lock(hashtextextended(?, 43043))", Boolean.class, fixture.tenantA.toString());
+            reconciliation.reconcileAll();
+            assertEquals(0, admin.queryForObject("SELECT count(*) FROM inventory_reconciliation_alerts WHERE part_id = ?", Integer.class, local));
+        });
+        inTenant(fixture.tenantB, () -> assertEquals(1, admin.queryForObject(
+                "SELECT count(*) FROM inventory_reconciliation_alerts WHERE part_id = ?", Integer.class, foreign)));
+        reconciliation.reconcileAll();
+        inTenant(fixture.tenantA, () -> assertEquals(1, admin.queryForObject(
+                "SELECT count(*) FROM inventory_reconciliation_alerts WHERE part_id = ?", Integer.class, local)));
+        assertTrue(br.com.fixflow.shared.infrastructure.tenant.TenantContext.getTenantId().isEmpty());
+    }
+
+    @Test void minimumStockAlertsIncludeEqualityResolveAndReopenWithoutDuplicates() throws Exception {
+        UUID order = maintenanceOrder(), local = part(fixture.tenantA, "2"), itemId = UUID.randomUUID();
+        part(fixture.tenantB, "0");
+        mvc.perform(get("/api/v1/parts?belowMinimum=true").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(get("/api/v1/parts/stock-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        add(order, item(itemId, local, 0, "2")).andExpect(status().isCreated());
+        mvc.perform(get("/api/v1/parts?belowMinimum=true").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(local.toString()));
+        var alert = mvc.perform(get("/api/v1/parts/stock-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)).andReturn();
+        String alertId = mapper.readTree(alert.getResponse().getContentAsString()).get(0).get("id").asText();
+        inTenant(fixture.tenantA, () -> admin.update("UPDATE parts SET min_quantity = 1 WHERE id = ?", local));
+        mvc.perform(get("/api/v1/parts/stock-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(alertId));
+        remove(order, itemId, 1).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/parts/stock-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        inTenant(fixture.tenantA, () -> admin.update("UPDATE parts SET min_quantity = 2 WHERE id = ?", local));
+        mvc.perform(get("/api/v1/parts/below-minimum").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
+        inTenant(fixture.tenantA, () -> {
+            assertEquals(2, admin.queryForObject("SELECT count(*) FROM inventory_alerts WHERE part_id = ?", Integer.class, local));
+            assertEquals(1, admin.queryForObject("SELECT count(*) FROM inventory_alerts WHERE part_id = ? AND resolved_at IS NULL", Integer.class, local));
+            admin.update("UPDATE parts SET active = false WHERE id = ?", local);
+        });
+        mvc.perform(get("/api/v1/parts/stock-alerts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+    }
+
     @Test void t6ConsumesAndReturnsAtomicallyWithIdempotentRetriesAndSnapshotCost() throws Exception {
         UUID order = maintenanceOrder(), part = part(fixture.tenantA, "2"), item = UUID.randomUUID();
         var body = item(item, part, 0, "1.25");

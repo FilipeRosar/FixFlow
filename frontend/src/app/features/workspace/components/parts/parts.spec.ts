@@ -29,6 +29,7 @@ describe('Parts catalog', () => {
     http = TestBed.inject(HttpTestingController);
     const fixture = TestBed.createComponent(PartsPanel);
     http.expectOne('/api/v1/parts').flush([part]);
+    http.expectOne('/api/v1/parts/reconciliation-alerts').flush([]);
     fixture.detectChanges();
     return fixture;
   }
@@ -63,8 +64,94 @@ describe('Parts catalog', () => {
     expect(request.request.method).toBe('DELETE');
     request.flush(null);
     http.expectOne('/api/v1/parts').flush([]);
+    http.expectOne('/api/v1/parts/reconciliation-alerts').flush([]);
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Nenhuma peça cadastrada');
+  });
+  it('posts entries with cost and version and refreshes the balance', () => {
+    const fixture = setup();
+    fixture.componentInstance['startMovement'](part);
+    fixture.componentInstance['movement'].quantity = 3;
+    fixture.componentInstance['movement'].unitCost = 20;
+    fixture.componentInstance['saveMovement']();
+    const request = http.expectOne('/api/v1/parts/p1/entries');
+    expect(request.request.body).toEqual({ quantity: 3, unitCost: 20, version: 3 });
+    request.flush({ ...part, quantityOnHand: 8 });
+    http.expectOne('/api/v1/parts').flush([{ ...part, quantityOnHand: 8 }]);
+    http.expectOne('/api/v1/parts/reconciliation-alerts').flush([]);
+    expect(fixture.componentInstance['moving']).toBeNull();
+  });
+  it('requires a reason for adjustments and sends the signed quantity', () => {
+    const fixture = setup();
+    fixture.componentInstance['startMovement'](part);
+    fixture.componentInstance['movement'] = {
+      type: 'ADJUSTMENT',
+      quantity: -1,
+      unitCost: 0,
+      reason: ' ',
+    };
+    fixture.componentInstance['saveMovement']();
+    http.expectNone('/api/v1/parts/p1/adjustments');
+    fixture.componentInstance['movement'].reason = 'Contagem física';
+    fixture.componentInstance['saveMovement']();
+    const request = http.expectOne('/api/v1/parts/p1/adjustments');
+    expect(request.request.body).toEqual({ quantity: -1, reason: 'Contagem física', version: 3 });
+    request.flush({}, { status: 409, statusText: 'Conflict' });
+    expect(fixture.componentInstance['moving']).toEqual(part);
+  });
+  it('alerts at equality and filters out parts above the minimum', () => {
+    const fixture = setup();
+    fixture.componentInstance['parts'].set([
+      part,
+      { ...part, id: 'p2', name: 'Tela', quantityOnHand: 2 },
+      { ...part, id: 'p3', name: 'Bateria', quantityOnHand: 1 },
+    ]);
+    fixture.detectChanges();
+    expect(fixture.componentInstance['belowMinimum']().length).toBe(2);
+    expect(fixture.nativeElement.querySelector('.stock-alert').textContent).toContain('2 peças');
+    expect(fixture.nativeElement.querySelectorAll('.stock.low').length).toBe(2);
+    fixture.nativeElement.querySelector('.stock-alert button').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('tbody tr').length).toBe(2);
+    expect(fixture.componentInstance['visibleParts']().map((item) => item.name)).toEqual([
+      'Tela',
+      'Bateria',
+    ]);
+    fixture.componentInstance['parts'].set([{ ...part, id: 'p2', quantityOnHand: 3 }]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.stock-alert')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain(
+      'Nenhuma peça com saldo no mínimo ou abaixo.',
+    );
+  });
+  it('shows persisted reconciliation discrepancies and clears them after the next check', () => {
+    const fixture = setup();
+    fixture.componentInstance['load']();
+    http.expectOne('/api/v1/parts').flush([part]);
+    http
+      .expectOne('/api/v1/parts/reconciliation-alerts')
+      .flush([
+        {
+          id: 'a1',
+          partId: part.id,
+          name: part.name,
+          sku: part.sku,
+          quantityOnHand: 5,
+          movementQuantity: 4,
+        },
+      ]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.reconciliation-alert').textContent).toContain(
+      'Divergência no estoque',
+    );
+    expect(fixture.nativeElement.querySelector('.reconciliation-alert').textContent).toContain(
+      'Soma das movimentações: 4',
+    );
+    fixture.componentInstance['load']();
+    http.expectOne('/api/v1/parts').flush([part]);
+    http.expectOne('/api/v1/parts/reconciliation-alerts').flush([]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.reconciliation-alert')).toBeNull();
   });
   it('shows balances without write controls for attendants', () => {
     const fixture = setup('ATTENDANT');

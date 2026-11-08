@@ -1842,3 +1842,29 @@ consulta, formulário de cadastro/edição para Owner e confirmação de exclus�
 
 Validação: `./mvnw -Dtest=WorkOrderItemsT6T7IntegrationTest,ArchitectureTest test`;
 no frontend, `npm test -- --watch=false` e `npm run build`.
+
+### Reconciliação de estoque (US-043)
+
+O job compara, por empresa e peça (inclusive inativas), `SUM(inventory_movements.quantity)`
+com `parts.quantity_on_hand`. Sem movimentações, a soma é zero. Uma única consulta usa o
+mesmo snapshot para os dois valores, evitando falsos alertas durante movimentações concorrentes.
+Cada empresa é processada em uma transação própria com RLS e trava consultiva transacional;
+falhas são registradas e não interrompem as outras empresas.
+
+Divergências ficam em `inventory_reconciliation_alerts`, com os valores observados e datas
+da primeira detecção e última conferência. Novas execuções atualizam o alerta aberto sem
+duplicá-lo; a regularização encerra o alerta, preservando o histórico. O job não corrige saldos.
+Alertas abertos são consultáveis em `GET /api/v1/parts/reconciliation-alerts` com permissão
+`inventory:read` e aparecem na tela de peças ao carregar ou atualizar a lista.
+
+Configuração (valores padrão):
+
+```properties
+fixflow.inventory.reconciliation.scheduling-enabled=true
+fixflow.inventory.reconciliation.initial-delay-ms=60000
+fixflow.inventory.reconciliation.delay-ms=3600000
+```
+
+A primeira execução ocorre um minuto após a inicialização; as próximas ocorrem uma hora
+após a conclusão da anterior. Nos testes de integração o agendamento fica desativado e
+o job pode ser chamado diretamente.

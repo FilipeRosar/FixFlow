@@ -27,7 +27,26 @@ public class PartController {
                           @Null BigDecimal quantity, @Null BigDecimal quantityOnHand,
                           @Min(0) Integer version,
                           @NotNull @DecimalMin("0") @Digits(integer = 11, fraction = 3) BigDecimal minQuantity) { }
-    @GetMapping public List<Part> list() { return parts.list(); }
+    public record EntryRequest(
+            @NotNull @DecimalMin(value = "0", inclusive = false) @Digits(integer = 11, fraction = 3) BigDecimal quantity,
+            @NotNull @DecimalMin("0") @Digits(integer = 12, fraction = 2) BigDecimal unitCost,
+            @NotNull @Min(0) Integer version) { }
+    public record AdjustmentRequest(
+            @NotNull @Digits(integer = 11, fraction = 3) BigDecimal quantity,
+            @NotBlank @Size(max = 500) String reason, @NotNull @Min(0) Integer version) { }
+    @PostMapping("/{id}/entries") public Part receive(@PathVariable UUID id, @Valid @RequestBody EntryRequest request) {
+        return parts.receive(id, request.quantity(), request.unitCost(), request.version());
+    }
+    @PostMapping("/{id}/adjustments") public Part adjust(@PathVariable UUID id, @Valid @RequestBody AdjustmentRequest request) {
+        if (request.quantity().signum() == 0) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantidade deve ser diferente de zero.");
+        return parts.adjust(id, request.quantity(), request.reason(), request.version());
+    }
+    @GetMapping public List<Part> list(@RequestParam(defaultValue = "false") boolean belowMinimum) {
+        return belowMinimum ? parts.belowMinimum() : parts.list();
+    }
+    @GetMapping("/below-minimum") public List<Part> belowMinimum() { return parts.belowMinimum(); }
+    @GetMapping("/stock-alerts") public List<Parts.StockAlert> alerts() { return parts.alerts(); }
+    @GetMapping("/reconciliation-alerts") public List<Parts.ReconciliationAlert> reconciliationAlerts() { return parts.reconciliationAlerts(); }
     @GetMapping("/{id}") public Part get(@PathVariable UUID id) { return parts.get(id); }
     @PutMapping("/{id}") public Part update(@PathVariable UUID id, @Valid @RequestBody Request request) {
         if (request.version() == null) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST, "Versão obrigatória.");

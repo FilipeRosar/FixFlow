@@ -21,6 +21,49 @@
     </div>
     <p>Custos, preços e disponibilidade<br />em um só lugar.</p>
   </div>
+  @if (reconciliationError()) {
+    <p role="alert">{{ reconciliationError() }}</p>
+  }
+  @if (reconciliationAlerts().length) {
+    <aside class="reconciliation-alert" role="alert" aria-labelledby="reconciliation-title">
+      <h2 id="reconciliation-title">Divergência no estoque</h2>
+      <p>
+        A conferência automática encontrou diferenças entre o saldo e as movimentações. Revise o
+        histórico das peças.
+      </p>
+      <ul>
+        @for (alert of reconciliationAlerts(); track alert.id) {
+          <li>
+            <strong>{{ alert.name }}</strong> <span class="sku">{{ alert.sku }}</span>
+            <span
+              >Saldo registrado: {{ alert.quantityOnHand | number: '1.0-3' }} · Soma das
+              movimentações: {{ alert.movementQuantity | number: '1.0-3' }}</span
+            >
+          </li>
+        }
+      </ul>
+    </aside>
+  }
+  @if (belowMinimum().length) {
+    <aside class="stock-alert" aria-labelledby="stock-alert-title" role="status">
+      <span class="stock-alert-icon" aria-hidden="true">!</span>
+      <div>
+        <h2 id="stock-alert-title">Estoque precisa de atenção</h2>
+        <p>
+          {{ belowMinimum().length }}
+          {{
+            belowMinimum().length === 1
+              ? 'peça com saldo menor ou igual ao mínimo.'
+              : 'peças com saldo menor ou igual ao mínimo.'
+          }}
+          Confira os itens para planejar a reposição.
+        </p>
+      </div>
+      <button type="button" (click)="onlyBelowMinimum.set(true)">
+        Ver peças em alerta <span aria-hidden="true">↓</span>
+      </button>
+    </aside>
+  }
   @if (error()) {
     <p role="alert">{{ error() }}</p>
   }
@@ -120,6 +163,117 @@
       </fieldset>
     </form>
   }
+  @if (moving; as part) {
+    <form #movementForm="ngForm" (ngSubmit)="saveMovement()" class="editor movement-editor">
+      <div class="card-heading">
+        <span class="section-icon" aria-hidden="true">⇄</span>
+        <div>
+          <p class="eyebrow">CONTROLE DE ESTOQUE</p>
+          <h2>Movimentar estoque</h2>
+        </div>
+        <span class="tag">{{ movement.type === 'ENTRY' ? 'ENTRADA' : 'AJUSTE' }}</span>
+      </div>
+      <div class="movement-summary">
+        <div class="movement-part">
+          <span class="sku">{{ part.sku }}</span
+          ><strong>{{ part.name }}</strong>
+        </div>
+        <div class="movement-balance">
+          <span>Saldo atual</span
+          ><strong
+            >{{ part.quantityOnHand | number: '1.0-3' }} <small>{{ part.unit }}</small></strong
+          >
+        </div>
+      </div>
+      <fieldset [disabled]="busy()">
+        <legend>Movimentação de estoque</legend>
+        <label
+          >Tipo de movimentação
+          <span class="field-hint">Escolha como atualizar o saldo</span>
+          <select name="movementType" [(ngModel)]="movement.type">
+            <option value="ENTRY">Entrada de peças</option>
+            <option value="ADJUSTMENT">Ajuste de saldo</option>
+          </select>
+        </label>
+        <label
+          >Quantidade
+          <span class="field-hint">{{
+            movement.type === 'ENTRY'
+              ? 'Quantidade recebida em ' + part.unit
+              : 'Positiva para adicionar; negativa para retirar'
+          }}</span>
+          <input
+            name="movementQuantity"
+            type="number"
+            required
+            step="0.001"
+            [min]="movement.type === 'ENTRY' ? 0.001 : -99999999999.999"
+            max="99999999999.999"
+            [(ngModel)]="movement.quantity"
+          />
+        </label>
+        @if (movement.type === 'ENTRY') {
+          <label
+            >Custo unitário (R$)<span class="field-hint">Valor pago por {{ part.unit }}</span
+            ><input
+              name="unitCost"
+              type="number"
+              required
+              min="0"
+              max="999999999999.99"
+              step="0.01"
+              [(ngModel)]="movement.unitCost"
+          /></label>
+        } @else {
+          <label class="movement-reason"
+            >Motivo do ajuste
+            <span class="field-hint">Descreva o que levou à correção do saldo</span
+            ><textarea
+              name="reason"
+              required
+              maxlength="500"
+              rows="3"
+              placeholder="Ex.: divergência identificada na contagem física"
+              [(ngModel)]="movement.reason"
+            ></textarea>
+          </label>
+        }
+        <div class="movement-info">
+          <span aria-hidden="true">ⓘ</span>
+          <p>
+            {{
+              movement.type === 'ENTRY'
+                ? 'O custo médio da peça será recalculado com o valor desta entrada.'
+                : 'O ajuste altera o saldo e preserva o custo médio da peça.'
+            }}
+          </p>
+        </div>
+        <div class="form-footer">
+          <p class="balance-note">
+            <span aria-hidden="true">↳</span> Esta movimentação ficará registrada no histórico.
+          </p>
+          <div class="form-actions">
+            <button type="button" (click)="moving = null">Cancelar</button>
+            <button
+              class="primary"
+              type="submit"
+              [disabled]="
+                movementForm.invalid ||
+                !movement.quantity ||
+                (movement.type === 'ADJUSTMENT' && !movement.reason.trim())
+              "
+            >
+              {{
+                busy()
+                  ? 'Registrando…'
+                  : 'Registrar ' + (movement.type === 'ENTRY' ? 'entrada' : 'ajuste')
+              }}
+            </button>
+          </div>
+        </div>
+      </fieldset>
+    </form>
+  }
   @if (deleting(); as part) {
     <div role="alert" class="delete-confirmation">
       <p>Excluir a peça {{ part.name }}? O histórico será preservado.</p>
@@ -134,10 +288,29 @@
       <div>
         <p class="eyebrow">SEU INVENTÁRIO</p>
         <h2>
-          Peças ativas <span class="count">{{ parts().length }}</span>
+          {{ onlyBelowMinimum() ? 'Peças no mínimo ou abaixo' : 'Peças ativas' }}
+          <span class="count">{{ visibleParts().length }}</span>
         </h2>
       </div>
-      <span class="read-only-note">Saldo apenas para consulta</span>
+      <span class="read-only-note">Saldo atualizado por movimentações</span>
+    </div>
+    <div class="stock-filters" role="group" aria-label="Filtrar peças por saldo">
+      <button
+        type="button"
+        [class.selected]="!onlyBelowMinimum()"
+        [attr.aria-pressed]="!onlyBelowMinimum()"
+        (click)="onlyBelowMinimum.set(false)"
+      >
+        Todas as peças <span>{{ parts().length }}</span>
+      </button>
+      <button
+        type="button"
+        [class.selected]="onlyBelowMinimum()"
+        [attr.aria-pressed]="onlyBelowMinimum()"
+        (click)="onlyBelowMinimum.set(true)"
+      >
+        No mínimo ou abaixo <span>{{ belowMinimum().length }}</span>
+      </button>
     </div>
     <div class="table-scroll" [attr.aria-busy]="busy()">
       <table>
@@ -159,7 +332,7 @@
           </tr>
         </thead>
         <tbody>
-          @for (part of parts(); track part.id) {
+          @for (part of visibleParts(); track part.id) {
             <tr>
               <td>
                 <span class="sku">{{ part.sku }}</span>
@@ -171,13 +344,19 @@
               <td>{{ part.cost | currency: 'BRL' }}</td>
               <td>{{ part.salePrice | currency: 'BRL' }}</td>
               <td>
-                <span class="stock" [class.low]="part.quantityOnHand < part.minQuantity">{{
+                <span class="stock" [class.low]="part.quantityOnHand <= part.minQuantity">{{
                   part.quantityOnHand | number: '1.0-3'
                 }}</span>
+                @if (part.quantityOnHand <= part.minQuantity) {
+                  <span class="stock-warning">Repor estoque</span>
+                }
               </td>
               <td>{{ part.minQuantity | number: '1.0-3' }}</td>
               @if (owner) {
                 <td class="row-actions">
+                  <button type="button" (click)="startMovement(part)" [disabled]="busy()">
+                    Movimentar estoque<span class="sr-only"> {{ part.name }}</span>
+                  </button>
                   <button type="button" (click)="edit(part)" [disabled]="busy()">
                     <span aria-hidden="true">✎</span> Editar<span class="sr-only">
                       {{ part.name }}</span
@@ -191,7 +370,13 @@
           } @empty {
             <tr>
               <td colspan="8" class="empty-state">
-                {{ busy() ? 'Carregando peças…' : 'Nenhuma peça cadastrada.' }}
+                {{
+                  busy()
+                    ? 'Carregando peças…'
+                    : onlyBelowMinimum()
+                      ? 'Nenhuma peça com saldo no mínimo ou abaixo.'
+                      : 'Nenhuma peça cadastrada.'
+                }}
               </td>
             </tr>
           }

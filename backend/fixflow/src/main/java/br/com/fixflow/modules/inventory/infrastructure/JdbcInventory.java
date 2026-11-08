@@ -41,6 +41,37 @@ public class JdbcInventory implements Parts, StockOperations {
             return jdbc.query("SELECT * FROM public.parts WHERE tenant_id = ? AND active ORDER BY name, id", ROW, m.tenantId());
         });
     }
+    @Override public List<Part> belowMinimum() {
+        return tenants.execute(tenant(), m -> {
+            requirePermission(m.role().name(), "inventory:read");
+            return jdbc.query("SELECT * FROM public.parts WHERE tenant_id = ? AND active AND quantity_on_hand <= min_quantity ORDER BY name, id", ROW, m.tenantId());
+        });
+    }
+    @Override public List<Parts.StockAlert> alerts() {
+        return tenants.execute(tenant(), m -> {
+            requirePermission(m.role().name(), "inventory:read");
+            return jdbc.query("""
+                    SELECT a.id, a.part_id, p.sku, p.name, p.quantity_on_hand, p.min_quantity, a.created_at
+                    FROM public.inventory_alerts a JOIN public.parts p ON p.tenant_id = a.tenant_id AND p.id = a.part_id
+                    WHERE a.tenant_id = ? AND a.resolved_at IS NULL AND p.active
+                    ORDER BY a.created_at DESC, a.id
+                    """, (rs, n) -> new Parts.StockAlert(rs.getObject("id", UUID.class), rs.getObject("part_id", UUID.class),
+                    rs.getString("sku"), rs.getString("name"), rs.getBigDecimal("quantity_on_hand"),
+                    rs.getBigDecimal("min_quantity"), rs.getTimestamp("created_at").toInstant()), m.tenantId());
+        });
+    }
+    @Override public List<Parts.ReconciliationAlert> reconciliationAlerts() {
+        return tenants.execute(tenant(), m -> {
+            requirePermission(m.role().name(), "inventory:read");
+            return jdbc.query("""
+                    SELECT a.*, p.sku, p.name FROM public.inventory_reconciliation_alerts a
+                    JOIN public.parts p ON p.tenant_id = a.tenant_id AND p.id = a.part_id
+                    WHERE a.tenant_id = ? AND a.resolved_at IS NULL ORDER BY a.created_at DESC, a.id
+                    """, (rs, n) -> new Parts.ReconciliationAlert(rs.getObject("id", UUID.class), rs.getObject("part_id", UUID.class),
+                    rs.getString("sku"), rs.getString("name"), rs.getBigDecimal("movement_quantity"), rs.getBigDecimal("quantity_on_hand"),
+                    rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("last_checked_at").toInstant()), m.tenantId());
+        });
+    }
     @Override public Part create(String sku, String name, String unit, BigDecimal cost, BigDecimal price, BigDecimal minimum) {
         return tenants.execute(tenant(), m -> {
             if (!RolePermissions.forRole(m.role().name()).contains("inventory:write")) throw new AccessDeniedException("Cadastro de peças não autorizado.");
@@ -97,6 +128,46 @@ public class JdbcInventory implements Parts, StockOperations {
             if (changed == 0) throw new ResponseStatusException(HttpStatus.CONFLICT, "Peça alterada. Atualize os dados.");
             audit.record(m.userId(), "PART_DELETED", "PART", id, "{}");
             return null;
+        });
+    }
+    @Override public Part receive(UUID id, BigDecimal quantity, BigDecimal unitCost, int version) {
+        return changeStock(id, quantity, unitCost, null, version);
+    }
+    @Override public Part adjust(UUID id, BigDecimal quantity, String reason, int version) {
+        if (reason == null || reason.isBlank() || reason.length() > 500)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o motivo do ajuste.");
+        return changeStock(id, quantity, null, reason.strip(), version);
+    }
+    private Part changeStock(UUID id, BigDecimal quantity, BigDecimal unitCost, String reason, int version) {
+        return tenants.execute(tenant(), m -> {
+            requirePermission(m.role().name(), "inventory:write");
+            if (!m.role().name().equals("OWNER")) throw new AccessDeniedException("Operação exclusiva do Owner.");
+            var rows = jdbc.query("SELECT * FROM public.parts WHERE tenant_id = ? AND id = ? AND active FOR UPDATE", ROW, m.tenantId(), id);
+            if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Peça não encontrada.");
+            Part current = rows.getFirst();
+            if (current.version() != version) throw new ResponseStatusException(HttpStatus.CONFLICT, "Peça alterada. Atualize os dados.");
+            BigDecimal balance = current.quantityOnHand().add(quantity);
+            if (balance.signum() < 0 && !Boolean.TRUE.equals(jdbc.queryForObject(
+                    "SELECT coalesce((SELECT allow_negative_stock FROM public.tenant_settings WHERE tenant_id = ?), false)", Boolean.class, m.tenantId())))
+                throw new InsufficientStockException();
+            BigDecimal cost = current.cost();
+            if (unitCost != null) {
+                // A depleted or negative balance has no remaining stock value to carry forward.
+                BigDecimal available = current.quantityOnHand().max(BigDecimal.ZERO);
+                cost = available.multiply(cost).add(quantity.multiply(unitCost))
+                        .divide(available.add(quantity), 2, java.math.RoundingMode.HALF_UP);
+            }
+            Part updated = jdbc.query("""
+                    UPDATE public.parts SET quantity_on_hand = ?, cost = ?, version = version + 1
+                    WHERE tenant_id = ? AND id = ? RETURNING *
+                    """, ROW, balance, cost, m.tenantId(), id).getFirst();
+            jdbc.update("""
+                    INSERT INTO public.inventory_movements(id, tenant_id, part_id, type, quantity, unit_cost, created_by, reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, UUID.randomUUID(), m.tenantId(), id, unitCost == null ? "ADJUSTMENT" : "ENTRY",
+                    quantity, unitCost == null ? cost : unitCost, m.userId(), reason);
+            audit.record(m.userId(), unitCost == null ? "STOCK_ADJUSTED" : "STOCK_RECEIVED", "PART", id, "{}");
+            return updated;
         });
     }
     @Override @Transactional(propagation = Propagation.MANDATORY)
