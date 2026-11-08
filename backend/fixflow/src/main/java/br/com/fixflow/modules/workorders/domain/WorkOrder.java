@@ -10,4 +10,4 @@ public record WorkOrder(UUID id, long number, UUID customerId, UUID equipmentId,
                         Instant openedAt, int version, String customerName, String equipmentLabel, String serialNumber, UUID technicianId, String technicianName, Diagnosis diagnosis,
                         Instant readyAt, Instant deliveredAt, Integer warrantyDays, LocalDate warrantyUntil,
                         boolean paymentSettled, boolean deliveryPaymentOverride, String deliveryReason,
-                        String deliveredByName, String warrantyTerms) { }
+                        String deliveredByName, String warrantyTerms, String financialStatus) { }

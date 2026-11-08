@@ -1144,14 +1144,10 @@ histórica de exceção permanece falsa. A timeline da transição de entrega re
 evento de estado. Falha na auditoria da exceção desfaz entrega, garantia,
 histórico, timeline e outbox na mesma transação.
 
-**Dependência US-050:** o registro real de pagamentos ainda não existe neste
-código. A US-027 usa a evidência server-side de quitação já estabelecida pela
-US-021 em `work_order_transition_facts`. A US-050 deverá calcular essa evidência
-com pagamentos confirmados/parciais e total aprovado, atualizando-a sob o mesmo
-bloqueio de OS. Não há endpoint ou checkbox que aceite `paymentSettled` ou
-`financialStatus` do cliente como comprovação. Na ausência da evidência, a entrega
-normal é bloqueada; a autorização justificada do proprietário continua disponível.
-Esta implementação não representa a entrega da US-050.
+**Integração US-050:** o registro de pagamentos confirmados calcula
+`financial_status` e atualiza `payment_settled` na mesma transação, sob bloqueio
+da OS. O cliente não pode informar a quitação no pedido de entrega. Consulte o
+contrato de pagamentos abaixo.
 
 ### Datas e snapshots
 
@@ -1868,3 +1864,47 @@ fixflow.inventory.reconciliation.delay-ms=3600000
 A primeira execução ocorre um minuto após a inicialização; as próximas ocorrem uma hora
 após a conclusão da anterior. Nos testes de integração o agendamento fica desativado e
 o job pode ser chamado diretamente.
+
+
+## US-050 — Registrar pagamento
+
+Owner e atendente podem registrar e listar pagamentos em
+`POST /api/v1/work-orders/{id}/payments` e `GET /api/v1/work-orders/{id}/payments`.
+O POST exige `Idempotency-Key` não vazia, com até 200 caracteres, e orçamento
+aprovado. Exemplo de corpo:
+
+```json
+{
+  "amount": 40.00,
+  "method": "PIX",
+  "paidAt": "2026-11-08T12:00:00Z",
+  "notes": "Entrada"
+}
+```
+
+`amount` deve ser positivo, com até 12 dígitos inteiros e duas casas decimais;
+`paidAt` é obrigatório e normalizado para microssegundos. Métodos aceitos:
+`CASH`, `PIX`, `CREDIT_CARD`, `DEBIT_CARD`, `BANK_TRANSFER`, `OTHER`.
+`notes` é opcional, com até 2000 caracteres. O servidor define identidade,
+empresa e status `CONFIRMED`.
+
+O primeiro registro retorna 201; a repetição da mesma chave e conteúdo retorna
+200 e o mesmo pagamento, sem duplicar auditoria. Reutilizar a chave com outra OS
+ou outros dados retorna 409. A unicidade é por empresa, inclusive em requisições
+simultâneas. OS de outra empresa retorna 404; técnicos recebem 403.
+
+A soma dos pagamentos confirmados determina `financialStatus` na consulta da OS:
+zero é `UNPAID`; valor positivo abaixo do total do orçamento aprovado mais recente
+é `PARTIAL`; valor igual ou superior é `PAID`. Valores acima do total são aceitos.
+A quitação libera a entrega sem exceção do Owner. Pagamento, status, evidência de
+quitação e auditoria são gravados atomicamente. A migration V45 cria o ledger
+com RLS e sem permissão de alteração ou exclusão para a aplicação.
+
+O detalhe da OS oferece consulta e formulário para Owner/atendente, com valor,
+forma de pagamento e observações. A data é o momento do registro. Em falha de
+rede ou resposta incerta, o formulário preserva a chave e o corpo para repetir
+o mesmo pagamento. Estorno e gateway pertencem às US-051 e US-052.
+
+Validação: `./mvnw -Dtest=PaymentsIntegrationTest,WorkOrderDeliveryIntegrationTest,ArchitectureTest test`;
+no frontend, `npm test -- --watch=false --include='**/work-order-payments.spec.ts' --include='**/work-order-detail.spec.ts'`
+e `npm run build`.
