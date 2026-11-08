@@ -1908,3 +1908,43 @@ o mesmo pagamento. Estorno e gateway pertencem às US-051 e US-052.
 Validação: `./mvnw -Dtest=PaymentsIntegrationTest,WorkOrderDeliveryIntegrationTest,ArchitectureTest test`;
 no frontend, `npm test -- --watch=false --include='**/work-order-payments.spec.ts' --include='**/work-order-detail.spec.ts'`
 e `npm run build`.
+
+## US-051 — Estorno de pagamento
+
+Somente Owner pode chamar `POST /api/v1/payments/{id}/void`, com o corpo:
+
+```json
+{ "reason": "Lançamento duplicado" }
+```
+
+O motivo é obrigatório, não pode ser composto apenas por espaços e aceita até
+2000 caracteres. A resposta 200 mantém o pagamento original e retorna
+`status: VOIDED`, `voidReason`, `voidedAt` e `voidedBy`. Valor, método, data do
+recebimento, observações e chave de idempotência permanecem intactos.
+Atendente/técnico recebem 403; pagamento inexistente ou de outra empresa, 404.
+Não há endpoint de exclusão ou reativação do pagamento.
+
+O estorno remove o valor da soma de confirmados e recalcula `financialStatus`
+e `paymentSettled` na mesma transação. Uma OS entregue permanece entregue,
+mesmo se o estorno deixar saldo pendente. Repetir o estorno com o mesmo motivo
+retorna a evidência existente sem duplicar auditoria; outro motivo retorna 409.
+A repetição do registro original da US-050 retorna o pagamento já estornado,
+sem criar outro recebimento nem reativar o anterior.
+
+A ação `PAYMENT_VOIDED` registra o Owner, OS, pagamento, valor, motivo e horário
+na auditoria. Falha na auditoria desfaz o estorno e as projeções financeiras.
+O bloqueio da OS serializa estornos, pagamentos e entrega, inclusive em
+requisições simultâneas. A migration V46 concede somente a atualização dos
+campos de estorno e adiciona trigger que permite uma única transição de
+`CONFIRMED` para `VOIDED`, preservando as evidências. A aplicação continua
+sem permissões de DELETE/TRUNCATE.
+
+Na aba Pagamentos, somente o Owner vê **Estornar** nos recebimentos confirmados.
+A confirmação exige motivo e informa o efeito no total recebido. O histórico
+mantém os itens estornados, com motivo e data. Resposta incerta mantém o mesmo
+motivo para repetição segura; o formulário não permite substituí-lo enquanto
+a ação não for confirmada.
+
+Validação: `./mvnw -Dtest=PaymentsIntegrationTest,ArchitectureTest test`;
+no frontend, `npm test -- --watch=false --include='**/work-order-payments.spec.ts' --include='**/work-order-detail.spec.ts'`
+e `npm run build`.

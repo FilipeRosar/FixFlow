@@ -22,8 +22,9 @@ public class JdbcPayments implements Payments {
     private final AuthorizedTenantOperations tenants;
     private final CurrentAuthenticatedIdentity identity;
     private final AuditService audit;
-    public JdbcPayments(JdbcTemplate jdbc, AuthorizedTenantOperations tenants, CurrentAuthenticatedIdentity identity, AuditService audit) {
-        this.jdbc = jdbc; this.tenants = tenants; this.identity = identity; this.audit = audit;
+    private final tools.jackson.databind.ObjectMapper mapper;
+    public JdbcPayments(JdbcTemplate jdbc, AuthorizedTenantOperations tenants, CurrentAuthenticatedIdentity identity, AuditService audit, tools.jackson.databind.ObjectMapper mapper) {
+        this.jdbc = jdbc; this.tenants = tenants; this.identity = identity; this.audit = audit; this.mapper = mapper;
     }
     private UUID tenant() {
         UUID tenant = identity.require().tenantId();
@@ -35,7 +36,8 @@ public class JdbcPayments implements Payments {
     }
     private static final RowMapper<Payment> ROW = (rs, n) -> new Payment(rs.getObject("id", UUID.class),
             rs.getObject("work_order_id", UUID.class), rs.getBigDecimal("amount"), rs.getString("method"),
-            rs.getString("status"), rs.getTimestamp("paid_at").toInstant(), rs.getString("notes"));
+            rs.getString("status"), rs.getTimestamp("paid_at").toInstant(), rs.getString("notes"), rs.getString("void_reason"),
+            rs.getTimestamp("voided_at") == null ? null : rs.getTimestamp("voided_at").toInstant(), rs.getObject("voided_by", UUID.class));
     private void order(UUID tenant, UUID order, boolean lock) {
         if (jdbc.queryForList("SELECT id FROM public.work_orders WHERE tenant_id = ? AND id = ?" + (lock ? " FOR UPDATE" : ""), tenant, order).isEmpty())
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "OS não encontrada.");
@@ -71,4 +73,31 @@ public class JdbcPayments implements Payments {
             return new Registration(payment, false);
         });
     }
+    @Override public Payment voidPayment(UUID paymentId, String reason) {
+        return tenants.execute(tenant(), m -> {
+            if (!m.role().name().equals("OWNER")) throw new AccessDeniedException("Estorno exclusivo do Owner.");
+            if (reason == null || reason.isBlank() || reason.strip().length() > 2000)
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o motivo do estorno, com até 2000 caracteres.");
+            String normalizedReason = reason.strip();
+            var rows = jdbc.query("SELECT * FROM public.payments WHERE tenant_id = ? AND id = ?", ROW, m.tenantId(), paymentId);
+            if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Pagamento não encontrado.");
+            UUID orderId = rows.getFirst().workOrderId();
+            // Same lock order as registration/delivery; reread after concurrent transactions finish.
+            order(m.tenantId(), orderId, true);
+            Payment current = jdbc.query("SELECT * FROM public.payments WHERE tenant_id = ? AND id = ? FOR UPDATE", ROW, m.tenantId(), paymentId).getFirst();
+            if (current.status().equals("VOIDED")) {
+                if (!Objects.equals(current.voidReason(), normalizedReason))
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Pagamento já estornado com outro motivo.");
+                return current;
+            }
+            Payment voided = jdbc.query("""
+                    UPDATE public.payments SET status = 'VOIDED', void_reason = ?, voided_at = clock_timestamp(), voided_by = ?
+                    WHERE tenant_id = ? AND id = ? RETURNING *
+                    """, ROW, normalizedReason, m.userId(), m.tenantId(), paymentId).getFirst();
+            audit.record(m.userId(), "PAYMENT_VOIDED", "WORK_ORDER", orderId,
+                    mapper.writeValueAsString(Map.of("paymentId", paymentId, "amount", current.amount(), "reason", normalizedReason)));
+            return voided;
+        });
+    }
+
 }

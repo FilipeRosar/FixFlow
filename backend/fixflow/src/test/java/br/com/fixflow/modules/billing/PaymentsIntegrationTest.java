@@ -183,10 +183,101 @@ class PaymentsIntegrationTest {
         String delivery = "{\"version\":0,\"warrantyDays\":90}";
         mvc.perform(post(url + "/" + order + "/deliver").header("Authorization", "Bearer " + token).contentType("application/json").content(delivery))
                 .andExpect(status().isConflict());
-        pay(order, "settlement", "100").andExpect(status().isCreated());
+        UUID settlement = payment(order, "settlement", "100");
         mvc.perform(post(url + "/" + order + "/deliver").header("Authorization", "Bearer " + token).contentType("application/json").content(delivery))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ENTREGUE"))
                 .andExpect(jsonPath("$.paymentSettled").value(true)).andExpect(jsonPath("$.financialStatus").value("PAID"));
+        voidPayment(settlement, "Correção após entrega").andExpect(status().isOk());
+        financial(order, "UNPAID", false);
+        mvc.perform(get(url + "/" + order).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ENTREGUE"));
+    }
+
+    UUID payment(UUID order, String key, String amount) throws Exception {
+        return UUID.fromString(mapper.readTree(pay(order, key, amount).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString()).get("id").asText());
+    }
+    org.springframework.test.web.servlet.ResultActions voidPayment(UUID payment, String reason) throws Exception {
+        return mvc.perform(post("/api/v1/payments/" + payment + "/void").header("Authorization", "Bearer " + token)
+                .contentType("application/json").content(mapper.writeValueAsString(Map.of("reason", reason))));
+    }
+    @Test void voidPreservesEvidenceRecalculatesAndAuditsExactlyOnce() throws Exception {
+        UUID order = order(); approve(order);
+        UUID first = payment(order, "first", "40"); UUID second = payment(order, "second", "60");
+        financial(order, "PAID", true);
+        String reason = "Lançamento duplicado: \"Pix\"";
+        var result = voidPayment(second, reason).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VOIDED")).andExpect(jsonPath("$.amount").value(60))
+                .andExpect(jsonPath("$.voidReason").value(reason)).andExpect(jsonPath("$.voidedBy").value(fixture.userId.toString()))
+                .andExpect(jsonPath("$.voidedAt").isNotEmpty()).andReturn().getResponse().getContentAsString();
+        financial(order, "PARTIAL", false);
+        voidPayment(second, reason).andExpect(status().isOk()).andExpect(content().json(result));
+        voidPayment(second, "Outro motivo").andExpect(status().isConflict());
+        inTenant(fixture.tenantA, () -> {
+            assertEquals(2, admin.queryForObject("SELECT count(*) FROM payments WHERE work_order_id = ?", Integer.class, order));
+            assertEquals(1, admin.queryForObject("SELECT count(*) FROM audit_log WHERE resource_id = ? AND action = 'PAYMENT_VOIDED'", Integer.class, order));
+            assertEquals(reason, admin.queryForObject("SELECT details->>'reason' FROM audit_log WHERE resource_id = ? AND action = 'PAYMENT_VOIDED'", String.class, order));
+        });
+        voidPayment(first, "Recebimento cancelado").andExpect(status().isOk());
+        financial(order, "UNPAID", false);
+        mvc.perform(get(url + "/" + order + "/payments").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2));
+        // Retrying the original registration must never revive the voided payment.
+        pay(order, "first", "40").andExpect(status().isOk()).andExpect(jsonPath("$.status").value("VOIDED"));
+    }
+    @Test void voidRequiresReasonOwnerAndTenantIsolation() throws Exception {
+        UUID order = order(); approve(order); UUID payment = payment(order, "one", "100");
+        for (String reason : List.of("", "   ", "x".repeat(2001))) voidPayment(payment, reason).andExpect(status().isBadRequest());
+        for (String role : List.of("ATTENDANT", "TECHNICIAN")) {
+            inTenant(fixture.tenantA, () -> admin.update("UPDATE tenant_memberships SET role = ? WHERE tenant_id = ? AND user_id = ?", role, fixture.tenantA, fixture.userId));
+            token = login(); voidPayment(payment, "Correção").andExpect(status().isForbidden());
+        }
+        inTenant(fixture.tenantA, () -> admin.update("UPDATE tenant_memberships SET role = 'OWNER' WHERE tenant_id = ? AND user_id = ?", fixture.tenantA, fixture.userId)); token = login();
+        UUID foreignCustomer = customer(fixture.tenantB, "Outro"); UUID foreignOrder = UUID.randomUUID(); UUID foreignPayment = UUID.randomUUID();
+        inTenant(fixture.tenantB, () -> {
+            admin.update("INSERT INTO work_orders(id, tenant_id, customer_id, status) VALUES (?, ?, ?, 'RECEBIDA')", foreignOrder, fixture.tenantB, foreignCustomer);
+            admin.update("INSERT INTO payments(id, tenant_id, work_order_id, amount, method, paid_at, idempotency_key, created_by) VALUES (?, ?, ?, 10, 'PIX', CURRENT_TIMESTAMP, 'foreign', ?)", foreignPayment, fixture.tenantB, foreignOrder, fixture.userId);
+        });
+        voidPayment(foreignPayment, "Correção").andExpect(status().isNotFound());
+        voidPayment(UUID.randomUUID(), "Correção").andExpect(status().isNotFound());
+        financial(order, "PAID", true);
+    }
+    @Test void voidRollsBackOnAuditFailureAndConcurrentRetriesKeepOneAudit() throws Exception {
+        UUID order = order(); approve(order); UUID payment = payment(order, "one", "100");
+        var target = org.springframework.test.util.AopTestUtils.<br.com.fixflow.shared.application.audit.AuditService>getUltimateTargetObject(audit);
+        org.mockito.Mockito.doThrow(new IllegalStateException("Audit unavailable")).when(target)
+                .record(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("PAYMENT_VOIDED"),
+                        org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString());
+        try { voidPayment(payment, "Correção"); } catch (Exception expected) { /* MVC may propagate the injected failure. */ }
+        finally { org.mockito.Mockito.reset(target); }
+        financial(order, "PAID", true);
+        inTenant(fixture.tenantA, () -> assertEquals("CONFIRMED", admin.queryForObject("SELECT status FROM payments WHERE id = ?", String.class, payment)));
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var start = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.Callable<Integer> request = () -> { start.await(); return voidPayment(payment, "Correção").andReturn().getResponse().getStatus(); };
+            var first = pool.submit(request); var second = pool.submit(request); start.countDown();
+            assertEquals(200, first.get(20, java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(200, second.get(20, java.util.concurrent.TimeUnit.SECONDS));
+        }
+        financial(order, "UNPAID", false);
+        inTenant(fixture.tenantA, () -> assertEquals(1, admin.queryForObject("SELECT count(*) FROM audit_log WHERE resource_id = ? AND action = 'PAYMENT_VOIDED'", Integer.class, order)));
+    }
+
+    @Test void runtimeCannotDeleteOrRewritePaymentEvidence() throws Exception {
+        UUID order = order(); approve(order); UUID payment = payment(order, "one", "100");
+        voidPayment(payment, "Correção").andExpect(status().isOk());
+        var runtimeTransaction = new TransactionTemplate(new DataSourceTransactionManager(runtimeJdbc.getDataSource()));
+        for (String sql : List.of("DELETE FROM payments WHERE id = ?", "UPDATE payments SET amount = 1 WHERE id = ?",
+                "UPDATE payments SET void_reason = 'Reescrito' WHERE id = ?", "UPDATE payments SET status = 'CONFIRMED' WHERE id = ?")) {
+            assertThrows(org.springframework.dao.DataAccessException.class, () -> runtimeTransaction.executeWithoutResult(tx -> {
+                runtimeJdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, fixture.tenantA.toString());
+                runtimeJdbc.update(sql, payment);
+            }));
+        }
+        inTenant(fixture.tenantA, () -> {
+            assertEquals("Correção", admin.queryForObject("SELECT void_reason FROM payments WHERE id = ?", String.class, payment));
+            assertEquals(1, admin.queryForObject("SELECT count(*) FROM payments WHERE id = ?", Integer.class, payment));
+        });
     }
 
 }

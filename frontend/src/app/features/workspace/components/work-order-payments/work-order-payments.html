@@ -94,7 +94,69 @@
                     <span class="entry-status" [class.voided]="payment.status !== 'CONFIRMED'">{{
                       payment.status === 'CONFIRMED' ? 'Confirmado' : 'Estornado'
                     }}</span>
+                    @if (role === 'OWNER' && payment.status === 'CONFIRMED') {
+                      <button
+                        class="void-button"
+                        type="button"
+                        (click)="beginVoid(payment)"
+                        [disabled]="busy() || blocked() || !!pending || pendingVoidReason !== null"
+                      >
+                        Estornar
+                      </button>
+                    }
                   </div>
+                  @if (payment.status === 'VOIDED') {
+                    <div class="void-evidence">
+                      <strong>Motivo do estorno</strong>
+                      <p>{{ payment.voidReason }}</p>
+                      @if (payment.voidedAt) {
+                        <time [attr.datetime]="payment.voidedAt"
+                          >Estornado em {{ payment.voidedAt | date: 'dd/MM/yyyy · HH:mm' }}</time
+                        >
+                      }
+                    </div>
+                  }
+                  @if (voidTarget() === payment.id) {
+                    <form class="void-confirmation" (ngSubmit)="confirmVoid()">
+                      <h4>Estornar {{ payment.amount | currency: 'BRL' }}?</h4>
+                      <p>
+                        O pagamento continuará no histórico e deixará de compor o total recebido.
+                      </p>
+                      <label [attr.for]="'void-reason-' + payment.id">Motivo do estorno</label>
+                      <textarea
+                        [id]="'void-reason-' + payment.id"
+                        name="voidReason"
+                        rows="3"
+                        required
+                        maxlength="2000"
+                        placeholder="Descreva por que este pagamento será estornado"
+                        [(ngModel)]="voidReason"
+                        [disabled]="busy() || pendingVoidReason !== null"
+                      ></textarea>
+                      <div class="void-actions">
+                        <button
+                          type="button"
+                          (click)="cancelVoid()"
+                          [disabled]="busy() || pendingVoidReason !== null"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          class="confirm-void"
+                          type="submit"
+                          [disabled]="busy() || blocked() || !voidReason.trim()"
+                        >
+                          {{
+                            busy()
+                              ? 'Estornando…'
+                              : pendingVoidReason !== null
+                                ? 'Tentar novamente'
+                                : 'Confirmar estorno'
+                          }}
+                        </button>
+                      </div>
+                    </form>
+                  }
                 </li>
               } @empty {
                 <li class="payments-empty">
@@ -113,7 +175,7 @@
                 <p>Adicione um recebimento parcial ou total.</p>
               </div>
             </div>
-            <fieldset [disabled]="busy() || !!pending">
+            <fieldset [disabled]="busy() || !!pending || !!voidTarget()">
               <legend class="sr-only">Dados do pagamento</legend>
               <label for="payment-amount"
                 >Valor recebido <span class="required-hint">Obrigatório</span></label
@@ -156,7 +218,7 @@
             <button
               class="primary register-payment"
               type="submit"
-              [disabled]="busy() || blocked() || !amount || amount <= 0"
+              [disabled]="busy() || blocked() || !!voidTarget() || !amount || amount <= 0"
             >
               <span aria-hidden="true">{{ pending ? '↻' : '+' }}</span
               >{{ busy() ? 'Registrando…' : pending ? 'Tentar novamente' : 'Registrar pagamento' }}
