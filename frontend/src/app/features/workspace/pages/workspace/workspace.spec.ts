@@ -45,7 +45,7 @@ describe('Operational workspace', () => {
     expect(page.textContent).toContain('Faça upgrade do plano');
     expect(page.textContent).not.toContain('E-mail já cadastrado.');
   });
-  it('shows real empty indicators and keeps the financial indicator unavailable', () => {
+  it('shows real empty indicators and enables financial navigation for the owner', () => {
     const { page } = setup();
     expect(page.querySelector('[aria-current="page"]')?.textContent).toContain('Visão geral');
     expect(page.querySelectorAll('.metric > strong')).toHaveLength(4);
@@ -53,7 +53,8 @@ describe('Operational workspace', () => {
       [...page.querySelectorAll('.metric > strong')].map((el) => el.textContent).join(',') ===
         '0,0,0,—',
     ).toBe(true);
-    expect(page.querySelectorAll('.operation-nav button:disabled')).toHaveLength(1);
+    expect(page.querySelectorAll('.operation-nav button:disabled')).toHaveLength(0);
+    expect(page.querySelector('a[href="/inicio/financeiro"]')?.textContent).toContain('Financeiro');
     expect(page.querySelector('.orders-empty')?.textContent).toContain('Abra uma nova ordem');
     expect(page.querySelector('.profile')?.textContent).toContain('Proprietário');
   });

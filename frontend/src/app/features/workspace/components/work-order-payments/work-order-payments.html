@@ -227,6 +227,11 @@
           </form>
         </div>
       }
+      <app-work-order-pix
+        [orderId]="order().id"
+        [blocked]="busy() || blocked() || !!pending || !!voidTarget()"
+        (changed)="pixChanged()"
+      />
     </div>
   }
 </section>

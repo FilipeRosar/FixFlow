@@ -31,6 +31,14 @@ public class SecurityConfig {
                 .headers(headers -> headers.cacheControl(cache -> cache.disable())).build();
     }
     @Bean
+    @org.springframework.core.annotation.Order(2)
+    SecurityFilterChain asaasWebhookSecurityFilterChain(HttpSecurity http) throws Exception {
+        return http.securityMatcher("/webhooks/asaas")
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .csrf(csrf -> csrf.ignoringRequestMatchers(PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/webhooks/asaas")))
+                .authorizeHttpRequests(auth -> auth.requestMatchers(HttpMethod.POST, "/webhooks/asaas").permitAll().anyRequest().denyAll()).build();
+    }
+    @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, GlobalAuthenticationProvider provider,
             JwtDecoder decoder, ActiveJwtAuthenticationConverter converter, org.springframework.core.env.Environment environment,
             @Value("${fixflow.auth.basic-enabled:false}") boolean legacyBasic,

@@ -51,6 +51,7 @@ public class JdbcPayments implements Payments {
     @Override public Registration register(UUID order, String key, BigDecimal amount, String method, Instant paidAt, String notes) {
         return tenants.execute(tenant(), m -> {
             permission(m.role().name());
+            if (key.startsWith("asaas:")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Prefixo reservado para conciliação do gateway.");
             // Serialize retries even when a key is reused for another order.
             jdbc.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", m.tenantId() + ":payment:" + key);
             order(m.tenantId(), order, true);

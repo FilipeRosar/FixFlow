@@ -89,6 +89,14 @@ export const routes: Routes = [
       import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
   },
   {
+    path: 'inicio/financeiro',
+    title: 'Financeiro — FixFlow',
+    data: { page: 'finance', requiredRole: 'OWNER' },
+    canActivate: [sessionGuard],
+    loadComponent: () =>
+      import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
+  },
+  {
     path: 'inicio/configuracoes',
     title: 'Configurações da empresa — FixFlow',
     data: { page: 'settings', requiredRole: 'OWNER' },

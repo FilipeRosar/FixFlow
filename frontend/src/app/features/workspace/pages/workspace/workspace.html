@@ -91,6 +91,7 @@
         title="Visão geral"
         class="nav-item"
         [class.active]="
+          !financePage() &&
           !settingsPage() &&
           !customersPage() &&
           !equipmentPage() &&
@@ -101,6 +102,7 @@
         "
         routerLink="/inicio"
         [attr.aria-current]="
+          !financePage() &&
           !settingsPage() &&
           !customersPage() &&
           !equipmentPage() &&
@@ -141,6 +143,18 @@
               ><svg class="icon" aria-hidden="true"><use href="#op-orders" /></svg
               ><span>Abrir OS</span></a
             >
+          } @else if (item.icon === 'finance') {
+            <a
+              class="nav-item"
+              routerLink="/inicio/financeiro"
+              [class.active]="financePage()"
+              [attr.aria-current]="financePage() ? 'page' : null"
+              (click)="closeMenu()"
+              title="Financeiro"
+            >
+              <svg class="icon" aria-hidden="true"><use href="#op-finance" /></svg
+              ><span>Financeiro</span>
+            </a>
           } @else if (item.icon === 'settings') {
             <a
               class="nav-item"
@@ -244,25 +258,27 @@
           <svg class="icon" aria-hidden="true"><use href="#op-menu" /></svg></button
         ><span>Minha empresa</span><span class="breadcrumb-divider" aria-hidden="true">/</span
         ><strong>{{
-          settingsPage()
-            ? 'Configurações'
-            : customersPage()
-              ? historyPage()
-                ? 'Histórico do cliente'
-                : 'Clientes'
-              : partsPage()
-                ? 'Peças e estoque'
-                : equipmentPage()
-                  ? 'Equipamentos'
-                  : ordersPage()
-                    ? 'Abrir OS'
-                    : orderDetailPage()
-                      ? 'Consultar OS'
-                      : queuePage()
-                        ? session()?.role === 'TECHNICIAN'
-                          ? 'Minha fila'
-                          : 'Ordens de serviço'
-                        : 'Visão geral'
+          financePage()
+            ? 'Financeiro'
+            : settingsPage()
+              ? 'Configurações'
+              : customersPage()
+                ? historyPage()
+                  ? 'Histórico do cliente'
+                  : 'Clientes'
+                : partsPage()
+                  ? 'Peças e estoque'
+                  : equipmentPage()
+                    ? 'Equipamentos'
+                    : ordersPage()
+                      ? 'Abrir OS'
+                      : orderDetailPage()
+                        ? 'Consultar OS'
+                        : queuePage()
+                          ? session()?.role === 'TECHNICIAN'
+                            ? 'Minha fila'
+                            : 'Ordens de serviço'
+                          : 'Visão geral'
         }}</strong>
       </div>
       <span class="development"><span aria-hidden="true">●</span> Em desenvolvimento</span>
@@ -282,6 +298,8 @@
         <app-customer-history />
       } @else if (customersPage()) {
         <app-customers />
+      } @else if (financePage()) {
+        <app-finance />
       } @else if (settingsPage()) {
         <div class="page-heading">
           <div>

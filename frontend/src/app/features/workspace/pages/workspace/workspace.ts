@@ -1,3 +1,4 @@
+import { FinancePanel } from '../../components/finance/finance';
 import { PartsPanel } from '../../components/parts/parts';
 import { Overview } from '../../components/overview/overview';
 import { WorkOrderQueue } from '../../components/work-order-queue/work-order-queue';
@@ -23,6 +24,7 @@ import { Membership } from '../../../../core/auth/dto/session';
   selector: 'app-workspace',
   imports: [
     Overview,
+    FinancePanel,
     PartsPanel,
     WorkOrderQueue,
     WorkOrderDetail,
@@ -69,6 +71,10 @@ export class Workspace implements OnInit {
   );
   protected readonly customersPage = toSignal(
     inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'customers')),
+    { initialValue: false },
+  );
+  protected readonly financePage = toSignal(
+    inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'finance')),
     { initialValue: false },
   );
   protected readonly settingsPage = toSignal(

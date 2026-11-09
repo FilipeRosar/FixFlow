@@ -1948,3 +1948,133 @@ a ação não for confirmada.
 Validação: `./mvnw -Dtest=PaymentsIntegrationTest,ArchitectureTest test`;
 no frontend, `npm test -- --watch=false --include='**/work-order-payments.spec.ts' --include='**/work-order-detail.spec.ts'`
 e `npm run build`.
+
+## US-052 — PaymentGateway e Asaas PIX
+
+`PaymentGateway` define o contrato do provedor; `AsaasPaymentGateway` implementa
+HTTP com timeout de conexão de 3 segundos e leitura de 5 segundos. A integração
+fica desativada por padrão e usa sandbox. Configure fora do Git:
+
+```bash
+ASAAS_ENABLED=true
+ASAAS_BASE_URL=https://api-sandbox.asaas.com/v3
+ASAAS_API_KEY=<chave-da-api-sandbox>
+ASAAS_WEBHOOK_TOKEN=<segredo-aleatorio-de-32-a-255-caracteres-sem-espacos>
+```
+
+O token de webhook deve ser diferente da API key. Não informe credenciais na UI,
+no corpo das cobranças ou no repositório. A configuração é por implantação,
+com uma conta Asaas; cada cobrança continua vinculada ao tenant e à OS por RLS.
+Use ambientes separados para sandbox e produção. Esta história não implementa
+onboarding de subcontas, split de pagamentos ou cadastro de clientes no Asaas.
+
+### Criar e consultar cobrança
+
+Owner/atendente podem usar:
+
+- `POST /api/v1/work-orders/{id}/pix-charges`, com `Idempotency-Key` (até 200 caracteres).
+- `GET /api/v1/work-orders/{id}/pix-charges` para listar cobranças.
+- `POST /api/v1/work-orders/{id}/pix-charges/{chargeId}/refresh` para recuperar uma intenção pendente após recarregar a página.
+
+Exemplo de corpo do POST de criação:
+
+```json
+{
+  "asaasCustomerId": "cus_000005913252",
+  "amount": 100.00,
+  "dueDate": "2026-12-10"
+}
+```
+
+É necessário um orçamento aprovado, valor positivo com até duas casas decimais
+e vencimento não passado. O cliente da OS precisa ter CPF/CNPJ cadastrado, e
+seu documento deve corresponder ao cliente já existente na conta Asaas. A API
+consulta o cadastro Asaas antes da criação. Nenhum tenant, usuário, valor recebido
+ou status financeiro é aceito como evidência do cliente HTTP.
+
+A resposta 200 contém `id`, `workOrderId`, `amount`, `dueDate`, `status`,
+`gatewayRef`, `payload` (PIX copia e cola), `encodedImage` (PNG em Base64) e
+`expirationDate`. Criar cobrança não lança pagamento: a OS permanece sem quitação
+até o recebimento. A aba Pagamentos oferece uma seção Cobranças PIX com formulário,
+QR Code, código copia e cola, vencimento e consulta do status local.
+
+A intenção é persistida e auditada antes da chamada externa. Seu UUID é enviado
+como `externalReference`; a mesma chave com outro corpo retorna 409. Requisições
+concorrentes compartilham a mesma intenção. Se a resposta externa for incerta,
+o retry consulta `/payments?externalReference=...`, sem repetir o POST de criação.
+Isso também recupera cobranças criadas antes de um timeout ou falha ao buscar o
+QR Code. A resposta 502/503 deve ser repetida com a mesma chave e corpo; a UI
+preserva os dois enquanto consulta a mesma intenção.
+
+**Limite de recuperação:** se uma intenção foi persistida e o processo terminou
+antes de enviar a criação, a consulta pode não encontrar cobrança. O servidor
+mantém a intenção em `CREATING` e responde 503, em vez de arriscar duplicação.
+Verifique a operação na conta Asaas antes de iniciar uma nova intenção. Não há
+retentativa cega de criação, nem garantia de idempotência remota presumida.
+
+### Webhook e conciliação
+
+Configure no Asaas uma URL HTTPS pública apontando para `POST /webhooks/asaas`,
+evento `PAYMENT_RECEIVED` e `authToken` igual a `ASAAS_WEBHOOK_TOKEN`.
+O endpoint aceita POST sem JWT/CSRF de navegador; outros métodos são bloqueados.
+A autenticação exige o header `asaas-access-token`, comparado em tempo constante.
+A chave de API é enviada somente nas chamadas de saída ao Asaas.
+
+**Mecanismo nativo de autenticidade:** o Asaas documenta token compartilhado no
+header, sem assinatura HMAC do corpo. A implementação valida o token antes de
+qualquer consulta externa e confirma o pagamento por `GET /payments/{id}` com a
+API key. O valor, cliente, referência e status usados na conciliação vêm dessa
+consulta autenticada. Campos financeiros e tenant eventualmente enviados no corpo
+do webhook não são usados como evidência. Uma exigência de assinatura HMAC do
+corpo demandaria um intermediário assinador, fora deste adapter nativo.
+
+Somente PIX com status remoto `RECEIVED` é conciliado. `CONFIRMED` pode ser
+provisório durante bloqueio cautelar; outros eventos são ignorados com 200 após
+autenticação. A conta deve manter `PAYMENT_RECEIVED` habilitado. Webhooks de
+outras cobranças da conta, sem referência local conhecida, são ignorados.
+
+A migration V47 cria cobranças e recibos de eventos com RLS, e vincula o ledger
+pelo identificador único da cobrança. A função restrita `reconcile_asaas_pix`
+resolve o tenant exclusivamente pela referência persistida e bloqueia a OS
+antes da cobrança. Compara cliente, valor e identificador remoto e, em uma única
+transação, grava evento, pagamento confirmado, status da cobrança, projeções
+financeiras da US-050 e auditoria `PAYMENT_REGISTERED` com origem `ASAAS`.
+A data do recebimento vem de `paymentDate` do Asaas; na ausência, usa a data de
+processamento do servidor. Uma resposta 200 só ocorre após o commit.
+
+A deduplicação ocorre pelo `id` do evento e também pela cobrança: eventos
+repetidos ou diferentes para o mesmo recebimento não duplicam dinheiro nem
+auditoria. Um evento já usado em outra cobrança gera conflito. Falhas transacionais
+retornam erro, permitindo retry; evento e pagamento são revertidos juntos.
+Webhooks que chegam antes da resposta da criação também são conciliados usando
+a intenção persistida. Um pagamento estornado pela US-051 nunca é reativado por
+novo webhook. O estorno da US-051 é local; não executa devolução PIX no Asaas.
+Reembolsos, chargebacks e outras alterações remotas estão fora deste fluxo.
+
+### Validação e teste sandbox
+
+```bash
+./mvnw -Dtest=AsaasPixIntegrationTest,PaymentsIntegrationTest,ArchitectureTest test
+```
+
+`AsaasPixIntegrationTest` usa um servidor HTTP local simulando o contrato real
+do adapter e o PostgreSQL de integração. Cobre criação, QR Code, consulta por
+referência, token ausente/inválido, dados divergentes, idempotência, concorrência,
+webhook antecipado, preservação de estorno e rollback de auditoria. Não usa
+credenciais reais nem realiza cobranças externas.
+
+Para smoke test real, configure sandbox e webhook HTTPS, cadastre um cliente
+Asaas com o mesmo CPF/CNPJ do cliente da OS, gere a cobrança e simule seu
+recebimento no sandbox. Verifique `PAYMENT_RECEIVED`, um único pagamento no
+histórico e `financialStatus` correspondente à soma. Reenvie o evento para
+confirmar que não há duplicação. Só habilite produção com credenciais e URL
+de webhook do ambiente correspondente.
+
+Frontend: `npm test -- --watch=false --include='**/work-order-pix.spec.ts' --include='**/work-order-payments.spec.ts' --include='**/work-order-detail.spec.ts'`
+e `npm run build`.
+
+Referências do contrato Asaas:
+[criação](https://docs.asaas.com/reference/create-new-payment),
+[QR Code](https://docs.asaas.com/reference/get-qr-code-for-pix-payments),
+[autenticação de webhooks](https://docs.asaas.com/docs/about-webhooks),
+[retentativas e idempotência](https://docs.asaas.com/docs/retries-and-idempotency).

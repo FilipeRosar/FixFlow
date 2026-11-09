@@ -1,3 +1,4 @@
+import { WorkOrderPixPanel } from '../work-order-pix/work-order-pix';
 import { SessionService } from '../../../../core/auth/data-access/session.service';
 import {
   Component,
@@ -30,7 +31,7 @@ interface Payment {
 @Component({
   selector: 'app-work-order-payments',
   providers: [{ provide: LOCALE_ID, useValue: 'pt-BR' }],
-  imports: [FormsModule, CurrencyPipe, DatePipe],
+  imports: [FormsModule, CurrencyPipe, DatePipe, WorkOrderPixPanel],
   styleUrls: ['../customers/customers.css', './work-order-payments.css'],
   templateUrl: './work-order-payments.html',
 })
@@ -70,6 +71,10 @@ export class WorkOrderPaymentsPanel {
     key: string;
     body: { amount: number; method: string; notes: string; paidAt: string };
   } | null = null;
+  protected pixChanged(): void {
+    this.load();
+    this.registered.emit(this.order().id);
+  }
   protected beginVoid(payment: Payment): void {
     if (
       this.role !== 'OWNER' ||
