@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject, signal, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
@@ -26,6 +26,7 @@ interface Page<T> {
   styleUrls: ['../customers/customers.css', './work-orders.css'],
 })
 export class WorkOrdersPanel implements OnInit {
+  readonly created = output<void>();
   private readonly http = inject(HttpClient);
   private readonly destroy = inject(DestroyRef);
   protected readonly canCreate = ['OWNER', 'ATTENDANT'].includes(
@@ -157,7 +158,10 @@ export class WorkOrdersPanel implements OnInit {
         finalize(() => this.saving.set(false)),
       )
       .subscribe({
-        next: (result) => this.result.set(result),
+        next: (result) => {
+          this.result.set(result);
+          this.created.emit();
+        },
         error: (error) =>
           this.error.set(
             error.error?.code === 'PLAN_LIMIT_REACHED'

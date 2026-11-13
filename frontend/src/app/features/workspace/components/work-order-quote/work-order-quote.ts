@@ -74,6 +74,7 @@ export class WorkOrderQuotePanel implements OnChanges {
   readonly busyChanged = output<boolean>();
   readonly saved = output<void>();
   readonly sent = output<SendReceipt>();
+  readonly revised = output<{ workOrderId: string; workOrderVersion: number; status: string }>();
   private readonly http = inject(HttpClient);
   private readonly destroy = inject(DestroyRef);
   private readonly role = inject(SessionService).session()?.role;
@@ -87,6 +88,69 @@ export class WorkOrderQuotePanel implements OnChanges {
   protected readonly selected = signal<Quote | null>(null);
   protected readonly parts = signal<Part[]>([]);
   protected readonly partsError = signal('');
+  protected readonly revisionOpen = signal(false);
+  private startRevisionOnLoad = false;
+  protected readonly canRevise = computed(
+    () =>
+      ['OWNER', 'ATTENDANT'].includes(this.role ?? '') &&
+      ['AGUARDANDO_APROVACAO', 'ORCAMENTO_REJEITADO'].includes(this.order().status) &&
+      !!this.selected() &&
+      this.selected()?.id === this.quotes()[0]?.id &&
+      ['SENT', 'REJECTED'].includes(this.selected()?.status ?? ''),
+  );
+  protected revise(): void {
+    if (
+      !this.revisionOpen() ||
+      !this.canRevise() ||
+      this.busy() ||
+      this.loading() ||
+      this.blocked()
+    )
+      return;
+    const order = this.order();
+    const request = ++this.request;
+    this.busy.set(true);
+    this.busyChanged.emit(true);
+    this.error.set('');
+    this.notice.set('');
+    this.http
+      .patch<{ id: string; version: number; status: string }>(
+        `/api/v1/work-orders/${order.id}/status`,
+        {
+          toStatus: 'AGUARDANDO_ORCAMENTO',
+          version: order.version,
+          reason: 'Revisão do orçamento para edição.',
+          paymentOverride: false,
+        },
+      )
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe({
+        next: (updated) => {
+          if (request !== this.request) return;
+          this.busy.set(false);
+          this.busyChanged.emit(false);
+          this.revisionOpen.set(false);
+          this.pendingSend = null;
+          this.pendingLink = null;
+          this.startRevisionOnLoad = true;
+          this.revised.emit({
+            workOrderId: order.id,
+            workOrderVersion: updated.version,
+            status: updated.status,
+          });
+        },
+        error: (error) => {
+          if (request !== this.request) return;
+          this.busy.set(false);
+          this.busyChanged.emit(false);
+          this.error.set(
+            typeof error.error?.detail === 'string'
+              ? error.error.detail
+              : 'Não foi possível iniciar a edição. Recarregue o orçamento e tente novamente.',
+          );
+        },
+      });
+  }
   protected readonly canEdit = computed(
     () =>
       ['OWNER', 'ATTENDANT', 'TECHNICIAN'].includes(this.role ?? '') &&
@@ -277,6 +341,8 @@ export class WorkOrderQuotePanel implements OnChanges {
   ngOnChanges(): void {
     const order = this.order();
     if (order.id !== this.lastId) {
+      this.revisionOpen.set(false);
+      this.startRevisionOnLoad = false;
       this.request++;
       this.pendingSend = null;
       this.pendingLink = null;
@@ -333,8 +399,13 @@ export class WorkOrderQuotePanel implements OnChanges {
     this.quotes.set(data.quotes);
     this.select(data.quotes[0] ?? null);
     this.versionChanged.emit(data.workOrderVersion);
+    if (this.startRevisionOnLoad && this.canEdit()) {
+      this.startRevisionOnLoad = false;
+      if (!data.quotes.some((quote) => quote.status === 'DRAFT')) this.newVersion();
+    }
   }
   protected select(quote: Quote | null): void {
+    this.revisionOpen.set(false);
     this.linkAction.set(null);
     this.selected.set(quote);
     this.lines = quote ? quote.items.map((item) => ({ ...item })) : [];

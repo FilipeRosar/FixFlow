@@ -52,6 +52,42 @@
             Criar nova versão
           </button>
         }
+        @if (canRevise()) {
+          <section class="quote-link-panel" aria-label="Edição do orçamento">
+            @if (revisionOpen()) {
+              <h3>Editar orçamento enviado</h3>
+              <p>
+                O link anterior será invalidado e a OS voltará para a elaboração do orçamento. A
+                versão anterior permanecerá no histórico.
+              </p>
+              <p>
+                Você poderá alterar os itens e o desconto, salvar e enviar uma nova versão ao
+                cliente.
+              </p>
+              <div class="quote-link-buttons">
+                <button
+                  type="button"
+                  class="primary"
+                  (click)="revise()"
+                  [disabled]="busy() || blocked() || loading()"
+                >
+                  {{ busy() ? 'Preparando edição…' : 'Confirmar edição' }}
+                </button>
+                <button type="button" (click)="revisionOpen.set(false)" [disabled]="busy()">
+                  Cancelar edição
+                </button>
+              </div>
+            } @else {
+              <button
+                type="button"
+                (click)="revisionOpen.set(true)"
+                [disabled]="busy() || blocked() || loading()"
+              >
+                Editar orçamento
+              </button>
+            }
+          </section>
+        }
         @if (selected(); as quote) {
           <div class="quote-totals" aria-label="Totais salvos do orçamento">
             <div class="quote-summary-heading">

@@ -1,0 +1,131 @@
+<section class="pix-section" aria-labelledby="pix-heading">
+  <header class="pix-heading">
+    <div>
+      <span class="eyebrow">ASAAS</span>
+      <h3 id="pix-heading">Cobranças PIX</h3>
+      <p>Gere um QR Code e acompanhe o recebimento.</p>
+    </div>
+    <button
+      type="button"
+      (click)="toggle()"
+      [attr.aria-expanded]="open()"
+      aria-controls="pix-content"
+    >
+      {{ open() ? 'Ocultar cobranças' : 'Ver cobranças PIX' }}
+    </button>
+  </header>
+  @if (open()) {
+    <div id="pix-content">
+      @if (error()) {
+        <p class="feedback error" role="alert">{{ error() }}</p>
+      }
+      @if (notice()) {
+        <p class="feedback notice" role="status">{{ notice() }}</p>
+      }
+      <div class="pix-layout">
+        <div>
+          <div class="list-heading">
+            <h4>Cobranças desta OS</h4>
+            <button type="button" (click)="load()" [disabled]="loading() || busy()">
+              Atualizar
+            </button>
+          </div>
+          @if (loading()) {
+            <p class="muted" role="status">Carregando cobranças…</p>
+          }
+          @for (charge of charges(); track charge.id) {
+            <article class="pix-charge">
+              <div class="charge-heading">
+                <strong>{{ charge.amount | currency: 'BRL' }}</strong
+                ><span class="charge-status" [class.received]="charge.status === 'RECEIVED'">{{
+                  charge.status === 'RECEIVED'
+                    ? 'Recebida'
+                    : charge.status === 'PENDING'
+                      ? 'Aguardando pagamento'
+                      : 'Em verificação'
+                }}</span>
+              </div>
+              <p class="muted">Vencimento: {{ charge.dueDate | date: 'dd/MM/yyyy' }}</p>
+              @if (charge.status !== 'RECEIVED' && charge.payload) {
+                @if (charge.encodedImage) {
+                  <img
+                    class="pix-qr"
+                    [src]="'data:image/png;base64,' + charge.encodedImage"
+                    alt="QR Code para pagamento PIX"
+                  />
+                }
+                <label [attr.for]="'pix-code-' + charge.id">PIX copia e cola</label>
+                <textarea
+                  [id]="'pix-code-' + charge.id"
+                  readonly
+                  rows="3"
+                  [value]="charge.payload"
+                  (focus)="$any($event.target).select()"
+                ></textarea>
+                <small>Selecione o código para copiar e pagar no aplicativo do seu banco.</small>
+                @if (charge.expirationDate) {
+                  <small>Validade do QR Code: {{ charge.expirationDate }}</small>
+                }
+              }
+              @if (charge.status === 'CREATING') {
+                <button
+                  type="button"
+                  (click)="refresh(charge)"
+                  [disabled]="busy() || blocked() || !!pending"
+                >
+                  Consultar novamente
+                </button>
+              }
+            </article>
+          } @empty {
+            @if (!loading()) {
+              <p class="empty">Nenhuma cobrança PIX gerada para esta OS.</p>
+            }
+          }
+        </div>
+        <form class="pix-form" (ngSubmit)="create()">
+          <h4>Nova cobrança PIX</h4>
+          <p>Use um cliente cadastrado no Asaas com o mesmo CPF/CNPJ do cliente desta OS.</p>
+          <fieldset [disabled]="busy() || !!pending">
+            <legend class="sr-only">Dados da cobrança PIX</legend>
+            <label for="pix-customer">Código do cliente no Asaas</label
+            ><input
+              id="pix-customer"
+              name="asaasCustomerId"
+              placeholder="cus_…"
+              pattern="cus_[a-zA-Z0-9]+"
+              [(ngModel)]="customer"
+              required
+            />
+            <label for="pix-amount">Valor da cobrança (R$)</label
+            ><input
+              id="pix-amount"
+              name="pixAmount"
+              type="number"
+              min="0.01"
+              max="999999999999.99"
+              step="0.01"
+              [(ngModel)]="amount"
+              required
+            />
+            <label for="pix-due">Vencimento</label
+            ><input id="pix-due" name="pixDueDate" type="date" [(ngModel)]="dueDate" required />
+          </fieldset>
+          <button
+            class="primary"
+            type="submit"
+            [disabled]="busy() || blocked() || !amount || amount <= 0 || !customer || !dueDate"
+          >
+            {{
+              busy() ? 'Consultando Asaas…' : pending ? 'Consultar novamente' : 'Gerar cobrança PIX'
+            }}
+          </button>
+          <small
+            >Gerar uma cobrança não registra um recebimento. A confirmação é automática após o
+            pagamento.</small
+          >
+        </form>
+      </div>
+    </div>
+  }
+</section>

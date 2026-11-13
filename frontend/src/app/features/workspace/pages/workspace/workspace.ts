@@ -1,3 +1,10 @@
+import { OnboardingPanel } from '../../components/onboarding/onboarding';
+import { SubscriptionPanel } from '../../components/subscription/subscription';
+import {
+  SubscriptionAccessState,
+  SubscriptionAccess,
+} from '../../../../core/auth/data-access/subscription-access.service';
+import { FinancePanel } from '../../components/finance/finance';
 import { PartsPanel } from '../../components/parts/parts';
 import { Overview } from '../../components/overview/overview';
 import { WorkOrderQueue } from '../../components/work-order-queue/work-order-queue';
@@ -23,6 +30,9 @@ import { Membership } from '../../../../core/auth/dto/session';
   selector: 'app-workspace',
   imports: [
     Overview,
+    OnboardingPanel,
+    SubscriptionPanel,
+    FinancePanel,
     PartsPanel,
     WorkOrderQueue,
     WorkOrderDetail,
@@ -71,6 +81,20 @@ export class Workspace implements OnInit {
     inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'customers')),
     { initialValue: false },
   );
+  protected readonly financePage = toSignal(
+    inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'finance')),
+    { initialValue: false },
+  );
+  protected readonly onboardingPage = toSignal(
+    inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'onboarding')),
+    { initialValue: false },
+  );
+  protected readonly onboardingRequired = signal(false);
+  protected readonly subscriptionPage = toSignal(
+    inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'subscription')),
+    { initialValue: false },
+  );
+  protected readonly subscriptionState = inject(SubscriptionAccessState);
   protected readonly settingsPage = toSignal(
     inject(ActivatedRoute).data.pipe(map((data) => data['page'] === 'settings')),
     { initialValue: false },
@@ -83,8 +107,17 @@ export class Workspace implements OnInit {
   ngOnInit(): void {
     const session = this.session();
     if (!session) return;
+    this.http.get<SubscriptionAccess>('/api/v1/subscription/access').subscribe({
+      next: (access) => {
+        this.subscriptionState.update(access);
+        this.startOnboarding();
+      },
+      error: () => this.subscriptionState.access.set(null),
+    });
     this.http.get<Membership>(`/api/oficinas/${session.tenantId}/selecao`).subscribe({
       next: (membership) => {
+        this.onboardingRequired.set(membership.onboardingRequired ?? false);
+        this.startOnboarding();
         this.companyName.set(membership.companyName);
         this.companyLogo.set(membership.logoDataUrl ?? null);
       },
@@ -93,6 +126,22 @@ export class Workspace implements OnInit {
           'Não foi possível carregar o nome da empresa. Tente verificar o acesso novamente.',
         ),
     });
+  }
+  private startOnboarding(): void {
+    if (this.onboardingRequired() && this.subscriptionState.access() &&
+        !this.subscriptionState.access()?.writable && this.session()?.role === 'OWNER' &&
+        this.router.url.split('?')[0] === '/inicio') {
+      void this.router.navigate(['/inicio/configuracoes/assinatura']);
+      return;
+    }
+    if (
+      this.onboardingRequired() &&
+      this.subscriptionState.access()?.writable &&
+      this.session()?.role === 'OWNER' &&
+      this.router.url.split('?')[0] === '/inicio'
+    ) {
+      void this.router.navigate(['/inicio/configuracao-inicial']);
+    }
   }
   protected readonly leaving = signal(false);
   protected readonly menuOpen = signal(false);

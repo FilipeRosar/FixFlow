@@ -1,3 +1,4 @@
+import { WorkOrderPaymentsPanel } from '../work-order-payments/work-order-payments';
 import { WorkOrderQuotePanel } from '../work-order-quote/work-order-quote';
 import { WorkOrderTimelinePanel } from '../work-order-timeline/work-order-timeline';
 import { WorkOrderAttachmentsPanel } from '../work-order-attachments/work-order-attachments';
@@ -41,6 +42,7 @@ interface WorkOrder {
   deliveredAt: string | null;
   warrantyDays: number | null;
   warrantyUntil: string | null;
+  financialStatus?: string;
   paymentSettled: boolean;
   deliveryPaymentOverride: boolean;
   deliveryReason: string | null;
@@ -53,6 +55,7 @@ interface WorkOrder {
     DatePipe,
     RouterLink,
     FormsModule,
+    WorkOrderPaymentsPanel,
     WorkOrderItemsPanel,
     WorkOrderQuotePanel,
     WorkOrderAttachmentsPanel,
@@ -98,6 +101,19 @@ export class WorkOrderDetail implements OnInit {
   protected readonly role = inject(SessionService).session()?.role;
   protected readonly timelineRevision = signal(0);
   protected readonly quotesSaving = signal(false);
+  protected paymentRegistered(id: string): void {
+    this.http
+      .get<WorkOrder>(`/api/v1/work-orders/${id}`)
+      .pipe(takeUntilDestroyed(this.destroy))
+      .subscribe({
+        next: (order) => {
+          if (this.order()?.id === id) this.order.set(order);
+        },
+        error: () => {
+          this.transitionError.set('Pagamento registrado. Reabra a OS para atualizar a quitação.');
+        },
+      });
+  }
   protected readonly itemsSaving = signal(false);
   protected quoteSent(receipt: {
     workOrderId: string;

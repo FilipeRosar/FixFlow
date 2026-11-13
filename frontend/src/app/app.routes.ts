@@ -22,6 +22,12 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/pages/register/register').then((m) => m.Register),
   },
   {
+    path: 'confirmar-email',
+    title: 'Confirmar e-mail — FixFlow',
+    loadComponent: () =>
+      import('./features/auth/pages/confirm-email/confirm-email').then((m) => m.ConfirmEmail),
+  },
+  {
     path: 'recuperar-senha',
     title: 'Recuperar senha — FixFlow',
     loadComponent: () => import('./features/auth/pages/recovery/recovery').then((m) => m.Recovery),
@@ -31,6 +37,13 @@ export const routes: Routes = [
     title: 'Redefinir senha — FixFlow',
     data: { reset: true },
     loadComponent: () => import('./features/auth/pages/recovery/recovery').then((m) => m.Recovery),
+  },
+  {
+    path: 'ativar-assinatura',
+    title: 'Ativar assinatura — FixFlow',
+    data: { page: 'activation' },
+    canActivate: [sessionGuard],
+    loadComponent: () => import('./features/auth/pages/activate-subscription/activate-subscription').then((m) => m.ActivateSubscription),
   },
   {
     path: 'inicio/ordens/nova',
@@ -84,6 +97,30 @@ export const routes: Routes = [
     path: 'inicio/clientes',
     title: 'Clientes — FixFlow',
     data: { page: 'customers' },
+    canActivate: [sessionGuard],
+    loadComponent: () =>
+      import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
+  },
+  {
+    path: 'inicio/financeiro',
+    title: 'Financeiro — FixFlow',
+    data: { page: 'finance', requiredRole: 'OWNER' },
+    canActivate: [sessionGuard],
+    loadComponent: () =>
+      import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
+  },
+  {
+    path: 'inicio/configuracao-inicial',
+    title: 'Configuração inicial — FixFlow',
+    data: { page: 'onboarding', requiredRole: 'OWNER' },
+    canActivate: [sessionGuard],
+    loadComponent: () =>
+      import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),
+  },
+  {
+    path: 'inicio/configuracoes/assinatura',
+    title: 'Assinatura — FixFlow',
+    data: { page: 'subscription', requiredRole: 'OWNER' },
     canActivate: [sessionGuard],
     loadComponent: () =>
       import('./features/workspace/pages/workspace/workspace').then((m) => m.Workspace),

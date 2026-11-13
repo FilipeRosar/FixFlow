@@ -31,12 +31,24 @@ public class SecurityConfig {
                 .headers(headers -> headers.cacheControl(cache -> cache.disable())).build();
     }
     @Bean
+    @org.springframework.core.annotation.Order(2)
+    SecurityFilterChain asaasWebhookSecurityFilterChain(HttpSecurity http) throws Exception {
+        return http.securityMatcher("/webhooks/asaas", "/webhooks/asaas/subscriptions", "/webhooks/mercadopago/subscriptions")
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .csrf(csrf -> csrf.ignoringRequestMatchers(PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/webhooks/asaas"),
+                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/webhooks/asaas/subscriptions"),
+                        PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/webhooks/mercadopago/subscriptions")))
+                .authorizeHttpRequests(auth -> auth.requestMatchers(HttpMethod.POST, "/webhooks/asaas", "/webhooks/asaas/subscriptions", "/webhooks/mercadopago/subscriptions").permitAll().anyRequest().denyAll()).build();
+    }
+    @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, GlobalAuthenticationProvider provider,
-            JwtDecoder decoder, ActiveJwtAuthenticationConverter converter, org.springframework.core.env.Environment environment,
+            JwtDecoder decoder, ActiveJwtAuthenticationConverter converter,
+            br.com.fixflow.modules.subscriptions.application.Subscriptions subscriptions, org.springframework.core.env.Environment environment,
             @Value("${fixflow.auth.basic-enabled:false}") boolean legacyBasic,
             @Value("${fixflow.auth.allowed-origin:http://localhost:4200}") String allowedOrigin) throws Exception {
         boolean basicForTests = legacyBasic && environment.acceptsProfiles(org.springframework.core.env.Profiles.of("integration-test"));
         var signup = PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/contas");
+        var confirmation = PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/contas/confirmar");
         var login = PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/login");
         var recovery = PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/{operation:logout|forgot-password|reset-password}");
         var refresh = PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/api/v1/auth/refresh");
@@ -49,16 +61,16 @@ public class SecurityConfig {
         };
         http.authenticationProvider(provider)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .csrf(csrf -> csrf.ignoringRequestMatchers(signup,
-                        request -> request.getRequestURI().substring(request.getContextPath().length()).matches("(?:/api/oficinas/[^/]+/usuarios(?:/.*)?|/api/v1/tenant|/api/v1/customers(?:/.*)?|/api/v1/equipment(?:/.*)?)")
+                .csrf(csrf -> csrf.ignoringRequestMatchers(signup, confirmation,
+                        request -> request.getRequestURI().substring(request.getContextPath().length()).matches("(?:/api/oficinas/[^/]+/usuarios(?:/.*)?|/api/v1/onboarding(?:/.*)?|/api/v1/subscription(?:/.*)?|/api/v1/tenant|/api/v1/customers(?:/.*)?|/api/v1/equipment(?:/.*)?)")
                                 && request.getHeader("Authorization") != null
                                 && request.getHeader("Authorization").startsWith("Bearer "), request ->
                         (login.matches(request) || refresh.matches(request) || recovery.matches(request))
                         && "true".equals(request.getHeader("X-Auth-Request"))
                         && (request.getHeader("Origin") == null || allowedOrigin.equals(request.getHeader("Origin")))))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.GET, "/api/enderecos/cep/*").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/contas", "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/enderecos/cep/*", "/public/subscriptions/return").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/contas", "/api/contas/confirmar", "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password").permitAll()
                         .requestMatchers("/api-docs/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/health", "/health/**").permitAll()
                          .requestMatchers(HttpMethod.POST, "/api/v1/work-orders").hasAuthority("workorder:create")
                         .requestMatchers("/api/v1/finance/**", "/api/v1/dashboard/**").hasAuthority("finance:read")
@@ -67,6 +79,8 @@ public class SecurityConfig {
                 .oauth2ResourceServer(resource -> resource.jwt(jwt -> jwt.decoder(decoder).jwtAuthenticationConverter(converter))
                         .authenticationEntryPoint(entryPoint));
         if (basicForTests) http.httpBasic(basic -> basic.authenticationEntryPoint(entryPoint));
+        http.addFilterBefore(new br.com.fixflow.modules.subscriptions.infrastructure.SubscriptionWriteFilter(subscriptions),
+                org.springframework.security.web.access.intercept.AuthorizationFilter.class);
         http.addFilterAfter(new UserMdcFilter(), BasicAuthenticationFilter.class);
         return http.build();
     }

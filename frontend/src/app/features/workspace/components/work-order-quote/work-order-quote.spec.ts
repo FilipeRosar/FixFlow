@@ -54,85 +54,205 @@ describe('Work order quote', () => {
     ) as HTMLButtonElement;
   }
   function linkReceipt(linkStatus: string, status = 'AGUARDANDO_APROVACAO') {
-    return { workOrderId: 'os-1', quoteId: 'quote-1', workOrderVersion: 5, status, notificationStatus: linkStatus === 'ACTIVE' ? 'QUEUED' : 'NONE', validUntil: draft.validUntil, linkStatus };
+    return {
+      workOrderId: 'os-1',
+      quoteId: 'quote-1',
+      workOrderVersion: 5,
+      status,
+      notificationStatus: linkStatus === 'ACTIVE' ? 'QUEUED' : 'NONE',
+      validUntil: draft.validUntil,
+      linkStatus,
+    };
   }
+  it('opens a sent quote for editing as a new version and preserves its previous values', () => {
+    const fixture = setup('AGUARDANDO_APROVACAO');
+    const original = { ...draft, status: 'SENT', linkStatus: 'ACTIVE' };
+    load(fixture, [original]);
+    const http = TestBed.inject(HttpTestingController);
+    fixture.componentInstance.revised.subscribe((receipt) => {
+      fixture.componentRef.setInput('order', {
+        id: receipt.workOrderId,
+        version: receipt.workOrderVersion,
+        status: receipt.status,
+      });
+    });
+    button(fixture, 'Editar orçamento').click();
+    fixture.detectChanges();
+    http.expectNone((request) => request.method === 'PATCH');
+    expect(fixture.nativeElement.textContent).toContain('O link anterior será invalidado');
+    button(fixture, 'Confirmar edição').click();
+    const transition = http.expectOne('/api/v1/work-orders/os-1/status');
+    expect(transition.request.method).toBe('PATCH');
+    expect(transition.request.body).toEqual({
+      toStatus: 'AGUARDANDO_ORCAMENTO',
+      version: 4,
+      reason: 'Revisão do orçamento para edição.',
+      paymentOverride: false,
+    });
+    transition.flush({ id: 'os-1', version: 5, status: 'AGUARDANDO_ORCAMENTO' });
+    fixture.detectChanges();
+    http
+      .expectOne('/api/v1/work-orders/os-1/quotes')
+      .flush({ quotes: [{ ...original, linkStatus: 'REVOKED' }], workOrderVersion: 5 });
+    http.expectOne('/api/v1/parts').flush([]);
+    fixture.detectChanges();
+    expect(fixture.componentInstance['selected']()).toBeNull();
+    expect(fixture.componentInstance['lines']).toEqual(draft.items);
+    fixture.componentInstance['lines'][0].unitPrice = 150;
+    expect(fixture.componentInstance['quotes']()[0].items[0].unitPrice).toBe(100);
+    fixture.componentInstance['save']();
+    const save = http.expectOne('/api/v1/work-orders/os-1/quotes');
+    expect(save.request.method).toBe('POST');
+    expect(save.request.body.workOrderVersion).toBe(5);
+    expect(save.request.body.items[0].unitPrice).toBe(150);
+    save.flush({
+      quotes: [{ ...draft, id: 'quote-2', version: 2 }, original],
+      workOrderVersion: 6,
+    });
+  });
+  it('allows revising rejected quotes but keeps approved quotes unchanged', () => {
+    const fixture = setup('ORCAMENTO_REJEITADO');
+    load(fixture, [{ ...draft, status: 'REJECTED' }]);
+    expect(button(fixture, 'Editar orçamento')).toBeDefined();
+    fixture.componentRef.setInput('order', { ...order, status: 'APROVADA' });
+    fixture.detectChanges();
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/v1/work-orders/os-1/quotes')
+      .flush({ quotes: [{ ...draft, status: 'APPROVED' }], workOrderVersion: 4 });
+    fixture.detectChanges();
+    expect(button(fixture, 'Editar orçamento')).toBeUndefined();
+  });
+  it('keeps the original quote when revision conflicts with another update', () => {
+    const fixture = setup('AGUARDANDO_APROVACAO');
+    load(fixture, [{ ...draft, status: 'SENT' }]);
+    button(fixture, 'Editar orçamento').click();
+    fixture.detectChanges();
+    button(fixture, 'Confirmar edição').click();
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/v1/work-orders/os-1/status')
+      .flush({ detail: 'A OS foi alterada. Recarregue.' }, { status: 409, statusText: 'Conflict' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('A OS foi alterada. Recarregue.');
+    expect(fixture.componentInstance['selected']()?.status).toBe('SENT');
+    expect(fixture.componentInstance['busy']()).toBe(false);
+  });
   it('requires confirmation before rotating a sent link and sends the version and idempotency key', () => {
-    const fixture = setup('AGUARDANDO_APROVACAO'); load(fixture, [{ ...draft, status: 'SENT', linkStatus: 'ACTIVE' }]);
-    button(fixture, 'Reenviar novo link').click(); fixture.detectChanges();
+    const fixture = setup('AGUARDANDO_APROVACAO');
+    load(fixture, [{ ...draft, status: 'SENT', linkStatus: 'ACTIVE' }]);
+    button(fixture, 'Reenviar novo link').click();
+    fixture.detectChanges();
     const http = TestBed.inject(HttpTestingController);
     http.expectNone('/api/v1/work-orders/os-1/quotes/quote-1/resend-link');
     expect(fixture.nativeElement.textContent).toContain('O link atual deixará de funcionar');
     button(fixture, 'Confirmar reenvio').click();
     const request = http.expectOne('/api/v1/work-orders/os-1/quotes/quote-1/resend-link');
-    expect(request.request.body).toEqual({ workOrderVersion: 4 }); expect(request.request.headers.get('Idempotency-Key')).toBeTruthy();
-    request.flush(linkReceipt('ACTIVE')); fixture.detectChanges();
+    expect(request.request.body).toEqual({ workOrderVersion: 4 });
+    expect(request.request.headers.get('Idempotency-Key')).toBeTruthy();
+    request.flush(linkReceipt('ACTIVE'));
+    fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('O link anterior foi invalidado');
   });
   it('revokes the link without changing the proposal or requesting an email', () => {
-    const fixture = setup('AGUARDANDO_APROVACAO'); load(fixture, [{ ...draft, status: 'SENT', linkStatus: 'ACTIVE' }]);
-    fixture.componentInstance['chooseLinkAction']('revoke-link'); fixture.componentInstance['manageLink']();
-    TestBed.inject(HttpTestingController).expectOne('/api/v1/work-orders/os-1/quotes/quote-1/revoke-link').flush(linkReceipt('REVOKED'));
-    fixture.detectChanges(); expect(fixture.nativeElement.textContent).toContain('Link revogado');
+    const fixture = setup('AGUARDANDO_APROVACAO');
+    load(fixture, [{ ...draft, status: 'SENT', linkStatus: 'ACTIVE' }]);
+    fixture.componentInstance['chooseLinkAction']('revoke-link');
+    fixture.componentInstance['manageLink']();
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/v1/work-orders/os-1/quotes/quote-1/revoke-link')
+      .flush(linkReceipt('REVOKED'));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Link revogado');
     expect(button(fixture, 'Revogar link').disabled).toBe(true);
     expect(fixture.componentInstance['selected']()?.status).toBe('SENT');
   });
   it('recovers an uncertain reissue using the same key without duplicating the operation', () => {
-    const fixture = setup('AGUARDANDO_APROVACAO'); load(fixture, [{ ...draft, status: 'SENT', linkStatus: 'ACTIVE' }]);
+    const fixture = setup('AGUARDANDO_APROVACAO');
+    load(fixture, [{ ...draft, status: 'SENT', linkStatus: 'ACTIVE' }]);
     const http = TestBed.inject(HttpTestingController);
-    fixture.componentInstance['chooseLinkAction']('resend-link'); fixture.componentInstance['manageLink']();
-    const first = http.expectOne('/api/v1/work-orders/os-1/quotes/quote-1/resend-link'); const key = first.request.headers.get('Idempotency-Key');
+    fixture.componentInstance['chooseLinkAction']('resend-link');
+    fixture.componentInstance['manageLink']();
+    const first = http.expectOne('/api/v1/work-orders/os-1/quotes/quote-1/resend-link');
+    const key = first.request.headers.get('Idempotency-Key');
     first.flush({}, { status: 500, statusText: 'Unknown result' });
-    fixture.componentInstance['manageLink'](); const retry = http.expectOne('/api/v1/work-orders/os-1/quotes/quote-1/resend-link');
-    expect(retry.request.headers.get('Idempotency-Key')).toBe(key); retry.flush(linkReceipt('ACTIVE'));
+    fixture.componentInstance['manageLink']();
+    const retry = http.expectOne('/api/v1/work-orders/os-1/quotes/quote-1/resend-link');
+    expect(retry.request.headers.get('Idempotency-Key')).toBe(key);
+    retry.flush(linkReceipt('ACTIVE'));
   });
   it('keeps an approved proposal read-only when rotating its consultation link', () => {
-    const fixture = setup('APROVADA'); load(fixture, [{ ...draft, status: 'APPROVED', linkStatus: 'REVOKED' }]);
-    fixture.componentInstance['chooseLinkAction']('resend-link'); fixture.componentInstance['manageLink']();
-    TestBed.inject(HttpTestingController).expectOne('/api/v1/work-orders/os-1/quotes/quote-1/resend-link').flush({ ...linkReceipt('ACTIVE', 'APROVADA'), validUntil: '2027-02-01T12:00:00Z' });
-    fixture.detectChanges(); expect(fixture.componentInstance['selected']()?.status).toBe('APPROVED');
+    const fixture = setup('APROVADA');
+    load(fixture, [{ ...draft, status: 'APPROVED', linkStatus: 'REVOKED' }]);
+    fixture.componentInstance['chooseLinkAction']('resend-link');
+    fixture.componentInstance['manageLink']();
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/v1/work-orders/os-1/quotes/quote-1/resend-link')
+      .flush({ ...linkReceipt('ACTIVE', 'APROVADA'), validUntil: '2027-02-01T12:00:00Z' });
+    fixture.detectChanges();
+    expect(fixture.componentInstance['selected']()?.status).toBe('APPROVED');
     expect(fixture.componentInstance['selected']()?.validUntil).toBe(draft.validUntil);
     expect(fixture.nativeElement.querySelector('form')).toBeNull();
   });
   it('does not manage links for technicians', () => {
-    TestBed.overrideProvider(SessionService, { useValue: { session: signal({ role: 'TECHNICIAN' }) } });
-    const fixture = setup('AGUARDANDO_APROVACAO'); load(fixture, [{ ...draft, status: 'SENT', linkStatus: 'ACTIVE' }]);
+    TestBed.overrideProvider(SessionService, {
+      useValue: { session: signal({ role: 'TECHNICIAN' }) },
+    });
+    const fixture = setup('AGUARDANDO_APROVACAO');
+    load(fixture, [{ ...draft, status: 'SENT', linkStatus: 'ACTIVE' }]);
     expect(button(fixture, 'Reenviar novo link')).toBeUndefined();
-    fixture.componentInstance['chooseLinkAction']('resend-link'); fixture.componentInstance['manageLink']();
+    fixture.componentInstance['chooseLinkAction']('resend-link');
+    fixture.componentInstance['manageLink']();
   });
   it('reuses the same idempotency key after an uncertain send and emits the new OS state', () => {
-    const fixture = setup(); load(fixture, [draft]);
+    const fixture = setup();
+    load(fixture, [draft]);
     const receipts: any[] = [];
-    fixture.componentInstance.sent.subscribe(receipt => receipts.push(receipt));
+    fixture.componentInstance.sent.subscribe((receipt) => receipts.push(receipt));
     fixture.componentInstance['sendQuote']();
     const http = TestBed.inject(HttpTestingController);
     const first = http.expectOne('/api/v1/work-orders/os-1/quotes/quote-1/send');
     const key = first.request.headers.get('Idempotency-Key');
-    expect(key).toBeTruthy(); expect(first.request.body).toEqual({ workOrderVersion: 4 });
+    expect(key).toBeTruthy();
+    expect(first.request.body).toEqual({ workOrderVersion: 4 });
     first.flush({}, { status: 500, statusText: 'Uncertain result' });
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('mesma solicitação');
     fixture.componentInstance['sendQuote']();
     const retry = http.expectOne('/api/v1/work-orders/os-1/quotes/quote-1/send');
     expect(retry.request.headers.get('Idempotency-Key')).toBe(key);
-    retry.flush({ workOrderId: 'os-1', quoteId: 'quote-1', workOrderVersion: 5, status: 'AGUARDANDO_APROVACAO', notificationStatus: 'QUEUED', validUntil: draft.validUntil });
+    retry.flush({
+      workOrderId: 'os-1',
+      quoteId: 'quote-1',
+      workOrderVersion: 5,
+      status: 'AGUARDANDO_APROVACAO',
+      notificationStatus: 'QUEUED',
+      validUntil: draft.validUntil,
+    });
     fixture.detectChanges();
     expect(receipts[0].status).toBe('AGUARDANDO_APROVACAO');
     expect(fixture.nativeElement.textContent).toContain('e-mail está na fila');
     expect(button(fixture, 'Enviar orçamento')).toBeUndefined();
   });
   it('requires unsaved edits to be saved before sending', async () => {
-    const fixture = setup(); load(fixture, [draft]);
+    const fixture = setup();
+    load(fixture, [draft]);
     await fixture.whenStable();
-    const price = fixture.nativeElement.querySelectorAll('.quote-line input')[2] as HTMLInputElement;
-    price.value = '123'; price.dispatchEvent(new Event('input'));
-    await fixture.whenStable(); fixture.detectChanges();
+    const price = fixture.nativeElement.querySelectorAll(
+      '.quote-line input',
+    )[2] as HTMLInputElement;
+    price.value = '123';
+    price.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    fixture.detectChanges();
     expect(button(fixture, 'Enviar orçamento').disabled).toBe(true);
     expect(fixture.nativeElement.textContent).toContain('Salve suas alterações');
     fixture.componentInstance['sendQuote']();
   });
   it('does not offer sending to technicians', () => {
-    TestBed.overrideProvider(SessionService, { useValue: { session: signal({ role: 'TECHNICIAN' }) } });
-    const fixture = setup(); load(fixture, [draft]);
+    TestBed.overrideProvider(SessionService, {
+      useValue: { session: signal({ role: 'TECHNICIAN' }) },
+    });
+    const fixture = setup();
+    load(fixture, [draft]);
     expect(button(fixture, 'Enviar orçamento')).toBeUndefined();
     fixture.componentInstance['sendQuote']();
   });

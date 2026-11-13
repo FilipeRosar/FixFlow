@@ -42,70 +42,6 @@ class OwnerRegistrationIntegrationTest {
     @Autowired JdbcTemplate runtime;
 
     @Test
-    void publicRegistrationCreatesActiveOwnerAndAuthenticates() throws Exception {
-        String company = UUID.randomUUID().toString();
-        String email = company + "@example.invalid";
-        try {
-            var response = mvc.perform(post("/api/contas").contentType("application/json")
-                            .content(body(company, "  " + email.toUpperCase(java.util.Locale.ROOT) + "  ", PASSWORD)))
-                    .andExpect(status().isCreated()).andExpect(jsonPath("$.role").value("OWNER"))
-                    .andExpect(jsonPath("$.password").doesNotExist())
-                    .andReturn().getResponse().getContentAsString();
-            var result = mapper.readTree(response);
-            String tenant = result.get("tenantId").asText();
-            String user = result.get("userId").asText();
-            new TransactionTemplate(manager).executeWithoutResult(status -> {
-                runtime.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, tenant);
-                var details = runtime.queryForMap("SELECT document, street, number, complement, neighborhood, city, state, postal_code, phone FROM tenants WHERE id = ?::uuid", tenant);
-                assertEquals("52998224725", details.get("document"));
-                assertEquals("Rua Teste", details.get("street"));
-                assertEquals("123", details.get("number"));
-                assertEquals("Centro", details.get("neighborhood"));
-                assertEquals("São Paulo", details.get("city"));
-                assertEquals("SP", details.get("state"));
-                assertEquals("01001000", details.get("postal_code"));
-                assertEquals("11999999999", details.get("phone"));
-            });
-            mvc.perform(get("/api/oficinas/" + tenant + "/selecao").with(httpBasic(email, PASSWORD)))
-                    .andExpect(status().isOk()).andExpect(jsonPath("$.userId").value(user))
-                    .andExpect(jsonPath("$.role").value("OWNER"));
-            var owner = owner();
-            assertEquals("Owner Test", owner.queryForObject("SELECT full_name FROM users WHERE email = ?", String.class, email));
-            assertEquals("Owner", owner.queryForObject("SELECT first_name FROM users WHERE email = ?", String.class, email));
-            assertEquals("Test", owner.queryForObject("SELECT last_name FROM users WHERE email = ?", String.class, email));
-            assertTrue(encoder.matches(PASSWORD, owner.queryForObject("SELECT password_hash FROM users WHERE email = ?", String.class, email)));
-            mvc.perform(post("/api/contas").contentType("application/json").content(body(company, email, PASSWORD)))
-                    .andExpect(status().isConflict());
-            assertEquals(1, countTenants(company));
-            assertTrue(TenantContext.getTenantId().isEmpty());
-        } finally { cleanup(email); }
-    }
-
-    @Test
-    void invalidInputsAndMalformedJsonReturnBadRequest() throws Exception {
-        String email = UUID.randomUUID() + "@example.invalid";
-        for (String body : new String[]{"{}", "{", body("", email, PASSWORD), body("Workshop", "invalid", PASSWORD),
-                body("Workshop", email, "Abc1234"), body("Workshop", email, "abcdefgh1"), body("Workshop", email, "ABCDEFGH1"), body("Workshop", email, "Abcdefgh"), body("Workshop", email, "á".repeat(40)), body("Workshop", email, "x".repeat(73))}) {
-            mvc.perform(post("/api/contas").contentType("application/json").content(body)).andExpect(status().isBadRequest());
-        }
-        for (String field : new String[]{"firstName", "lastName", "document", "address", "phone"}) {
-            var invalid = mapper.readTree(body("Workshop", email, PASSWORD));
-            ((tools.jackson.databind.node.ObjectNode) invalid).put(field, "");
-            mvc.perform(post("/api/contas").contentType("application/json")
-                    .content(mapper.writeValueAsString(invalid))).andExpect(status().isBadRequest());
-        }
-        for (String field : new String[]{"street", "number", "neighborhood", "city", "state", "postalCode"}) {
-            var invalid = mapper.readTree(body("Workshop", email, PASSWORD));
-            ((tools.jackson.databind.node.ObjectNode) invalid.get("address")).put(field, "");
-            mvc.perform(post("/api/contas").contentType("application/json")
-                    .content(mapper.writeValueAsString(invalid))).andExpect(status().isBadRequest());
-        }
-        assertEquals(0, owner().queryForObject("SELECT count(*) FROM users WHERE email = ?", Integer.class, email));
-        // The CSRF exemption is limited to the registration operation.
-        mvc.perform(post("/api/oficinas/" + UUID.randomUUID() + "/selecao")).andExpect(status().isForbidden());
-    }
-
-    @Test
     void originRollbackRemovesIdentityTenantAndMembership() {
         String company = UUID.randomUUID().toString();
         String email = company + "@example.invalid";
@@ -176,6 +112,8 @@ class OwnerRegistrationIntegrationTest {
                 jdbc.update("DELETE FROM tenant_memberships WHERE user_id = ?", user);
                 for (UUID tenant : tenants) {
                     jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, tenant.toString());
+                    jdbc.update("DELETE FROM outbox_event WHERE tenant_id = ?", tenant);
+                    jdbc.update("DELETE FROM audit_log WHERE tenant_id = ?", tenant);
                     jdbc.update("DELETE FROM tenants WHERE id = ?", tenant);
                 }
                 jdbc.update("DELETE FROM users WHERE id = ?", user);

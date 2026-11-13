@@ -61,6 +61,9 @@ public final class MembershipFixtures implements AutoCloseable {
                 INSERT INTO tenant_memberships (user_id, tenant_id, role, status)
                 VALUES (?, ?, 'OWNER', ?)
                 """, userId, tenantId, membershipStatus);
+        // Keep generic fixtures neutral; registration tests exercise the real trial events.
+        jdbc.update("DELETE FROM outbox_event WHERE tenant_id = ? AND aggregate_type = 'SUBSCRIPTION'", tenantId);
+        jdbc.update("DELETE FROM audit_log WHERE tenant_id = ? AND action = 'SUBSCRIPTION_TRIAL_STARTED'", tenantId);
         jdbc.update("""
                 INSERT INTO app_users (tenant_id, full_name, email, password_hash)
                 VALUES (?, 'Integration legacy user', ?, 'unused-test-hash')

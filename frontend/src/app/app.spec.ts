@@ -1,5 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { App } from './app';
@@ -38,12 +39,27 @@ describe('FixFlow navigation', () => {
       role: 'OWNER',
     });
     const router = TestBed.inject(Router);
-    await router.navigateByUrl('/inicio');
+    const navigation = router.navigateByUrl('/inicio');
+    await vi.waitFor(() =>
+      TestBed.inject(HttpTestingController).expectOne('/api/v1/subscription/access').flush({
+        status: 'TRIALING',
+        writable: true,
+        accessUntil: '2026-12-01T00:00:00Z',
+        trialDaysRemaining: 14,
+      }),
+    );
+    await navigation;
     await fixture.whenStable();
     const page = fixture.nativeElement as HTMLElement;
     TestBed.inject(HttpTestingController)
       .expectOne('/api/oficinas/t/selecao')
       .flush({ userId: 'u', tenantId: 't', role: 'OWNER', companyName: 'Oficina Horizonte' });
+    TestBed.inject(HttpTestingController).expectOne('/api/v1/subscription/access').flush({
+      status: 'TRIALING',
+      writable: true,
+      accessUntil: '2026-12-01T00:00:00Z',
+      trialDaysRemaining: 14,
+    });
     expect(page.querySelector('app-header')).toBeNull();
     expect(page.querySelector('.operation-nav')).not.toBeNull();
     expect(page.querySelectorAll('footer')).toHaveLength(1);

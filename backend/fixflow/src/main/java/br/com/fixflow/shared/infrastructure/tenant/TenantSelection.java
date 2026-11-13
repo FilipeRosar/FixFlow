@@ -20,6 +20,7 @@ public class TenantSelection implements SelectTenant {
         return tenants.execute(tenantId, member -> new SelectedTenant(member.userId(), member.tenantId(), member.role(),
                 jdbc.queryForObject("SELECT name FROM public.tenants WHERE id = ?", String.class, member.tenantId()),
                 files.logoDataUrl(member.tenantId(), jdbc.query("SELECT logo_key FROM public.tenant_settings WHERE tenant_id = ?",
-                        rs -> rs.next() ? rs.getString("logo_key") : null, member.tenantId()))));
+                        rs -> rs.next() ? rs.getString("logo_key") : null, member.tenantId())),
+                Boolean.TRUE.equals(jdbc.queryForObject("SELECT onboarding_completed_at IS NULL FROM public.tenants WHERE id=?",Boolean.class,member.tenantId()))));
     }
 }

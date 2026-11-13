@@ -134,6 +134,15 @@
       [orderId]="item.id"
       (changed)="timelineRevision.set(timelineRevision() + 1)"
     />
+    @if (role === 'OWNER' || role === 'ATTENDANT') {
+      @for (paymentOrder of [item]; track paymentOrder.id) {
+        <app-work-order-payments
+          [order]="paymentOrder"
+          [blocked]="changing() || assigning() || diagnosing() || quotesSaving()"
+          (registered)="paymentRegistered($event)"
+        />
+      }
+    }
     <app-work-order-quote
       [order]="item"
       [blocked]="changing() || assigning() || diagnosing() || itemsSaving()"
@@ -141,6 +150,7 @@
       (busyChanged)="quotesSaving.set($event)"
       (saved)="timelineRevision.set(timelineRevision() + 1)"
       (sent)="quoteSent($event)"
+      (revised)="quoteSent($event)"
     />
     <app-work-order-items
       [order]="item"

@@ -1,0 +1,118 @@
+<div class="page-heading">
+  <div>
+    <p class="eyebrow">GESTÃO DA ASSISTÊNCIA</p>
+    <h1>Financeiro<span>.</span></h1>
+    <p class="subtitle">Acompanhe os recebimentos e o histórico de pagamentos.</p>
+  </div>
+  <button type="button" (click)="load()" [disabled]="loading()">↻ Atualizar</button>
+</div>
+<form class="filters" (ngSubmit)="load()">
+  <label
+    >De<input type="date" name="from" [(ngModel)]="from" required [disabled]="loading()"
+  /></label>
+  <label>Até<input type="date" name="to" [(ngModel)]="to" required [disabled]="loading()" /></label>
+  <label
+    >Situação<select name="status" [(ngModel)]="status" [disabled]="loading()">
+      <option value="">Todas</option>
+      <option value="CONFIRMED">Confirmado</option>
+      <option value="VOIDED">Estornado</option>
+    </select></label
+  >
+  <label
+    >Forma de pagamento<select name="method" [(ngModel)]="method" [disabled]="loading()">
+      <option value="">Todas</option>
+      @for (option of methodOptions; track option[0]) {
+        <option [value]="option[0]">{{ option[1] }}</option>
+      }
+    </select></label
+  >
+  <button type="submit" [disabled]="loading()">Aplicar filtros</button>
+</form>
+@if (loading()) {
+  <p class="feedback" role="status">Carregando financeiro…</p>
+}
+@if (error()) {
+  <p class="feedback error" role="alert">
+    {{ error() }} <button type="button" (click)="load()">Tentar novamente</button>
+  </p>
+}
+@if (report(); as data) {
+  <div class="metrics">
+    <article>
+      <p>Recebido no período</p>
+      <strong>{{ data.summary.received | currency: 'BRL' }}</strong
+      ><small>Pagamentos confirmados</small>
+    </article>
+    <article>
+      <p>Pagamentos confirmados</p>
+      <strong>{{ data.summary.confirmedCount }}</strong
+      ><small>Quantidade de recebimentos</small>
+    </article>
+    <article>
+      <p>Valor estornado</p>
+      <strong>{{ data.summary.voided | currency: 'BRL' }}</strong
+      ><small>Pagamentos do período que foram estornados</small>
+    </article>
+  </div>
+  <p class="subtitle summary-note">
+    O resumo considera todas as formas e situações no período, pela data do pagamento. Estornos não
+    compõem o total recebido.
+  </p>
+  <section class="history" aria-labelledby="history-title">
+    <div class="history-heading">
+      <h2 id="history-title">Histórico de pagamentos</h2>
+      <span>{{ data.totalElements }} registro(s)</span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Cliente / OS</th>
+            <th>Forma de pagamento</th>
+            <th>Situação</th>
+            <th>Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (entry of data.content; track entry.id) {
+            <tr>
+              <td>{{ entry.paidAt | date: 'dd/MM/yyyy HH:mm' }}</td>
+              <td>
+                <strong>{{ entry.customerName }}</strong
+                ><a [routerLink]="['/inicio/ordens', entry.workOrderId]">OS #{{ entry.number }}</a>
+              </td>
+              <td>{{ methods[entry.method] || entry.method }}</td>
+              <td>
+                <span class="badge" [class.voided]="entry.status === 'VOIDED'">{{
+                  entry.status === 'CONFIRMED' ? 'Confirmado' : 'Estornado'
+                }}</span>
+              </td>
+              <td>{{ entry.amount | currency: 'BRL' }}</td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="5" class="empty">
+                Nenhum pagamento encontrado para os filtros selecionados.
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <button type="button" (click)="load(page - 1)" [disabled]="page === 0">Anterior</button
+      ><span>Página {{ page + 1 }}</span
+      ><button
+        type="button"
+        (click)="load(page + 1)"
+        [disabled]="(page + 1) * 20 >= data.totalElements"
+      >
+        Próxima
+      </button>
+    </div>
+  </section>
+  <p class="subtitle summary-note">
+    Para registrar pagamentos ou consultar cobranças Pix e estornos, abra a ordem de serviço.
+  </p>
+}

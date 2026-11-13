@@ -51,7 +51,7 @@ public class JdbcWorkOrders implements WorkOrders, br.com.fixflow.modules.quotes
                         rs.getTimestamp("delivered_at") == null ? null : rs.getTimestamp("delivered_at").toInstant(),
                         rs.getObject("warranty_days", Integer.class), rs.getObject("warranty_until", java.time.LocalDate.class),
                         rs.getBoolean("payment_settled"), rs.getBoolean("delivery_payment_override"), rs.getString("delivery_reason"),
-                        rs.getString("delivered_by_name"), rs.getString("warranty_terms"));
+                        rs.getString("delivered_by_name"), rs.getString("warranty_terms"), rs.getString("financial_status"));
     }
     @Override public Page search(UUID technicianId, String status, boolean openOnly, int page, int size) {
         if (page < 0 || page > 1000000 || size < 1 || size > 100)

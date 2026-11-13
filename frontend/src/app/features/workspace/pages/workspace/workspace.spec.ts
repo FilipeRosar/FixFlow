@@ -26,6 +26,14 @@ describe('Operational workspace', () => {
   function setup() {
     const fixture = TestBed.createComponent(Workspace);
     fixture.detectChanges();
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/v1/subscription/access')
+      .flush({
+        status: 'TRIALING',
+        writable: true,
+        accessUntil: '2026-12-01T00:00:00Z',
+        trialDaysRemaining: 14,
+      });
     TestBed.inject(HttpTestingController).expectOne('/api/oficinas/tenant/selecao').flush(account);
     for (const request of TestBed.inject(HttpTestingController).match(
       (r) => r.url === '/api/v1/work-orders',
@@ -45,7 +53,7 @@ describe('Operational workspace', () => {
     expect(page.textContent).toContain('Faça upgrade do plano');
     expect(page.textContent).not.toContain('E-mail já cadastrado.');
   });
-  it('shows real empty indicators and keeps the financial indicator unavailable', () => {
+  it('shows real empty indicators and enables financial navigation for the owner', () => {
     const { page } = setup();
     expect(page.querySelector('[aria-current="page"]')?.textContent).toContain('Visão geral');
     expect(page.querySelectorAll('.metric > strong')).toHaveLength(4);
@@ -53,7 +61,8 @@ describe('Operational workspace', () => {
       [...page.querySelectorAll('.metric > strong')].map((el) => el.textContent).join(',') ===
         '0,0,0,—',
     ).toBe(true);
-    expect(page.querySelectorAll('.operation-nav button:disabled')).toHaveLength(1);
+    expect(page.querySelectorAll('.operation-nav button:disabled')).toHaveLength(0);
+    expect(page.querySelector('a[href="/inicio/financeiro"]')?.textContent).toContain('Financeiro');
     expect(page.querySelector('.orders-empty')?.textContent).toContain('Abra uma nova ordem');
     expect(page.querySelector('.profile')?.textContent).toContain('Proprietário');
   });
@@ -87,7 +96,7 @@ describe('Operational workspace', () => {
     page.querySelector<HTMLButtonElement>('#verify-access')!.click();
     TestBed.inject(HttpTestingController).expectOne('/api/oficinas/tenant/selecao').flush(account);
     fixture.detectChanges();
-    expect(page.querySelector('[role="status"]')?.textContent).toContain(
+    expect(page.querySelector('.operation-status')?.textContent).toContain(
       'Acesso à empresa confirmado',
     );
   });

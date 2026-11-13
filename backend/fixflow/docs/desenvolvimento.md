@@ -1144,14 +1144,10 @@ histórica de exceção permanece falsa. A timeline da transição de entrega re
 evento de estado. Falha na auditoria da exceção desfaz entrega, garantia,
 histórico, timeline e outbox na mesma transação.
 
-**Dependência US-050:** o registro real de pagamentos ainda não existe neste
-código. A US-027 usa a evidência server-side de quitação já estabelecida pela
-US-021 em `work_order_transition_facts`. A US-050 deverá calcular essa evidência
-com pagamentos confirmados/parciais e total aprovado, atualizando-a sob o mesmo
-bloqueio de OS. Não há endpoint ou checkbox que aceite `paymentSettled` ou
-`financialStatus` do cliente como comprovação. Na ausência da evidência, a entrega
-normal é bloqueada; a autorização justificada do proprietário continua disponível.
-Esta implementação não representa a entrega da US-050.
+**Integração US-050:** o registro de pagamentos confirmados calcula
+`financial_status` e atualiza `payment_settled` na mesma transação, sob bloqueio
+da OS. O cliente não pode informar a quitação no pedido de entrega. Consulte o
+contrato de pagamentos abaixo.
 
 ### Datas e snapshots
 
@@ -1294,9 +1290,12 @@ os valores/condições de uma versão enviada ou inserir, alterar ou apagar seus
 itens; somente a decisão `SENT → APPROVED|REJECTED` é permitida. A role de execução
 não pode excluir cabeçalhos. Versões antigas continuam consultáveis.
 
-Para revisar uma proposta enviada/rejeitada, retorne a OS para
-`AGUARDANDO_ORCAMENTO` pelo fluxo existente e use **Criar nova versão**. A tela
-copia os dados para um novo rascunho, preservando a versão anterior. A API não
+Para revisar uma proposta enviada/rejeitada, proprietário e atendente podem usar
+**Editar orçamento** na proposta vigente. Após **Confirmar edição**, a tela retorna
+a OS para `AGUARDANDO_ORCAMENTO` pelo fluxo existente, que revoga os links anteriores,
+e copia itens e desconto para uma nova versão em edição. Salve e envie novamente
+para solicitar a aprovação do cliente. Também é possível retornar a OS pelo fluxo
+de status e usar **Criar nova versão**. A versão anterior permanece no histórico. A API não
 reabre orçamento aprovado nem cria aditivos durante manutenção. As projeções
 legadas anteriores a este módulo continuam compatíveis com a máquina de estados,
 sem inventar itens comerciais. O envio por e-mail e a chave de idempotência
@@ -1868,3 +1867,409 @@ fixflow.inventory.reconciliation.delay-ms=3600000
 A primeira execução ocorre um minuto após a inicialização; as próximas ocorrem uma hora
 após a conclusão da anterior. Nos testes de integração o agendamento fica desativado e
 o job pode ser chamado diretamente.
+
+
+## US-050 — Registrar pagamento
+
+Owner e atendente podem registrar e listar pagamentos em
+`POST /api/v1/work-orders/{id}/payments` e `GET /api/v1/work-orders/{id}/payments`.
+O POST exige `Idempotency-Key` não vazia, com até 200 caracteres, e orçamento
+aprovado. Exemplo de corpo:
+
+```json
+{
+  "amount": 40.00,
+  "method": "PIX",
+  "paidAt": "2026-11-08T12:00:00Z",
+  "notes": "Entrada"
+}
+```
+
+`amount` deve ser positivo, com até 12 dígitos inteiros e duas casas decimais;
+`paidAt` é obrigatório e normalizado para microssegundos. Métodos aceitos:
+`CASH`, `PIX`, `CREDIT_CARD`, `DEBIT_CARD`, `BANK_TRANSFER`, `OTHER`.
+`notes` é opcional, com até 2000 caracteres. O servidor define identidade,
+empresa e status `CONFIRMED`.
+
+O primeiro registro retorna 201; a repetição da mesma chave e conteúdo retorna
+200 e o mesmo pagamento, sem duplicar auditoria. Reutilizar a chave com outra OS
+ou outros dados retorna 409. A unicidade é por empresa, inclusive em requisições
+simultâneas. OS de outra empresa retorna 404; técnicos recebem 403.
+
+A soma dos pagamentos confirmados determina `financialStatus` na consulta da OS:
+zero é `UNPAID`; valor positivo abaixo do total do orçamento aprovado mais recente
+é `PARTIAL`; valor igual ou superior é `PAID`. Valores acima do total são aceitos.
+A quitação libera a entrega sem exceção do Owner. Pagamento, status, evidência de
+quitação e auditoria são gravados atomicamente. A migration V45 cria o ledger
+com RLS e sem permissão de alteração ou exclusão para a aplicação.
+
+O detalhe da OS oferece consulta e formulário para Owner/atendente, com valor,
+forma de pagamento e observações. A data é o momento do registro. Em falha de
+rede ou resposta incerta, o formulário preserva a chave e o corpo para repetir
+o mesmo pagamento. Estorno e gateway pertencem às US-051 e US-052.
+
+Validação: `./mvnw -Dtest=PaymentsIntegrationTest,WorkOrderDeliveryIntegrationTest,ArchitectureTest test`;
+no frontend, `npm test -- --watch=false --include='**/work-order-payments.spec.ts' --include='**/work-order-detail.spec.ts'`
+e `npm run build`.
+
+## US-051 — Estorno de pagamento
+
+Somente Owner pode chamar `POST /api/v1/payments/{id}/void`, com o corpo:
+
+```json
+{ "reason": "Lançamento duplicado" }
+```
+
+O motivo é obrigatório, não pode ser composto apenas por espaços e aceita até
+2000 caracteres. A resposta 200 mantém o pagamento original e retorna
+`status: VOIDED`, `voidReason`, `voidedAt` e `voidedBy`. Valor, método, data do
+recebimento, observações e chave de idempotência permanecem intactos.
+Atendente/técnico recebem 403; pagamento inexistente ou de outra empresa, 404.
+Não há endpoint de exclusão ou reativação do pagamento.
+
+O estorno remove o valor da soma de confirmados e recalcula `financialStatus`
+e `paymentSettled` na mesma transação. Uma OS entregue permanece entregue,
+mesmo se o estorno deixar saldo pendente. Repetir o estorno com o mesmo motivo
+retorna a evidência existente sem duplicar auditoria; outro motivo retorna 409.
+A repetição do registro original da US-050 retorna o pagamento já estornado,
+sem criar outro recebimento nem reativar o anterior.
+
+A ação `PAYMENT_VOIDED` registra o Owner, OS, pagamento, valor, motivo e horário
+na auditoria. Falha na auditoria desfaz o estorno e as projeções financeiras.
+O bloqueio da OS serializa estornos, pagamentos e entrega, inclusive em
+requisições simultâneas. A migration V46 concede somente a atualização dos
+campos de estorno e adiciona trigger que permite uma única transição de
+`CONFIRMED` para `VOIDED`, preservando as evidências. A aplicação continua
+sem permissões de DELETE/TRUNCATE.
+
+Na aba Pagamentos, somente o Owner vê **Estornar** nos recebimentos confirmados.
+A confirmação exige motivo e informa o efeito no total recebido. O histórico
+mantém os itens estornados, com motivo e data. Resposta incerta mantém o mesmo
+motivo para repetição segura; o formulário não permite substituí-lo enquanto
+a ação não for confirmada.
+
+Validação: `./mvnw -Dtest=PaymentsIntegrationTest,ArchitectureTest test`;
+no frontend, `npm test -- --watch=false --include='**/work-order-payments.spec.ts' --include='**/work-order-detail.spec.ts'`
+e `npm run build`.
+
+## US-052 — PaymentGateway e Asaas PIX
+
+`PaymentGateway` define o contrato do provedor; `AsaasPaymentGateway` implementa
+HTTP com timeout de conexão de 3 segundos e leitura de 5 segundos. A integração
+fica desativada por padrão e usa sandbox. Configure fora do Git:
+
+```bash
+ASAAS_ENABLED=true
+ASAAS_BASE_URL=https://api-sandbox.asaas.com/v3
+ASAAS_API_KEY=<chave-da-api-sandbox>
+ASAAS_WEBHOOK_TOKEN=<segredo-aleatorio-de-32-a-255-caracteres-sem-espacos>
+```
+
+Na execução Java local, essas variáveis são lidas do `.env` na raiz do projeto
+ou no diretório atual; variáveis exportadas no ambiente têm prioridade. O Docker
+Compose também repassa `ASAAS_*` ao serviço `app`. Use aspas simples no valor de
+`ASAAS_API_KEY` no `.env` para preservar os caracteres `$` da chave ao usar Compose.
+Reinicie o backend após alterar a configuração. Os testes não carregam esse arquivo.
+
+O token de webhook deve ser diferente da API key. Não informe credenciais na UI,
+no corpo das cobranças ou no repositório. A configuração é por implantação,
+com uma conta Asaas; cada cobrança continua vinculada ao tenant e à OS por RLS.
+Use ambientes separados para sandbox e produção. Esta história não implementa
+onboarding de subcontas, split de pagamentos ou cadastro de clientes no Asaas.
+
+### Criar e consultar cobrança
+
+Owner/atendente podem usar:
+
+- `POST /api/v1/work-orders/{id}/pix-charges`, com `Idempotency-Key` (até 200 caracteres).
+- `GET /api/v1/work-orders/{id}/pix-charges` para listar cobranças.
+- `POST /api/v1/work-orders/{id}/pix-charges/{chargeId}/refresh` para recuperar uma intenção pendente após recarregar a página.
+
+Exemplo de corpo do POST de criação:
+
+```json
+{
+  "asaasCustomerId": "cus_000005913252",
+  "amount": 100.00,
+  "dueDate": "2026-12-10"
+}
+```
+
+É necessário um orçamento aprovado, valor positivo com até duas casas decimais
+e vencimento não passado. O cliente da OS precisa ter CPF/CNPJ cadastrado, e
+seu documento deve corresponder ao cliente já existente na conta Asaas. A API
+consulta o cadastro Asaas antes da criação. Nenhum tenant, usuário, valor recebido
+ou status financeiro é aceito como evidência do cliente HTTP.
+
+A resposta 200 contém `id`, `workOrderId`, `amount`, `dueDate`, `status`,
+`gatewayRef`, `payload` (PIX copia e cola), `encodedImage` (PNG em Base64) e
+`expirationDate`. Criar cobrança não lança pagamento: a OS permanece sem quitação
+até o recebimento. A aba Pagamentos oferece uma seção Cobranças PIX com formulário,
+QR Code, código copia e cola, vencimento e consulta do status local.
+
+A intenção é persistida e auditada antes da chamada externa. Seu UUID é enviado
+como `externalReference`; a mesma chave com outro corpo retorna 409. Requisições
+concorrentes compartilham a mesma intenção. Se a resposta externa for incerta,
+o retry consulta `/payments?externalReference=...`, sem repetir o POST de criação.
+Isso também recupera cobranças criadas antes de um timeout ou falha ao buscar o
+QR Code. A resposta 502/503 deve ser repetida com a mesma chave e corpo; a UI
+preserva os dois enquanto consulta a mesma intenção.
+
+**Limite de recuperação:** se uma intenção foi persistida e o processo terminou
+antes de enviar a criação, a consulta pode não encontrar cobrança. O servidor
+mantém a intenção em `CREATING` e responde 503, em vez de arriscar duplicação.
+Verifique a operação na conta Asaas antes de iniciar uma nova intenção. Não há
+retentativa cega de criação, nem garantia de idempotência remota presumida.
+
+### Webhook e conciliação
+
+Configure no Asaas uma URL HTTPS pública apontando para `POST /webhooks/asaas`,
+evento `PAYMENT_RECEIVED` e `authToken` igual a `ASAAS_WEBHOOK_TOKEN`.
+O endpoint aceita POST sem JWT/CSRF de navegador; outros métodos são bloqueados.
+A autenticação exige o header `asaas-access-token`, comparado em tempo constante.
+A chave de API é enviada somente nas chamadas de saída ao Asaas.
+
+**Mecanismo nativo de autenticidade:** o Asaas documenta token compartilhado no
+header, sem assinatura HMAC do corpo. A implementação valida o token antes de
+qualquer consulta externa e confirma o pagamento por `GET /payments/{id}` com a
+API key. O valor, cliente, referência e status usados na conciliação vêm dessa
+consulta autenticada. Campos financeiros e tenant eventualmente enviados no corpo
+do webhook não são usados como evidência. Uma exigência de assinatura HMAC do
+corpo demandaria um intermediário assinador, fora deste adapter nativo.
+
+Somente PIX com status remoto `RECEIVED` é conciliado. `CONFIRMED` pode ser
+provisório durante bloqueio cautelar; outros eventos são ignorados com 200 após
+autenticação. A conta deve manter `PAYMENT_RECEIVED` habilitado. Webhooks de
+outras cobranças da conta, sem referência local conhecida, são ignorados.
+
+A migration V47 cria cobranças e recibos de eventos com RLS, e vincula o ledger
+pelo identificador único da cobrança. A função restrita `reconcile_asaas_pix`
+resolve o tenant exclusivamente pela referência persistida e bloqueia a OS
+antes da cobrança. Compara cliente, valor e identificador remoto e, em uma única
+transação, grava evento, pagamento confirmado, status da cobrança, projeções
+financeiras da US-050 e auditoria `PAYMENT_REGISTERED` com origem `ASAAS`.
+A data do recebimento vem de `paymentDate` do Asaas; na ausência, usa a data de
+processamento do servidor. Uma resposta 200 só ocorre após o commit.
+
+A deduplicação ocorre pelo `id` do evento e também pela cobrança: eventos
+repetidos ou diferentes para o mesmo recebimento não duplicam dinheiro nem
+auditoria. Um evento já usado em outra cobrança gera conflito. Falhas transacionais
+retornam erro, permitindo retry; evento e pagamento são revertidos juntos.
+Webhooks que chegam antes da resposta da criação também são conciliados usando
+a intenção persistida. Um pagamento estornado pela US-051 nunca é reativado por
+novo webhook. O estorno da US-051 é local; não executa devolução PIX no Asaas.
+Reembolsos, chargebacks e outras alterações remotas estão fora deste fluxo.
+
+### Validação e teste sandbox
+
+```bash
+./mvnw -Dtest=AsaasPixIntegrationTest,PaymentsIntegrationTest,ArchitectureTest test
+```
+
+`AsaasPixIntegrationTest` usa um servidor HTTP local simulando o contrato real
+do adapter e o PostgreSQL de integração. Cobre criação, QR Code, consulta por
+referência, token ausente/inválido, dados divergentes, idempotência, concorrência,
+webhook antecipado, preservação de estorno e rollback de auditoria. Não usa
+credenciais reais nem realiza cobranças externas.
+
+Para smoke test real, configure sandbox e webhook HTTPS, cadastre um cliente
+Asaas com o mesmo CPF/CNPJ do cliente da OS, gere a cobrança e simule seu
+recebimento no sandbox. Verifique `PAYMENT_RECEIVED`, um único pagamento no
+histórico e `financialStatus` correspondente à soma. Reenvie o evento para
+confirmar que não há duplicação. Só habilite produção com credenciais e URL
+de webhook do ambiente correspondente.
+
+Frontend: `npm test -- --watch=false --include='**/work-order-pix.spec.ts' --include='**/work-order-payments.spec.ts' --include='**/work-order-detail.spec.ts'`
+e `npm run build`.
+
+Referências do contrato Asaas:
+[criação](https://docs.asaas.com/reference/create-new-payment),
+[QR Code](https://docs.asaas.com/reference/get-qr-code-for-pix-payments),
+[autenticação de webhooks](https://docs.asaas.com/docs/about-webhooks),
+[retentativas e idempotência](https://docs.asaas.com/docs/retries-and-idempotency).
+
+## US-007 — Assinatura do FixFlow
+
+A assinatura fica em **Configurações → Assinatura** (`/inicio/configuracoes/assinatura`).
+Somente o proprietário contrata, consulta cobranças e cancela renovação. Os dados
+ficam em `saas_contracts`, `saas_invoices` e `saas_events`, com RLS; pagamentos de
+OS, saldo financeiro e respectivas cobranças Pix permanecem independentes.
+
+### Trial e acesso
+
+Novas empresas recebem trial de 14 dias, sem cartão, no plano escolhido no site, após confirmar o e-mail. Empresas
+existentes recebem 14 dias de transição ao aplicar a migration V48. Início e fim
+ficam persistidos; login e troca de proprietário não reiniciam o trial.
+
+Após expiração do trial ou do período pago, login e leitura permanecem disponíveis.
+O filtro da API consulta as datas atuais no banco antes de cada escrita de negócio,
+mesmo com JWT válido, e responde `402 SUBSCRIPTION_REQUIRED`. O proprietário pode
+continuar acessando a API de assinatura para regularização. Decisões por links
+públicos também respeitam a restrição; consultas públicas permanecem disponíveis.
+Os limites de usuários e OS da US-006 continuam aplicados pelo plano vigente.
+
+### Configuração da cobrança
+
+Configure os valores comerciais e credenciais por variáveis de ambiente (ou
+propriedades locais equivalentes). Preço zero deixa o plano indisponível para
+contratação; as faixas do documento técnico não são usadas como preços reais.
+
+```text
+SUBSCRIPTIONS_ENABLED=true
+SUBSCRIPTIONS_ASAAS_BASE_URL=https://api-sandbox.asaas.com/v3
+SUBSCRIPTIONS_ASAAS_API_KEY=<credencial da conta que recebe as assinaturas>
+SUBSCRIPTIONS_WEBHOOK_TOKEN=<segredo exclusivo, de 32 a 255 caracteres sem espaços>
+SUBSCRIPTION_STARTER_PRICE=<preço mensal em reais, com ponto decimal>
+SUBSCRIPTION_PROFESSIONAL_PRICE=<preço mensal em reais, com ponto decimal>
+SUBSCRIPTION_BUSINESS_PRICE=<preço mensal em reais, com ponto decimal>
+```
+
+O segredo de webhook deve ser diferente da chave da API. As configurações são
+separadas de `ASAAS_*`, usadas nas cobranças das OS. Para produção, configure o
+endpoint oficial de produção e as credenciais correspondentes. A aplicação não
+coleta dados de cartão; esta entrega usa assinatura **mensal em BRL via Pix**, com
+página de pagamento hospedada no Asaas.
+
+Cadastre no Asaas um webhook para:
+
+```text
+POST https://<domínio-da-api>/webhooks/asaas/subscriptions
+Header: asaas-access-token: <SUBSCRIPTIONS_WEBHOOK_TOKEN>
+Eventos: PAYMENT_CREATED, PAYMENT_UPDATED, PAYMENT_OVERDUE,
+         PAYMENT_CONFIRMED, PAYMENT_RECEIVED, PAYMENT_DELETED
+```
+
+A conta deve permitir criação de clientes e assinaturas. O CPF/CNPJ usado é o da
+empresa, informado no cadastro do FixFlow. O cliente remoto recebe referência
+`fixflow-subscription:<tenantId>`; a recorrência recebe referência com o ID do
+contrato local. O backend recupera o pagamento e a assinatura pela API autenticada
+antes de aplicar o evento e confere referências, pagador, valor e ciclo. Criar a
+assinatura, gerar cobrança ou abrir o checkout não libera acesso.
+
+### API
+
+| Método | Rota | Comportamento |
+|---|---|---|
+| GET | `/api/v1/subscription/access` | Situação e direito de escrita; disponível aos membros ativos |
+| GET | `/api/v1/subscription` | Trial, plano, consumo, preços configurados e 100 cobranças mais recentes; OWNER |
+| POST | `/api/v1/subscription` | Contrata com `{ "plan": "STARTER" }` e `Idempotency-Key` de 16–100 caracteres alfanuméricos, `_` ou `-`; OWNER |
+| POST | `/api/v1/subscription/refresh` | Concilia tentativa de contratação, pagamentos e cancelamento pendente; OWNER |
+| POST | `/api/v1/subscription/cancel` | Cancela renovação, preservando período pago/trial; OWNER |
+
+A confirmação concede um mês civil a partir do instante de ativação; se já existe
+período pago, acrescenta um mês ao término vigente. Cada cobrança/ciclo é aplicado
+uma única vez, inclusive com webhooks repetidos e consultas de conciliação.
+A atualização da tela reflete a liberação sem exigir login novamente.
+
+O cancelamento grava a intenção local antes da chamada ao gateway, impede
+liberação por pagamentos tardios e remove a recorrência no Asaas, que também
+cancela cobranças ainda pendentes. Em falha, o evento transacional
+`SubscriptionCancellationRequested` permite retry via Outbox; “Atualizar pagamentos”
+também permite nova tentativa. Um recebimento tardio é registrado para conciliação,
+sem reativar automaticamente a assinatura. Nova contratação exige ação do OWNER.
+
+O job de observação grava auditoria das transições temporais e avisa sobre o fim do
+trial/período pago até três dias antes, uma vez por período. Eventos e notificações
+são gravados via Outbox. Falha de e-mail não altera o acesso. O job usa
+`fixflow.subscriptions.observation-delay-ms` (padrão: uma hora); a restrição da API
+não depende dele. `fixflow.subscriptions.scheduling-enabled=false` desativa apenas
+essa observação em testes.
+
+### Recuperação e limites desta entrega
+
+Antes de chamar o gateway, as tentativas são persistidas. Após timeout de criação,
+a recuperação consulta a referência remota e não repete o POST de cobrança. Se o
+provedor confirmar que nenhum recurso foi criado e a tentativa continuar em
+conciliação, suporte deve verificar a referência e o estado antes de liberar uma
+nova tentativa; não se deve apagar o histórico nem criar cobranças às cegas.
+
+Upgrade/downgrade de plano pago, ciclo anual, rateio, reembolsos automáticos e
+emissão fiscal não fazem parte da US-007. Estornos/chargebacks no provedor exigem
+conciliação operacional; esta entrega não revoga retroativamente períodos já pagos.
+Nenhuma integração é habilitada sem configuração; nenhum pagamento real é usado
+nos testes. O teste do adaptador utiliza um servidor HTTP local simulado.
+
+Documentação consultada: [criar assinatura](https://docs.asaas.com/reference/criar-nova-assinatura),
+[listar assinaturas](https://docs.asaas.com/reference/listar-assinaturas),
+[cobranças da assinatura](https://docs.asaas.com/reference/listar-cobrancas-de-uma-assinatura)
+e [cancelar recorrência](https://docs.asaas.com/reference/remover-assinatura).
+
+Validação:
+
+```bash
+./mvnw -Dtest=SubscriptionAccessTest,SubscriptionsIntegrationTest,AsaasSubscriptionGatewayTest,ArchitectureTest test
+cd ../../frontend
+npm test -- --watch=false --include='**/subscription.spec.ts' --include='**/workspace.spec.ts' --include='**/session.guard.spec.ts'
+npm run build
+```
+
+## Fluxo de entrada — plano, confirmação e primeiro atendimento
+
+1. No site, a pessoa escolhe Starter, Professional ou Business e clica em
+   **Testar grátis**. O plano segue em `/cadastro?plano=...`.
+2. Informa nome completo, e-mail, senha e nome da assistência. `POST /api/contas`
+   responde **202**, com mensagem genérica. Apenas uma solicitação pendente é
+   persistida: ainda não existem usuário, assistência ou trial.
+3. O e-mail leva a `/confirmar-email#token=...`. Abrir o link não cria a conta;
+   é necessário clicar em **Confirmar e-mail e iniciar teste**. A página remove
+   o token da URL e envia `POST /api/contas/confirmar`.
+4. A confirmação cria, na mesma transação, assistência, OWNER com e-mail confirmado,
+   plano escolhido e trial de 14 dias. Repetir a confirmação válida retorna a mesma
+   conta, sem criar outra empresa nem reiniciar o trial. Não há login automático.
+5. Após entrar com a senha, o proprietário é encaminhado à configuração inicial:
+   dados da empresa → primeiro cliente → equipamento → primeira OS. O progresso
+   é consultado no backend e persiste entre sessões. Não são criados cadastros
+   fictícios para completar as etapas.
+6. Ao terminar o trial, pode contratar na tela de assinatura e pagar a cobrança
+   Pix, ou escolher **Não contratar. Manter consulta e exportação**. Essa escolha
+   preserva os dados e não impede uma contratação posterior. Só a confirmação de
+   pagamento pelo gateway ativa o período pago.
+
+### Confirmação de e-mail
+
+A configuração SMTP já usada pelo sistema (`SMTP_HOST`, `SMTP_PORT`, credenciais,
+`MAIL_FROM`) também atende à confirmação. `fixflow.auth.allowed-origin` deve apontar
+para a origem pública do frontend, para gerar o link correto. Em desenvolvimento,
+o Mailpit do Compose permite conferir o e-mail sem entregá-lo a terceiros.
+
+O token tem 256 bits aleatórios, validade de 24 horas e apenas seu hash é armazenado.
+A senha é persistida exclusivamente como BCrypt no cadastro pendente; seu hash é
+removido da pendência após a confirmação. Tokens antigos são invalidados ao reenviar.
+Há intervalo mínimo de um minuto, até cinco envios por e-mail/hora e limite por
+origem. A resposta é a mesma para e-mail já cadastrado e solicitação limitada.
+Falha de SMTP desfaz a solicitação pendente, permitindo nova tentativa.
+
+O job de limpeza remove pendências expiradas há mais de um dia e limites antigos.
+As tabelas globais `pending_signups` e `signup_request_limits` não são expostas ao
+runtime; o acesso ocorre pelas funções restritas de solicitação e confirmação.
+O endpoint público anterior não cria mais contas diretamente. Documento, telefone
+e endereço são coletados na configuração guiada após a confirmação.
+
+### Configuração e exportação
+
+| Método | Rota | Comportamento |
+|---|---|---|
+| POST | `/api/contas` | Solicita confirmação com `companyName`, `fullName`, `email`, `password`, `plan`; 202 |
+| POST | `/api/contas/confirmar` | Recebe `{ "token": "..." }`; confirma e cria a conta, ou retorna 410 para link expirado |
+| GET | `/api/v1/onboarding` | Dados da empresa e progresso real; OWNER |
+| PUT | `/api/v1/onboarding` | Salva identificação, contato e endereço da assistência; OWNER |
+| POST | `/api/v1/onboarding/complete` | Conclui após dados da empresa e primeira OS; OWNER |
+| GET | `/api/v1/tenant/export` | Download JSON dos dados de negócio; OWNER, inclusive após expiração |
+
+A exportação usa uma lista fixa de tabelas e o escopo autorizado do tenant. Inclui
+empresa, clientes, contatos, equipamentos, OS, diagnósticos, itens, orçamentos,
+peças, movimentações e pagamentos. Não inclui credenciais, sessões, tokens públicos,
+segredos do gateway nem os arquivos binários anexados. Exportar é uma leitura e
+permanece disponível no acesso restrito; a operação é auditada.
+
+Migrations adicionais: V52 (pendências de confirmação e progresso de configuração).
+Contas existentes mantêm o acesso e são consideradas já configuradas.
+
+Validação:
+
+```bash
+./mvnw -Dtest=VerifiedSignupFlowIntegrationTest,OwnerRegistrationIntegrationTest,SubscriptionsIntegrationTest,TenantSelectionIntegrationTest,ArchitectureTest test
+cd ../../frontend
+npm test -- --watch=false
+npm run build
+```

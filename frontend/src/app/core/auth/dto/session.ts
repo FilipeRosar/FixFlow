@@ -13,6 +13,7 @@ export interface LoginRequest {
 }
 export interface RegistrationRequest {
   document: string;
+  phone: string;
   address: {
     street: string;
     number: string;
@@ -22,12 +23,11 @@ export interface RegistrationRequest {
     state: string;
     postalCode: string;
   };
-  phone: string;
   companyName: string;
-  firstName: string;
-  lastName: string;
+  fullName: string;
   email: string;
   password: string;
+  plan: string;
 }
 export interface RegisteredAccount {
   userId: string;
@@ -35,6 +35,7 @@ export interface RegisteredAccount {
   role: string;
 }
 export interface Membership {
+  onboardingRequired?: boolean;
   logoDataUrl?: string | null;
   companyName: string;
   userId: string;

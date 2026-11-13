@@ -1,13 +1,15 @@
 <header>
   <nav aria-label="Navegação principal">
     <a class="brand" routerLink="/" aria-label="FixFlow — início"
-      ><span class="brand-symbol"><img src="assets/logo.png" alt="" /></span
-      >FixFlow</a
+      ><span class="brand-symbol"><img src="assets/logo.png" alt="" /></span>FixFlow</a
     >
     <div class="nav-links">
-      @if (session()) { <a routerLink="/inicio">Minha empresa</a> } @else {
-      <a routerLink="/entrar">Entrar</a
-      ><a class="button small" routerLink="/cadastro">Criar conta</a> }
+      @if (session()) {
+        <a routerLink="/inicio">Minha empresa</a>
+      } @else {
+        <a routerLink="/entrar">Entrar</a
+        ><a class="button small" routerLink="/" fragment="planos">Testar grátis</a>
+      }
     </div>
   </nav>
 </header>
