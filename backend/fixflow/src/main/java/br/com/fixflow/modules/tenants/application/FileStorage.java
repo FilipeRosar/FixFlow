@@ -5,6 +5,7 @@ public interface FileStorage {
     String storeLogo(UUID tenantId, byte[] png);
     byte[] readLogo(UUID tenantId, String key);
     void deleteLogo(UUID tenantId, String key);
+    default void deleteTenantFiles(UUID tenantId) { throw new UnsupportedOperationException("Tenant cleanup unavailable"); }
     default String logoDataUrl(UUID tenantId, String key) {
         return key == null ? null : "data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(readLogo(tenantId, key));
     }

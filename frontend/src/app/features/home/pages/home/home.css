@@ -124,7 +124,7 @@ h1 {
   padding-bottom: 28px;
 }
 .visual-timeline li:not(:last-child)::after {
-  content: "";
+  content: '';
   position: absolute;
   width: 1px;
   background: linear-gradient(#75c7ff66, #b597ed33);
@@ -541,4 +541,122 @@ article p,
   .feature-grid article {
     padding: 24px;
   }
+}
+
+.public-plans {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+  margin: 32px 0;
+}
+.public-plans article {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 28px;
+  border: 1px solid #a490ed40;
+  border-radius: 16px;
+  background: #a490ed08;
+}
+.public-plans h3 {
+  font-size: 26px;
+  margin: 16px 0;
+}
+.public-plans .button {
+  margin-top: auto;
+}
+.public-plans small {
+  margin-top: 14px;
+  color: var(--muted);
+}
+@media (max-width: 800px) {
+  .public-plans {
+    grid-template-columns: 1fr;
+  }
+}
+
+.public-plans h3 span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.public-plans .plan-price {
+  margin-bottom: 18px;
+  color: var(--ink);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -1px;
+}
+.plan-price span {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.public-plans .button {
+  margin-top: 24px;
+}
+.plan-comparison {
+  overflow-x: auto;
+  border: 1px solid #ffffff1c;
+  border-radius: 16px;
+  background: #ffffff03;
+}
+.plan-comparison:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.plan-comparison table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.plan-comparison caption {
+  padding: 22px 24px;
+  text-align: left;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.plan-comparison th,
+.plan-comparison td {
+  width: 25%;
+  padding: 15px 24px;
+  border-bottom: 1px solid #ffffff10;
+  vertical-align: top;
+}
+.plan-comparison thead {
+  background: #a490ed0d;
+}
+.plan-comparison thead th {
+  font-weight: 600;
+}
+.plan-comparison tbody th {
+  font-weight: 400;
+  color: var(--muted);
+}
+.plan-comparison tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.plan-comparison tbody tr:hover {
+  background: #ffffff03;
+}
+.plan-included {
+  color: #8bddba;
+  font-weight: 700;
+}
+.plan-notes {
+  margin: 18px 0 24px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.plan-notes p {
+  margin: 6px 0;
 }

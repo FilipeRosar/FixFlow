@@ -1290,9 +1290,12 @@ os valores/condições de uma versão enviada ou inserir, alterar ou apagar seus
 itens; somente a decisão `SENT → APPROVED|REJECTED` é permitida. A role de execução
 não pode excluir cabeçalhos. Versões antigas continuam consultáveis.
 
-Para revisar uma proposta enviada/rejeitada, retorne a OS para
-`AGUARDANDO_ORCAMENTO` pelo fluxo existente e use **Criar nova versão**. A tela
-copia os dados para um novo rascunho, preservando a versão anterior. A API não
+Para revisar uma proposta enviada/rejeitada, proprietário e atendente podem usar
+**Editar orçamento** na proposta vigente. Após **Confirmar edição**, a tela retorna
+a OS para `AGUARDANDO_ORCAMENTO` pelo fluxo existente, que revoga os links anteriores,
+e copia itens e desconto para uma nova versão em edição. Salve e envie novamente
+para solicitar a aprovação do cliente. Também é possível retornar a OS pelo fluxo
+de status e usar **Criar nova versão**. A versão anterior permanece no histórico. A API não
 reabre orçamento aprovado nem cria aditivos durante manutenção. As projeções
 legadas anteriores a este módulo continuam compatíveis com a máquina de estados,
 sem inventar itens comerciais. O envio por e-mail e a chave de idempotência
@@ -1962,6 +1965,12 @@ ASAAS_API_KEY=<chave-da-api-sandbox>
 ASAAS_WEBHOOK_TOKEN=<segredo-aleatorio-de-32-a-255-caracteres-sem-espacos>
 ```
 
+Na execução Java local, essas variáveis são lidas do `.env` na raiz do projeto
+ou no diretório atual; variáveis exportadas no ambiente têm prioridade. O Docker
+Compose também repassa `ASAAS_*` ao serviço `app`. Use aspas simples no valor de
+`ASAAS_API_KEY` no `.env` para preservar os caracteres `$` da chave ao usar Compose.
+Reinicie o backend após alterar a configuração. Os testes não carregam esse arquivo.
+
 O token de webhook deve ser diferente da API key. Não informe credenciais na UI,
 no corpo das cobranças ou no repositório. A configuração é por implantação,
 com uma conta Asaas; cada cobrança continua vinculada ao tenant e à OS por RLS.
@@ -2078,3 +2087,189 @@ Referências do contrato Asaas:
 [QR Code](https://docs.asaas.com/reference/get-qr-code-for-pix-payments),
 [autenticação de webhooks](https://docs.asaas.com/docs/about-webhooks),
 [retentativas e idempotência](https://docs.asaas.com/docs/retries-and-idempotency).
+
+## US-007 — Assinatura do FixFlow
+
+A assinatura fica em **Configurações → Assinatura** (`/inicio/configuracoes/assinatura`).
+Somente o proprietário contrata, consulta cobranças e cancela renovação. Os dados
+ficam em `saas_contracts`, `saas_invoices` e `saas_events`, com RLS; pagamentos de
+OS, saldo financeiro e respectivas cobranças Pix permanecem independentes.
+
+### Trial e acesso
+
+Novas empresas recebem trial de 14 dias, sem cartão, no plano escolhido no site, após confirmar o e-mail. Empresas
+existentes recebem 14 dias de transição ao aplicar a migration V48. Início e fim
+ficam persistidos; login e troca de proprietário não reiniciam o trial.
+
+Após expiração do trial ou do período pago, login e leitura permanecem disponíveis.
+O filtro da API consulta as datas atuais no banco antes de cada escrita de negócio,
+mesmo com JWT válido, e responde `402 SUBSCRIPTION_REQUIRED`. O proprietário pode
+continuar acessando a API de assinatura para regularização. Decisões por links
+públicos também respeitam a restrição; consultas públicas permanecem disponíveis.
+Os limites de usuários e OS da US-006 continuam aplicados pelo plano vigente.
+
+### Configuração da cobrança
+
+Configure os valores comerciais e credenciais por variáveis de ambiente (ou
+propriedades locais equivalentes). Preço zero deixa o plano indisponível para
+contratação; as faixas do documento técnico não são usadas como preços reais.
+
+```text
+SUBSCRIPTIONS_ENABLED=true
+SUBSCRIPTIONS_ASAAS_BASE_URL=https://api-sandbox.asaas.com/v3
+SUBSCRIPTIONS_ASAAS_API_KEY=<credencial da conta que recebe as assinaturas>
+SUBSCRIPTIONS_WEBHOOK_TOKEN=<segredo exclusivo, de 32 a 255 caracteres sem espaços>
+SUBSCRIPTION_STARTER_PRICE=<preço mensal em reais, com ponto decimal>
+SUBSCRIPTION_PROFESSIONAL_PRICE=<preço mensal em reais, com ponto decimal>
+SUBSCRIPTION_BUSINESS_PRICE=<preço mensal em reais, com ponto decimal>
+```
+
+O segredo de webhook deve ser diferente da chave da API. As configurações são
+separadas de `ASAAS_*`, usadas nas cobranças das OS. Para produção, configure o
+endpoint oficial de produção e as credenciais correspondentes. A aplicação não
+coleta dados de cartão; esta entrega usa assinatura **mensal em BRL via Pix**, com
+página de pagamento hospedada no Asaas.
+
+Cadastre no Asaas um webhook para:
+
+```text
+POST https://<domínio-da-api>/webhooks/asaas/subscriptions
+Header: asaas-access-token: <SUBSCRIPTIONS_WEBHOOK_TOKEN>
+Eventos: PAYMENT_CREATED, PAYMENT_UPDATED, PAYMENT_OVERDUE,
+         PAYMENT_CONFIRMED, PAYMENT_RECEIVED, PAYMENT_DELETED
+```
+
+A conta deve permitir criação de clientes e assinaturas. O CPF/CNPJ usado é o da
+empresa, informado no cadastro do FixFlow. O cliente remoto recebe referência
+`fixflow-subscription:<tenantId>`; a recorrência recebe referência com o ID do
+contrato local. O backend recupera o pagamento e a assinatura pela API autenticada
+antes de aplicar o evento e confere referências, pagador, valor e ciclo. Criar a
+assinatura, gerar cobrança ou abrir o checkout não libera acesso.
+
+### API
+
+| Método | Rota | Comportamento |
+|---|---|---|
+| GET | `/api/v1/subscription/access` | Situação e direito de escrita; disponível aos membros ativos |
+| GET | `/api/v1/subscription` | Trial, plano, consumo, preços configurados e 100 cobranças mais recentes; OWNER |
+| POST | `/api/v1/subscription` | Contrata com `{ "plan": "STARTER" }` e `Idempotency-Key` de 16–100 caracteres alfanuméricos, `_` ou `-`; OWNER |
+| POST | `/api/v1/subscription/refresh` | Concilia tentativa de contratação, pagamentos e cancelamento pendente; OWNER |
+| POST | `/api/v1/subscription/cancel` | Cancela renovação, preservando período pago/trial; OWNER |
+
+A confirmação concede um mês civil a partir do instante de ativação; se já existe
+período pago, acrescenta um mês ao término vigente. Cada cobrança/ciclo é aplicado
+uma única vez, inclusive com webhooks repetidos e consultas de conciliação.
+A atualização da tela reflete a liberação sem exigir login novamente.
+
+O cancelamento grava a intenção local antes da chamada ao gateway, impede
+liberação por pagamentos tardios e remove a recorrência no Asaas, que também
+cancela cobranças ainda pendentes. Em falha, o evento transacional
+`SubscriptionCancellationRequested` permite retry via Outbox; “Atualizar pagamentos”
+também permite nova tentativa. Um recebimento tardio é registrado para conciliação,
+sem reativar automaticamente a assinatura. Nova contratação exige ação do OWNER.
+
+O job de observação grava auditoria das transições temporais e avisa sobre o fim do
+trial/período pago até três dias antes, uma vez por período. Eventos e notificações
+são gravados via Outbox. Falha de e-mail não altera o acesso. O job usa
+`fixflow.subscriptions.observation-delay-ms` (padrão: uma hora); a restrição da API
+não depende dele. `fixflow.subscriptions.scheduling-enabled=false` desativa apenas
+essa observação em testes.
+
+### Recuperação e limites desta entrega
+
+Antes de chamar o gateway, as tentativas são persistidas. Após timeout de criação,
+a recuperação consulta a referência remota e não repete o POST de cobrança. Se o
+provedor confirmar que nenhum recurso foi criado e a tentativa continuar em
+conciliação, suporte deve verificar a referência e o estado antes de liberar uma
+nova tentativa; não se deve apagar o histórico nem criar cobranças às cegas.
+
+Upgrade/downgrade de plano pago, ciclo anual, rateio, reembolsos automáticos e
+emissão fiscal não fazem parte da US-007. Estornos/chargebacks no provedor exigem
+conciliação operacional; esta entrega não revoga retroativamente períodos já pagos.
+Nenhuma integração é habilitada sem configuração; nenhum pagamento real é usado
+nos testes. O teste do adaptador utiliza um servidor HTTP local simulado.
+
+Documentação consultada: [criar assinatura](https://docs.asaas.com/reference/criar-nova-assinatura),
+[listar assinaturas](https://docs.asaas.com/reference/listar-assinaturas),
+[cobranças da assinatura](https://docs.asaas.com/reference/listar-cobrancas-de-uma-assinatura)
+e [cancelar recorrência](https://docs.asaas.com/reference/remover-assinatura).
+
+Validação:
+
+```bash
+./mvnw -Dtest=SubscriptionAccessTest,SubscriptionsIntegrationTest,AsaasSubscriptionGatewayTest,ArchitectureTest test
+cd ../../frontend
+npm test -- --watch=false --include='**/subscription.spec.ts' --include='**/workspace.spec.ts' --include='**/session.guard.spec.ts'
+npm run build
+```
+
+## Fluxo de entrada — plano, confirmação e primeiro atendimento
+
+1. No site, a pessoa escolhe Starter, Professional ou Business e clica em
+   **Testar grátis**. O plano segue em `/cadastro?plano=...`.
+2. Informa nome completo, e-mail, senha e nome da assistência. `POST /api/contas`
+   responde **202**, com mensagem genérica. Apenas uma solicitação pendente é
+   persistida: ainda não existem usuário, assistência ou trial.
+3. O e-mail leva a `/confirmar-email#token=...`. Abrir o link não cria a conta;
+   é necessário clicar em **Confirmar e-mail e iniciar teste**. A página remove
+   o token da URL e envia `POST /api/contas/confirmar`.
+4. A confirmação cria, na mesma transação, assistência, OWNER com e-mail confirmado,
+   plano escolhido e trial de 14 dias. Repetir a confirmação válida retorna a mesma
+   conta, sem criar outra empresa nem reiniciar o trial. Não há login automático.
+5. Após entrar com a senha, o proprietário é encaminhado à configuração inicial:
+   dados da empresa → primeiro cliente → equipamento → primeira OS. O progresso
+   é consultado no backend e persiste entre sessões. Não são criados cadastros
+   fictícios para completar as etapas.
+6. Ao terminar o trial, pode contratar na tela de assinatura e pagar a cobrança
+   Pix, ou escolher **Não contratar. Manter consulta e exportação**. Essa escolha
+   preserva os dados e não impede uma contratação posterior. Só a confirmação de
+   pagamento pelo gateway ativa o período pago.
+
+### Confirmação de e-mail
+
+A configuração SMTP já usada pelo sistema (`SMTP_HOST`, `SMTP_PORT`, credenciais,
+`MAIL_FROM`) também atende à confirmação. `fixflow.auth.allowed-origin` deve apontar
+para a origem pública do frontend, para gerar o link correto. Em desenvolvimento,
+o Mailpit do Compose permite conferir o e-mail sem entregá-lo a terceiros.
+
+O token tem 256 bits aleatórios, validade de 24 horas e apenas seu hash é armazenado.
+A senha é persistida exclusivamente como BCrypt no cadastro pendente; seu hash é
+removido da pendência após a confirmação. Tokens antigos são invalidados ao reenviar.
+Há intervalo mínimo de um minuto, até cinco envios por e-mail/hora e limite por
+origem. A resposta é a mesma para e-mail já cadastrado e solicitação limitada.
+Falha de SMTP desfaz a solicitação pendente, permitindo nova tentativa.
+
+O job de limpeza remove pendências expiradas há mais de um dia e limites antigos.
+As tabelas globais `pending_signups` e `signup_request_limits` não são expostas ao
+runtime; o acesso ocorre pelas funções restritas de solicitação e confirmação.
+O endpoint público anterior não cria mais contas diretamente. Documento, telefone
+e endereço são coletados na configuração guiada após a confirmação.
+
+### Configuração e exportação
+
+| Método | Rota | Comportamento |
+|---|---|---|
+| POST | `/api/contas` | Solicita confirmação com `companyName`, `fullName`, `email`, `password`, `plan`; 202 |
+| POST | `/api/contas/confirmar` | Recebe `{ "token": "..." }`; confirma e cria a conta, ou retorna 410 para link expirado |
+| GET | `/api/v1/onboarding` | Dados da empresa e progresso real; OWNER |
+| PUT | `/api/v1/onboarding` | Salva identificação, contato e endereço da assistência; OWNER |
+| POST | `/api/v1/onboarding/complete` | Conclui após dados da empresa e primeira OS; OWNER |
+| GET | `/api/v1/tenant/export` | Download JSON dos dados de negócio; OWNER, inclusive após expiração |
+
+A exportação usa uma lista fixa de tabelas e o escopo autorizado do tenant. Inclui
+empresa, clientes, contatos, equipamentos, OS, diagnósticos, itens, orçamentos,
+peças, movimentações e pagamentos. Não inclui credenciais, sessões, tokens públicos,
+segredos do gateway nem os arquivos binários anexados. Exportar é uma leitura e
+permanece disponível no acesso restrito; a operação é auditada.
+
+Migrations adicionais: V52 (pendências de confirmação e progresso de configuração).
+Contas existentes mantêm o acesso e são consideradas já configuradas.
+
+Validação:
+
+```bash
+./mvnw -Dtest=VerifiedSignupFlowIntegrationTest,OwnerRegistrationIntegrationTest,SubscriptionsIntegrationTest,TenantSelectionIntegrationTest,ArchitectureTest test
+cd ../../frontend
+npm test -- --watch=false
+npm run build
+```

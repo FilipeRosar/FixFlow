@@ -5,6 +5,15 @@ import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from '../../../app.routes';
 
+async function finishNavigation(navigation: Promise<unknown>): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    for (const request of TestBed.inject(HttpTestingController).match('/api/v1/subscription/access'))
+      request.flush({ status: 'TRIALING', writable: true, accessUntil: '2026-12-01T00:00:00Z', trialDaysRemaining: 14 });
+  }
+  await navigation;
+}
+
 describe('Protected workspace', () => {
   it('restores the session on reload before allowing navigation', async () => {
     TestBed.configureTestingModule({
@@ -20,7 +29,7 @@ describe('Protected workspace', () => {
       tenantId: 't',
       role: 'OWNER',
     });
-    await navigation;
+    await finishNavigation(navigation);
     TestBed.inject(HttpTestingController)
       .expectOne('/api/oficinas/t/selecao')
       .flush({ userId: 'u', tenantId: 't', role: 'OWNER', companyName: 'Oficina Horizonte' });
@@ -37,6 +46,15 @@ describe('Protected workspace', () => {
     )) {
       request.flush({ content: [], totalElements: 0 });
     }
+    for (const request of TestBed.inject(HttpTestingController).match(
+      '/api/v1/subscription/access',
+    ))
+      request.flush({
+        status: 'TRIALING',
+        writable: true,
+        accessUntil: '2026-12-01T00:00:00Z',
+        trialDaysRemaining: 14,
+      });
     TestBed.inject(HttpTestingController).verify();
   });
   it('opens settings as its own page and returns to the overview', async () => {
@@ -50,7 +68,7 @@ describe('Protected workspace', () => {
     http
       .expectOne('/api/v1/auth/refresh')
       .flush({ accessToken: 'jwt', expiresIn: 900, userId: 'u', tenantId: 't', role: 'OWNER' });
-    await navigation;
+    await finishNavigation(navigation);
     http
       .expectOne('/api/oficinas/t/selecao')
       .flush({ userId: 'u', tenantId: 't', role: 'OWNER', companyName: 'Oficina Horizonte' });
@@ -68,7 +86,7 @@ describe('Protected workspace', () => {
     expect(harness.routeNativeElement?.querySelector('app-company-settings')).not.toBeNull();
     expect(harness.routeNativeElement?.querySelector('.metrics')).toBeNull();
     expect(harness.routeNativeElement?.querySelector('.user-management')).toBeNull();
-    await harness.navigateByUrl('/inicio');
+    await finishNavigation(harness.navigateByUrl('/inicio'));
     http
       .expectOne('/api/oficinas/t/selecao')
       .flush({ userId: 'u', tenantId: 't', role: 'OWNER', companyName: 'Oficina Horizonte' });
@@ -81,6 +99,13 @@ describe('Protected workspace', () => {
       request.flush({ content: [], totalElements: 0 });
     }
     harness.detectChanges();
+    for (const request of http.match('/api/v1/subscription/access'))
+      request.flush({
+        status: 'TRIALING',
+        writable: true,
+        accessUntil: '2026-12-01T00:00:00Z',
+        trialDaysRemaining: 14,
+      });
     http.verify();
   });
   it('redirects staff away from the settings page', async () => {
@@ -94,7 +119,7 @@ describe('Protected workspace', () => {
     http
       .expectOne('/api/v1/auth/refresh')
       .flush({ accessToken: 'jwt', expiresIn: 900, userId: 'u', tenantId: 't', role: 'ATTENDANT' });
-    await navigation;
+    await finishNavigation(navigation);
     http
       .expectOne('/api/oficinas/t/selecao')
       .flush({ userId: 'u', tenantId: 't', role: 'ATTENDANT', companyName: 'Oficina Horizonte' });
@@ -105,6 +130,13 @@ describe('Protected workspace', () => {
       request.flush({ content: [], totalElements: 0 });
     }
     harness.detectChanges();
+    for (const request of http.match('/api/v1/subscription/access'))
+      request.flush({
+        status: 'TRIALING',
+        writable: true,
+        accessUntil: '2026-12-01T00:00:00Z',
+        trialDaysRemaining: 14,
+      });
     http.verify();
   });
 });

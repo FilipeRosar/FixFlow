@@ -16,7 +16,7 @@
     </div>
   } @else {
     <form #settingsForm="ngForm" (ngSubmit)="settingsForm.valid && save()">
-      <fieldset [disabled]="saving()">
+      <fieldset [disabled]="saving() || deleting()">
         <div class="settings-section identity-section">
           <div class="section-copy">
             <span class="step">01</span>
@@ -150,5 +150,72 @@
         </div>
       </footer>
     </form>
+    <section class="danger-zone" aria-labelledby="delete-company-heading">
+      <h3 id="delete-company-heading">Excluir conta e empresa</h3>
+      <p>
+        A exclusão é permanente. Todos os dados desta empresa serão removidos: clientes,
+        equipamentos, ordens de serviço, estoque, pagamentos e anexos. A equipe perderá o acesso a
+        esta empresa e a assinatura será cancelada.
+      </p>
+      <p>
+        Contas que participam de outras empresas continuarão com acesso a elas. Exporte os dados que
+        deseja guardar antes de continuar.
+      </p>
+      @if (!confirmingDeletion()) {
+        <button
+          type="button"
+          class="danger-button"
+          [disabled]="saving()"
+          (click)="confirmingDeletion.set(true)"
+        >
+          Excluir conta e empresa
+        </button>
+      } @else {
+        <form
+          #deleteForm="ngForm"
+          (ngSubmit)="deleteForm.valid && deleteCompany()"
+          [attr.aria-busy]="deleting()"
+        >
+          <fieldset [disabled]="deleting()">
+            <label for="delete-password"
+              >Sua senha atual
+              <input
+                id="delete-password"
+                name="deletePassword"
+                type="password"
+                required
+                maxlength="72"
+                autocomplete="current-password"
+                [(ngModel)]="deletionPassword"
+              />
+            </label>
+            <label for="delete-confirmation"
+              >Digite EXCLUIR para confirmar
+              <input
+                id="delete-confirmation"
+                name="deleteConfirmation"
+                required
+                pattern="EXCLUIR"
+                autocomplete="off"
+                [(ngModel)]="deletionConfirmation"
+              />
+            </label>
+            @if (deletionError()) {
+              <p class="error" role="alert">{{ deletionError() }}</p>
+            }
+            <div class="delete-actions">
+              <button type="button" class="secondary" (click)="cancelDeletion()">Cancelar</button>
+              <button
+                type="submit"
+                class="danger-button"
+                [disabled]="deleteForm.invalid || saving() || !deletionPassword || deletionConfirmation !== 'EXCLUIR'"
+              >
+                {{ deleting() ? 'Excluindo…' : 'Excluir permanentemente' }}
+              </button>
+            </div>
+          </fieldset>
+        </form>
+      }
+    </section>
   }
 </section>

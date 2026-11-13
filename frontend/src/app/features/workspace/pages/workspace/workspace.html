@@ -91,6 +91,8 @@
         title="Visão geral"
         class="nav-item"
         [class.active]="
+          !onboardingPage() &&
+          !subscriptionPage() &&
           !financePage() &&
           !settingsPage() &&
           !customersPage() &&
@@ -102,6 +104,8 @@
         "
         routerLink="/inicio"
         [attr.aria-current]="
+          !onboardingPage() &&
+          !subscriptionPage() &&
           !financePage() &&
           !settingsPage() &&
           !customersPage() &&
@@ -158,8 +162,8 @@
           } @else if (item.icon === 'settings') {
             <a
               class="nav-item"
-              [class.active]="settingsPage()"
-              [attr.aria-current]="settingsPage() ? 'page' : null"
+              [class.active]="settingsPage() || subscriptionPage()"
+              [attr.aria-current]="settingsPage() || subscriptionPage() ? 'page' : null"
               routerLink="/inicio/configuracoes"
               (click)="closeMenu()"
               title="Configurações"
@@ -258,33 +262,56 @@
           <svg class="icon" aria-hidden="true"><use href="#op-menu" /></svg></button
         ><span>Minha empresa</span><span class="breadcrumb-divider" aria-hidden="true">/</span
         ><strong>{{
-          financePage()
-            ? 'Financeiro'
-            : settingsPage()
-              ? 'Configurações'
-              : customersPage()
-                ? historyPage()
-                  ? 'Histórico do cliente'
-                  : 'Clientes'
-                : partsPage()
-                  ? 'Peças e estoque'
-                  : equipmentPage()
-                    ? 'Equipamentos'
-                    : ordersPage()
-                      ? 'Abrir OS'
-                      : orderDetailPage()
-                        ? 'Consultar OS'
-                        : queuePage()
-                          ? session()?.role === 'TECHNICIAN'
-                            ? 'Minha fila'
-                            : 'Ordens de serviço'
-                          : 'Visão geral'
+          onboardingPage()
+            ? 'Configuração inicial'
+            : subscriptionPage()
+              ? 'Assinatura'
+              : financePage()
+                ? 'Financeiro'
+                : settingsPage()
+                  ? 'Configurações'
+                  : customersPage()
+                    ? historyPage()
+                      ? 'Histórico do cliente'
+                      : 'Clientes'
+                    : partsPage()
+                      ? 'Peças e estoque'
+                      : equipmentPage()
+                        ? 'Equipamentos'
+                        : ordersPage()
+                          ? 'Abrir OS'
+                          : orderDetailPage()
+                            ? 'Consultar OS'
+                            : queuePage()
+                              ? session()?.role === 'TECHNICIAN'
+                                ? 'Minha fila'
+                                : 'Ordens de serviço'
+                              : 'Visão geral'
         }}</strong>
       </div>
       <span class="development"><span aria-hidden="true">●</span> Em desenvolvimento</span>
     </header>
     <div class="operation-content">
-      @if (queuePage()) {
+      @if (subscriptionState.restricted()) {
+        <p class="subscription-banner" role="status">
+          Assinatura pendente: seu ambiente está disponível para leitura.
+          @if (session()?.role === 'OWNER') {
+            <a routerLink="/inicio/configuracoes/assinatura">Regularizar assinatura</a>
+          } @else {
+            Solicite a regularização ao proprietário.
+          }
+        </p>
+      } @else if (subscriptionState.access()?.status === 'TRIALING') {
+        <p class="subscription-banner" role="status">
+          Seu teste termina em {{ subscriptionState.access()?.trialDaysRemaining }} dia(s).
+          @if (session()?.role === 'OWNER') {
+            <a routerLink="/inicio/configuracoes/assinatura">Ver planos e assinatura</a>
+          }
+        </p>
+      }
+      @if (onboardingPage()) {
+        <app-onboarding />
+      } @else if (queuePage()) {
         <app-work-order-queue />
       } @else if (orderDetailPage()) {
         <app-work-order-detail />
@@ -300,6 +327,8 @@
         <app-customers />
       } @else if (financePage()) {
         <app-finance />
+      } @else if (subscriptionPage()) {
+        <app-subscription />
       } @else if (settingsPage()) {
         <div class="page-heading">
           <div>
@@ -309,6 +338,11 @@
           </div>
         </div>
         @if (session()?.role === 'OWNER') {
+          <p>
+            <a class="secondary" routerLink="/inicio/configuracoes/assinatura"
+              >Gerenciar assinatura do FixFlow →</a
+            >
+          </p>
           <app-company-settings (saved)="applyCompanySettings($event)" />
         }
       } @else {

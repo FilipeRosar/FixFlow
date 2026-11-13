@@ -1,0 +1,311 @@
+<div class="page-heading">
+  <div>
+    <p class="eyebrow">SUA EMPRESA NO FIXFLOW</p>
+    <h1>Assinatura<span>.</span></h1>
+    <p class="subtitle">
+      Gerencie seu plano, acompanhe vencimentos e mantenha sua assistência no fluxo.
+    </p>
+  </div>
+  <button type="button" (click)="load()" [disabled]="busy() || loading()">Recarregar</button>
+</div>
+@if (loading()) {
+  <p role="status">Carregando assinatura…</p>
+}
+@if (error()) {
+  <div class="feedback error" role="alert">
+    {{ error() }}
+    <button type="button" (click)="load()" [disabled]="busy() || loading()">
+      Tentar novamente
+    </button>
+  </div>
+}
+@if (notice()) {
+  <p class="feedback success" role="status">{{ notice() }}</p>
+}
+@if (data(); as subscription) {
+  <section class="subscription-overview" aria-labelledby="subscription-heading">
+    <div>
+      <span class="eyebrow">PLANO VIGENTE</span>
+      <h2 id="subscription-heading">{{ currentPlan()?.name || subscription.currentPlan }}</h2>
+      <span class="badge" [class.restricted]="!subscription.access.writable">{{
+        subscription.access.status === 'EXPIRED' && subscription.currentPlan !== 'STARTER' && !subscription.paidUntil ? 'Aguardando pagamento' : labels[subscription.access.status] || subscription.access.status
+      }}</span>
+      @if (subscription.access.status === 'TRIALING') {
+        <p>{{ subscription.access.trialDaysRemaining }} dia(s) de teste restantes · sem cartão</p>
+        <small
+          >Teste de {{ subscription.trialStartedAt | date: 'dd/MM/yyyy' }} até
+          {{ subscription.trialEndsAt | date: 'dd/MM/yyyy HH:mm' }}</small
+        >
+      } @else {
+        <p>Acesso vigente até {{ subscription.access.accessUntil | date: 'dd/MM/yyyy HH:mm' }}</p>
+      }
+      @if (subscription.contract; as contract) {
+        <p>
+          Plano contratado: {{ contract.plan }} · {{ contract.amount | currency: 'BRL' }}/mês ·
+          Mercado Pago
+        </p>
+        <small>{{
+          contract.state === 'ACTIVE'
+            ? contract.checkoutUrl
+              ? 'Aguardando autorização no Mercado Pago'
+              : 'Cobrança recorrente configurada'
+            : labels[contract.state] || contract.state
+        }}</small>
+      }
+      @if (nextDueDate(); as due) {
+        <p>Próxima cobrança pendente: {{ due | date: 'dd/MM/yyyy' : 'UTC' }}</p>
+      }
+      @if (subscription.cancelAtPeriodEnd) {
+        <p class="warning">Renovação cancelada. O acesso termina ao fim do período vigente.</p>
+      }
+    </div>
+    <div class="usage">
+      <h3>Uso do plano vigente</h3>
+      <p>
+        <strong>{{ subscription.activeUsers }}</strong> /
+        {{ currentPlan()?.maxUsers ?? 'Ilimitados' }} usuários
+      </p>
+      <p>
+        <strong>{{ subscription.ordersThisMonth }}</strong> /
+        {{ currentPlan()?.maxOrders ?? 'Ilimitadas' }} OS neste mês
+      </p>
+      <small>Os limites do plano continuam valendo durante o teste.</small>
+    </div>
+  </section>
+  @if (subscription.access.status === 'PAYMENT_REQUIRED') {
+    <p class="feedback warning" role="status">Sua conta aguarda o primeiro pagamento. Conclua a contratação para acessar o sistema.</p>
+  } @else if (!subscription.access.writable) {
+    <p class="feedback warning" role="status">
+      Seu ambiente está disponível para leitura. Regularize a assinatura para voltar a cadastrar e
+      editar. Seus dados foram preservados.
+    </p>
+  }
+  @if (!subscription.gatewayAvailable) {
+    <p class="feedback" role="status">
+      A contratação online ainda não está disponível. Entre em contato com o suporte do FixFlow.
+    </p>
+  }
+  @if (
+    subscription.access.status === 'EXPIRED' &&
+    !subscription.cancelAtPeriodEnd &&
+    !subscription.contract
+  ) {
+    <section class="confirmation">
+      <h2>Seu teste terminou. Como deseja continuar?</h2>
+      <p>
+        Contrate um plano para voltar a cadastrar e editar, ou mantenha o ambiente para consulta e
+        exportação.
+      </p>
+      <a href="#plans-heading">Escolher plano e contratar</a
+      ><button type="button" (click)="declineTrial()" [disabled]="busy()">
+        Não contratar. Manter consulta e exportação
+      </button>
+    </section>
+  }
+  <section class="invoices">
+    <h2>Seus dados continuam com você</h2>
+    <p>
+      Exporte os cadastros, ordens de serviço, orçamentos, estoque e pagamentos em CSV (planilhas, reunidas em um arquivo ZIP), inclusive
+      após o término do teste.
+    </p>
+    <button type="button" (click)="exportData()" [disabled]="busy()">
+      Exportar planilhas CSV
+    </button>
+  </section>
+  <section aria-labelledby="plans-heading">
+    <h2 id="plans-heading">Escolha seu plano</h2>
+    <p class="subtitle">
+      Cobrança mensal em reais pelo Mercado Pago. A ativação ocorre após a confirmação do pagamento.
+    </p>
+    <div class="plans">
+      @for (plan of subscription.plans; track plan.code) {
+        <article [class.current]="plan.code === subscription.currentPlan">
+          <h3>{{ plan.name }}</h3>
+          @if (plan.available) {
+            <p class="price">{{ plan.monthlyPrice | currency: 'BRL' }}<small>/mês</small></p>
+          } @else {
+            <p class="price">Sob consulta</p>
+          }
+          <p>{{ plan.maxUsers ?? 'Ilimitados' }} usuários</p>
+          <p>{{ plan.maxOrders ?? 'Ilimitadas' }} ordens de serviço por mês</p>
+          @if (plan.code === 'BUSINESS') {
+            <small>Sujeito à política de uso justo.</small>
+          }
+          <button
+            type="button"
+            (click)="choose(plan)"
+            [disabled]="busy() || loading() || !plan.available"
+          >
+            Selecionar {{ plan.name }}
+          </button>
+          @if (canChangeTrial() && plan.code === 'STARTER' && plan.code !== subscription.currentPlan) {
+            <button type="button" (click)="choose(plan, true)" [disabled]="busy() || loading()">
+              Testar {{ plan.name }}
+            </button>
+          }
+        </article>
+      }
+    </div>
+  </section>
+  @if (selected(); as plan) {
+    <section class="confirmation" aria-labelledby="confirm-plan">
+      <h3 id="confirm-plan">
+        {{ trialChange() ? 'Trocar plano de teste' : 'Confirmar contratação' }}
+      </h3>
+      @if (trialChange()) {
+        <p>
+          Alterar o teste para {{ plan.name }}, sem cobrança e sem alterar a data de encerramento.
+        </p>
+      } @else {
+        <p>
+          {{ plan.name }} por {{ plan.monthlyPrice | currency: 'BRL' }} ao mês, com renovação mensal
+          e pagamento recorrente autorizado no Mercado Pago. O plano será liberado após confirmação
+          do pagamento. Você pode cancelar a renovação a qualquer momento.
+        </p>
+        @if (
+          subscription.contract &&
+          subscription.contract.state !== 'CANCELED' &&
+          subscription.contract.plan !== plan.code
+        ) {
+          <p>
+            A recorrência anterior será cancelada antes da abertura do novo checkout. Se não
+            concluir o pagamento, ela permanecerá cancelada. O acesso já pago será preservado.
+          </p>
+        }
+        @if (subscription.paidUntil && plan.code !== subscription.currentPlan) {
+          <p>
+            A troca será aplicada após o novo pagamento integral, que acrescenta um mês ao período
+            já pago. Não há cálculo proporcional nesta troca.
+          </p>
+        }
+      }
+      @if (!trialChange() && !subscription.gatewayAvailable) {
+        <p class="warning" role="status">
+          Você selecionou o plano {{ plan.name }}. O pagamento está temporariamente indisponível.
+          Entre em contato com o suporte do FixFlow para concluir a contratação.
+        </p>
+      }
+      <button
+        type="button"
+        (click)="subscribe()"
+        [disabled]="busy() || (!trialChange() && !subscription.gatewayAvailable)"
+      >
+        {{
+          busy()
+            ? 'Processando…'
+            : trialChange()
+              ? 'Confirmar troca do teste'
+              : 'Continuar com Mercado Pago'
+        }}</button
+      ><button type="button" (click)="selected.set(null)" [disabled]="busy()">Voltar</button>
+    </section>
+  }
+  @if (
+    subscription.contract?.checkoutUrl &&
+    subscription.contract.state === 'ACTIVE' &&
+    !subscription.cancelAtPeriodEnd
+  ) {
+    <section class="confirmation" aria-labelledby="checkout-heading">
+      <h3 id="checkout-heading">Conclua sua assinatura no Mercado Pago</h3>
+      <p>
+        Autorize a cobrança mensal no checkout. Após concluir, volte e clique em “Atualizar
+        pagamentos”. O plano será ativado quando o pagamento for confirmado.
+      </p>
+      <a
+        class="button"
+        [href]="subscription.contract!.checkoutUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        >Abrir checkout do Mercado Pago ↗</a
+      >
+    </section>
+  }
+  <section class="invoices" aria-labelledby="invoices-heading">
+    <div class="section-heading">
+      <h2 id="invoices-heading">Cobranças da assinatura</h2>
+      <button
+        type="button"
+        (click)="refresh()"
+        [disabled]="busy() || loading() || !subscription.gatewayAvailable"
+      >
+        {{ busy() ? 'Processando…' : 'Atualizar pagamentos' }}
+      </button>
+    </div>
+    <p class="subtitle">
+      O vencimento de cada cobrança aparece abaixo. Pagamentos de ordens de serviço ficam na aba
+      Financeiro.
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Vencimento</th>
+            <th>Valor</th>
+            <th>Situação</th>
+            <th>Pagamento</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (invoice of subscription.invoices; track invoice.id) {
+            <tr>
+              <td>{{ invoice.dueDate | date: 'dd/MM/yyyy' : 'UTC' }}</td>
+              <td>{{ invoice.amount | currency: 'BRL' }}</td>
+              <td>
+                {{ labels[invoice.status] || invoice.status }}
+                @if (invoice.paidAt && !invoice.appliedAt) {
+                  <small class="warning"
+                    >Em conciliação; este pagamento não liberou um novo período.</small
+                  >
+                }
+              </td>
+              <td>
+                @if (
+                  invoice.url &&
+                  (invoice.status === 'PENDING' || invoice.status === 'OVERDUE') &&
+                  !subscription.cancelAtPeriodEnd
+                ) {
+                  <a [href]="invoice.url" target="_blank" rel="noopener noreferrer"
+                    >Pagar no Asaas ↗</a
+                  >
+                } @else {
+                  <span>—</span>
+                }
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="4" class="empty">Nenhuma cobrança registrada para esta empresa.</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <small>Exibindo as 100 cobranças mais recentes.</small>
+  </section>
+  @if (!subscription.cancelAtPeriodEnd) {
+    <section class="cancellation">
+      <h2>Cancelar renovação</h2>
+      <p class="subtitle">
+        O período já pago será preservado. Após o término, seus dados continuam disponíveis para
+        leitura.
+      </p>
+      <button type="button" (click)="cancelOpen.set(true)" [disabled]="busy() || loading()">
+        Cancelar renovação
+      </button>
+      @if (cancelOpen()) {
+        <div class="confirmation" role="group" aria-label="Confirmação de cancelamento">
+          <p>
+            Confirma o cancelamento da renovação? O acesso vigente termina em
+            {{ subscription.access.accessUntil | date: 'dd/MM/yyyy HH:mm' }}. Cobranças pendentes
+            serão canceladas.
+          </p>
+          <button type="button" (click)="cancel()" [disabled]="busy()">
+            Confirmar cancelamento</button
+          ><button type="button" (click)="cancelOpen.set(false)" [disabled]="busy()">
+            Manter assinatura
+          </button>
+        </div>
+      }
+    </section>
+  }
+}

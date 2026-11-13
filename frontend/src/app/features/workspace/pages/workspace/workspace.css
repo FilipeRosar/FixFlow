@@ -1267,3 +1267,6 @@ td {
 #company-settings {
   scroll-margin-top: 24px;
 }
+
+.subscription-banner { padding: 16px 20px; border: 1px solid #a490ed50; border-radius: 10px; background: #a490ed12; color: #d6c6f4; font-size: 13px; line-height: 1.7; margin: 0 0 24px; }
+.subscription-banner a { color: #d8bcff; margin-left: 10px; }

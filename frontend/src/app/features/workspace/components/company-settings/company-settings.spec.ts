@@ -1,3 +1,5 @@
+import { provideRouter, Router } from '@angular/router';
+import { SessionService } from '../../../../core/auth/data-access/session.service';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -13,7 +15,7 @@ describe('Company settings', () => {
   beforeEach(() =>
     TestBed.configureTestingModule({
       imports: [CompanySettingsPanel],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     }),
   );
   afterEach(() => TestBed.inject(HttpTestingController).verify());
@@ -106,5 +108,32 @@ describe('Company settings', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(page.querySelector<HTMLInputElement>('#quote-validity')!.value).toBe('30');
+  });
+  it('requires confirmation and clears the session after company deletion', async () => {
+    const { fixture, page, http } = await setup();
+    const forgotten = vi.spyOn(TestBed.inject(SessionService), 'forgetSession');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    page.querySelector<HTMLButtonElement>('.danger-button')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const form = page.querySelector('.danger-zone form')!;
+    expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+    for (const [id, value] of [
+      ['delete-password', 'Owner1234!'],
+      ['delete-confirmation', 'EXCLUIR'],
+    ]) {
+      const input = page.querySelector<HTMLInputElement>(`#${id}`)!;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+    }
+    fixture.detectChanges();
+    await fixture.whenStable();
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
+    const request = http.expectOne('/api/v1/tenant');
+    expect(request.request.method).toBe('DELETE');
+    expect(request.request.body).toEqual({ password: 'Owner1234!', confirmation: 'EXCLUIR' });
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    expect(forgotten).toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith(['/entrar']);
   });
 });

@@ -1,0 +1,182 @@
+<div class="page-heading">
+  <div>
+    <p class="eyebrow">BEM-VINDO AO FIXFLOW</p>
+    <h1>Seu primeiro atendimento<span>.</span></h1>
+    <p class="subtitle">
+      Vamos configurar a assistência e registrar um atendimento real, uma etapa por vez.
+    </p>
+  </div>
+</div>
+<nav class="setup-steps" aria-label="Etapas da configuração">
+  @for (label of steps; track label; let index = $index) {
+    <span
+      [class.active]="step() === index"
+      [class.done]="step() > index"
+      [attr.aria-current]="step() === index ? 'step' : null"
+      ><b>{{ step() > index ? '✓' : index + 1 }}</b
+      >{{ label }}</span
+    >
+  }
+</nav>
+@if (loading()) {
+  <p role="status">Carregando configuração…</p>
+}
+@if (error()) {
+  <p class="feedback error" role="alert">
+    {{ error() }}
+    @if (!view()) {
+      <button type="button" (click)="load()">Tentar novamente</button>
+    }
+  </p>
+}
+@if (notice()) {
+  <p class="feedback" role="status">{{ notice() }}</p>
+}
+@if (view()) {
+  @switch (step()) {
+    @case (0) {
+      <section class="setup-card">
+        <h2>Dados da assistência</h2>
+        <p class="subtitle">
+          Esses dados identificam sua empresa e serão usados na contratação da assinatura.
+        </p>
+        <form #form="ngForm" (ngSubmit)="form.valid && save()">
+          <fieldset [disabled]="busy()">
+            <div class="profile-grid">
+              <label
+                >Nome da assistência<input
+                  name="company"
+                  [(ngModel)]="profile.companyName"
+                  required
+                  maxlength="150"
+                  autocomplete="organization"
+              /></label>
+              <label
+                >CPF ou CNPJ<input
+                  name="document"
+                  [(ngModel)]="profile.document"
+                  required
+                  pattern="[0-9.\-/]{11,18}"
+                  maxlength="18"
+                  inputmode="numeric"
+              /></label>
+              <label
+                >Telefone com DDD<input
+                  name="phone"
+                  [(ngModel)]="profile.phone"
+                  required
+                  pattern="[0-9() +\-]{10,16}"
+                  maxlength="16"
+                  autocomplete="tel"
+              /></label>
+              <label
+                >CEP
+                <div class="postal">
+                  <input
+                    name="postal"
+                    [(ngModel)]="profile.address.postalCode"
+                    required
+                    pattern="[0-9]{5}-?[0-9]{3}"
+                    maxlength="9"
+                    autocomplete="postal-code"
+                  /><button type="button" (click)="lookupPostalCode()" [disabled]="busy()">
+                    Buscar CEP
+                  </button>
+                </div></label
+              >
+              <label
+                >Rua / Avenida<input
+                  name="street"
+                  [(ngModel)]="profile.address.street"
+                  required
+                  maxlength="150"
+                  autocomplete="address-line1"
+              /></label>
+              <label
+                >Número<input
+                  name="number"
+                  [(ngModel)]="profile.address.number"
+                  required
+                  maxlength="20"
+              /></label>
+              <label
+                >Complemento (opcional)<input
+                  name="complement"
+                  [(ngModel)]="profile.address.complement"
+                  maxlength="100"
+                  autocomplete="address-line2"
+              /></label>
+              <label
+                >Bairro<input
+                  name="neighborhood"
+                  [(ngModel)]="profile.address.neighborhood"
+                  required
+                  maxlength="100"
+              /></label>
+              <label
+                >Cidade<input
+                  name="city"
+                  [(ngModel)]="profile.address.city"
+                  required
+                  maxlength="100"
+                  autocomplete="address-level2"
+              /></label>
+              <label
+                >UF<input
+                  name="state"
+                  [(ngModel)]="profile.address.state"
+                  required
+                  pattern="[a-zA-Z]{2}"
+                  maxlength="2"
+                  autocomplete="address-level1"
+              /></label>
+            </div>
+            <button type="submit" [disabled]="busy() || form.invalid">
+              {{ busy() ? 'Salvando…' : 'Salvar e cadastrar primeiro cliente' }}
+            </button>
+          </fieldset>
+        </form>
+      </section>
+    }
+    @case (1) {
+      <p class="guide">Cadastre o cliente que trouxe o equipamento para atendimento.</p>
+      <app-customers />
+      <div class="step-actions">
+        <button type="button" (click)="step.set(0)">Voltar</button
+        ><button type="button" (click)="load(2)" [disabled]="loading()">
+          Cliente cadastrado. Continuar →
+        </button>
+      </div>
+    }
+    @case (2) {
+      <p class="guide">Cadastre o equipamento e vincule ao cliente da etapa anterior.</p>
+      <app-equipment />
+      <div class="step-actions">
+        <button type="button" (click)="step.set(1)">Voltar</button
+        ><button type="button" (click)="load(3)" [disabled]="loading()">
+          Equipamento cadastrado. Continuar →
+        </button>
+      </div>
+    }
+    @case (3) {
+      <p class="guide">
+        Selecione o cliente e o equipamento, descreva o defeito e registre a primeira OS.
+      </p>
+      <app-work-orders (created)="load(4)" />
+      <div class="step-actions"><button type="button" (click)="step.set(2)">Voltar</button></div>
+    }
+    @case (4) {
+      <section class="setup-card">
+        <p class="eyebrow">TUDO PRONTO</p>
+        <h2>Seu primeiro atendimento está registrado.</h2>
+        <p>
+          A configuração foi salva. Agora você pode acompanhar a OS, preparar o orçamento e
+          organizar sua rotina.
+        </p>
+        <button type="button" (click)="complete()" [disabled]="busy()">
+          {{ busy() ? 'Concluindo…' : 'Concluir configuração e acompanhar OS' }}
+        </button>
+      </section>
+    }
+  }
+}

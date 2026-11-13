@@ -289,3 +289,8 @@ solicite outro link depois de um minuto. Retenção operacional pode remover tok
 usados ou expirados; não existe limpeza automática nesta entrega.
 
 Validação: `./mvnw -Dtest=AccountRecoveryIntegrationTest,AuthenticationT9IntegrationTest,ArchitectureTest test`.
+
+
+### Assinaturas pelo Mercado Pago
+
+A contratação mensal do FixFlow usa o checkout de assinaturas do Mercado Pago, com confirmação por webhook e cancelamento da recorrência. Consulte [configuração, fluxo e validação](docs/mercado-pago-assinaturas.md) para definir credenciais, URLs públicas e ativar a integração.

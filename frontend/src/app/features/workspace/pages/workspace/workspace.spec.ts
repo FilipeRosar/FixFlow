@@ -26,6 +26,14 @@ describe('Operational workspace', () => {
   function setup() {
     const fixture = TestBed.createComponent(Workspace);
     fixture.detectChanges();
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/v1/subscription/access')
+      .flush({
+        status: 'TRIALING',
+        writable: true,
+        accessUntil: '2026-12-01T00:00:00Z',
+        trialDaysRemaining: 14,
+      });
     TestBed.inject(HttpTestingController).expectOne('/api/oficinas/tenant/selecao').flush(account);
     for (const request of TestBed.inject(HttpTestingController).match(
       (r) => r.url === '/api/v1/work-orders',
@@ -88,7 +96,7 @@ describe('Operational workspace', () => {
     page.querySelector<HTMLButtonElement>('#verify-access')!.click();
     TestBed.inject(HttpTestingController).expectOne('/api/oficinas/tenant/selecao').flush(account);
     fixture.detectChanges();
-    expect(page.querySelector('[role="status"]')?.textContent).toContain(
+    expect(page.querySelector('.operation-status')?.textContent).toContain(
       'Acesso à empresa confirmado',
     );
   });

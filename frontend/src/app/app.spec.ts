@@ -44,6 +44,14 @@ describe('FixFlow navigation', () => {
     TestBed.inject(HttpTestingController)
       .expectOne('/api/oficinas/t/selecao')
       .flush({ userId: 'u', tenantId: 't', role: 'OWNER', companyName: 'Oficina Horizonte' });
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/v1/subscription/access')
+      .flush({
+        status: 'TRIALING',
+        writable: true,
+        accessUntil: '2026-12-01T00:00:00Z',
+        trialDaysRemaining: 14,
+      });
     expect(page.querySelector('app-header')).toBeNull();
     expect(page.querySelector('.operation-nav')).not.toBeNull();
     expect(page.querySelectorAll('footer')).toHaveLength(1);

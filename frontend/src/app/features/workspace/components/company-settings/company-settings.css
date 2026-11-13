@@ -388,3 +388,44 @@ button:focus-visible {
     flex-direction: column-reverse;
   }
 }
+
+.danger-zone {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  border: 1px solid #d8a0a0;
+  border-radius: 16px;
+}
+.danger-zone h3 {
+  color: #a52828;
+  margin-top: 0;
+}
+.danger-zone p {
+  line-height: 1.6;
+}
+.danger-zone label {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.danger-zone fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.danger-button {
+  background: #a52828;
+  color: white;
+  border: 1px solid #a52828;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+}
+.danger-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.delete-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}

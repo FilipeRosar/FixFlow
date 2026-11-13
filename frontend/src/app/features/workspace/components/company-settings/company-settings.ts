@@ -2,6 +2,8 @@ import { Component, OnInit, inject, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { finalize } from 'rxjs';
+import { Router } from '@angular/router';
+import { SessionService } from '../../../../core/auth/data-access/session.service';
 export interface CompanySettings {
   logoDataUrl: string | null;
   warrantyTerms: string;
@@ -16,6 +18,49 @@ export interface CompanySettings {
 })
 export class CompanySettingsPanel implements OnInit {
   private readonly http = inject(HttpClient);
+  private readonly session = inject(SessionService);
+  private readonly router = inject(Router);
+  protected readonly confirmingDeletion = signal(false);
+  protected readonly deleting = signal(false);
+  protected readonly deletionError = signal('');
+  protected deletionPassword = '';
+  protected deletionConfirmation = '';
+  protected cancelDeletion(): void {
+    if (this.deleting()) return;
+    this.confirmingDeletion.set(false);
+    this.deletionPassword = '';
+    this.deletionConfirmation = '';
+    this.deletionError.set('');
+  }
+  protected deleteCompany(): void {
+    if (
+      this.deleting() ||
+      this.saving() ||
+      !this.deletionPassword ||
+      this.deletionConfirmation !== 'EXCLUIR'
+    )
+      return;
+    this.deleting.set(true);
+    this.deletionError.set('');
+    this.http
+      .delete<void>('/api/v1/tenant', {
+        body: { password: this.deletionPassword, confirmation: this.deletionConfirmation },
+      })
+      .pipe(finalize(() => this.deleting.set(false)))
+      .subscribe({
+        next: () => {
+          this.deletionPassword = '';
+          this.session.forgetSession();
+          void this.router.navigate(['/entrar']);
+        },
+        error: (error: HttpErrorResponse) => {
+          this.deletionPassword = '';
+          this.deletionError.set(
+            error.error?.detail || 'Não foi possível excluir a empresa. Tente novamente.',
+          );
+        },
+      });
+  }
   readonly saved = output<CompanySettings>();
   protected readonly loading = signal(true);
   protected readonly saving = signal(false);
@@ -78,7 +123,7 @@ export class CompanySettingsPanel implements OnInit {
     reader.readAsDataURL(file);
   }
   protected save(): void {
-    if (this.saving() || !this.loaded() || this.readingLogo()) return;
+    if (this.deleting() || this.saving() || !this.loaded() || this.readingLogo()) return;
     this.saving.set(true);
     this.message.set('');
     this.http

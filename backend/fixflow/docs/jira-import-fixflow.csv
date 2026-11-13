@@ -46,7 +46,7 @@ Dependências: F-02",Highest,"fixflow,fundacao,eventos",5
 17,Story,[US-001] Criar conta/empresa (Owner),2,"Como Owner, quero criar minha conta e empresa para começar a usar o sistema.
 
 Critérios de aceite:
-Cadastro cria tenant + Owner; e-mail único.
+Solicitação pendente; confirmação de e-mail cria tenant + Owner + trial do plano escolhido; e-mail único.
 
 Dependências: F-02",Highest,"fixflow,identity",5
 18,Story,[US-002] Login com JWT + refresh token,2,"Access 15 min, refresh opaco rotativo com detecção de reuso.
@@ -305,3 +305,33 @@ Critérios de aceite:
 Marcada como 'sugestão de IA'; sem dados pessoais desnecessários.
 
 Dependências: AI-01",Low,"fixflow,ia",5
+62,Story,[US-007] Gerenciar assinatura do FixFlow,2,"US-007 — Gerenciar assinatura do FixFlow (P1 · Fase 2)
+
+**História:** Como proprietário da assistência, quero acompanhar o trial, consultar e contratar um plano, pagar a assinatura e cancelar a renovação, para controlar o acesso da minha empresa ao FixFlow e os custos da contratação.
+
+**Escopo:** assinatura da empresa cliente do SaaS, vinculada ao tenant e gerenciada em **Configurações → Assinatura**. As cobranças da assinatura têm registros e referências próprios; não são pagamentos de OS (US-050), não alteram `financial_status` e não entram nos indicadores financeiros da assistência. A US-006 continua responsável pelos limites de uso do plano.
+
+**Prioridade:** P1, entrega na Fase 2, antes da operação de cobrança recorrente. **Dependências:** US-001, US-002, US-006, F-04 e F-06. **Estimativa:** G; dividir em subtarefas de domínio/persistência, API, interface, integração de cobrança e testes.
+
+**Critérios de aceite:**
+
+| ID | Cenário | Resultado esperado |
+|---|---|---|
+| AC-01 | Acesso à assinatura | Somente OWNER do tenant pode consultar cobranças, contratar plano ou cancelar renovação, com validação na API. Atendentes, técnicos e outros tenants não acessam esses dados. |
+| AC-02 | Início do trial | A confirmação de e-mail inicia um único trial de 14 dias sem cartão, registrando início, término e plano de avaliação configurado. Novo login, troca de proprietário ou tentativa de contratação não reinicia o trial. A interface mostra a data de término e os dias restantes. |
+| AC-03 | Consulta do plano | A tela mostra situação da assinatura, plano vigente, limites e consumo (US-006), preço contratado em BRL, periodicidade, período de acesso e próximo vencimento quando houver. Valores e condições vêm do backend; as faixas da seção 28.1 continuam hipóteses comerciais. |
+| AC-04 | Contratação e cobrança | O OWNER seleciona um plano disponível e revisa preço, periodicidade e condições antes de confirmar. O sistema registra uma cobrança própria da assinatura com identificador, valor, vencimento, situação e instruções/link de pagamento. Repetir a mesma requisição não cria contratação nem cobrança duplicada. Gerar cobrança ou retornar do checkout não comprova pagamento. |
+| AC-05 | Vencimento e expiração | Sem pagamento confirmado, o fim do trial ou do período pago leva a assinatura para acesso restrito. O vencimento da cobrança fica visível, sem ativar plano ou renovar acesso. Login, leitura dos dados existentes e acesso do OWNER à assinatura para regularização permanecem disponíveis; operações de escrita de negócio são bloqueadas na API, inclusive com JWT ainda válido. |
+| AC-06 | Liberação após pagamento | Uma confirmação autenticada do provedor, validada no backend contra a cobrança, tenant, valor e moeda esperados, ativa o plano contratado ou renova o período pago e remove a restrição por assinatura. Na primeira ativação após expiração, o período começa na confirmação; na renovação antecipada, começa no fim do período já pago. Atualizar a tela reflete a liberação sem exigir novo login, respeitando os limites da US-006. |
+| AC-07 | Concorrência e eventos repetidos | Eventos duplicados, atrasados ou fora de ordem são tratados de forma idempotente: não duplicam cobranças, não prolongam o período duas vezes e não rebaixam uma cobrança já confirmada para pendente. Falhas de processamento permitem retry e conciliação sem liberação antecipada. |
+| AC-08 | Cancelamento | O OWNER confirma o cancelamento da renovação; a tela informa a data efetiva. O acesso pago permanece até o fim do período vigente, sem novas cobranças de renovação. Durante o trial, permanece até seu término. No fim, a assinatura fica cancelada e com acesso restrito, preservando leitura e dados. Repetir o cancelamento não duplica efeitos. |
+| AC-09 | Pagamento após cancelamento | Cancelar a renovação impede a reativação automática por confirmação tardia de cobrança pendente. O evento é registrado para conciliação; nova contratação exige ação explícita do OWNER. Pagamentos do período já contratado não desfazem o cancelamento agendado. |
+| AC-10 | Falhas e comunicação | A interface apresenta estados de carregamento, erro e nova tentativa. Mostra avisos de fim do trial, vencimento, restrição, confirmação e cancelamento. Notificações usam Outbox; falha no envio não altera o direito de acesso. |
+| AC-11 | Auditoria e preservação | Contratação, confirmação, renovação, cancelamento e mudança de acesso registram tenant, ator/origem, instante, referência da cobrança e estado anterior/novo, na mesma transação da alteração. Expiração ou cancelamento não excluem dados; retenção e exclusão seguem a seção 27. |
+
+**Modelo de estados:** `TRIALING` → `ACTIVE` após pagamento confirmado; `TRIALING` → `EXPIRED` ao fim do trial sem pagamento; `ACTIVE` → `PAST_DUE` ao fim do período pago sem renovação confirmada; `EXPIRED`/`PAST_DUE` → `ACTIVE` após regularização validada. Cancelamento agenda `cancel_at_period_end`; ao término do acesso, muda para `CANCELED`. O backend avalia as datas em cada operação protegida; a execução de um job não é condição para aplicar a restrição. Cobranças mantêm estado separado do estado da assinatura.
+
+**Validação obrigatória:** testes de isolamento entre tenants e RBAC; limites exatos de início/fim do trial e período pago; bloqueio de escrita e leitura preservada; confirmação válida e inválida; retries, eventos duplicados e fora de ordem; renovação antecipada; cancelamento repetido e concorrente com pagamento; confirmação tardia após cancelamento; falha do provedor; liberação com sessão existente; ausência de efeitos nos pagamentos e indicadores das OS.
+
+**Fora desta história:** upgrade/downgrade de assinatura paga, rateio proporcional, reembolso, cupons, emissão fiscal e exclusão de dados por cancelamento. A contratação inicial e a renovação do plano vigente fazem parte do escopo. A automação da cobrança permanece na Fase 2, conforme seção 35.5.
+",High,"fixflow,tenants,subscription",8

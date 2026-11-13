@@ -36,4 +36,12 @@ public class LocalFileStorage implements FileStorage {
         try { Files.deleteIfExists(path(tenant, key)); }
         catch (IOException exception) { throw new UncheckedIOException(exception); }
     }
+    @Override public void deleteTenantFiles(UUID tenant) {
+        Path directory=root.resolve("tenants").resolve(tenant.toString());
+        if (!Files.exists(directory)) return;
+        try (var paths=Files.walk(directory)) {
+            for(Path file:paths.sorted(java.util.Comparator.reverseOrder()).toList()) Files.deleteIfExists(file);
+        } catch(IOException failure) { throw new UncheckedIOException(failure); }
+    }
+
 }
