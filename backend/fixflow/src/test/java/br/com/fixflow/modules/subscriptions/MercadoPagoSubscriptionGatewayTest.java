@@ -115,11 +115,11 @@ class MercadoPagoSubscriptionGatewayTest {
         responses.put("/preapproval", "{\"message\":\"Both payer and collector must be real or test users\"}");
         var mismatch = assertThrows(br.com.fixflow.modules.subscriptions.application.SubscriptionGateway.CreationRejected.class,
             () -> gateway.create(contract,"mp","owner@example.com",BigDecimal.TEN,LocalDate.now()));
-        assertTrue(mismatch.getReason().contains("comprador de teste"));
+        assertTrue(mismatch.getMessage().contains("comprador de teste"));
         creationStatus = 500;
         var failure = assertThrows(ResponseStatusException.class,
             () -> gateway.create(contract,"mp","owner@example.com",BigDecimal.TEN,LocalDate.now()));
-        assertFalse(failure instanceof br.com.fixflow.modules.subscriptions.application.SubscriptionGateway.CreationRejected);
+        assertEquals(502, failure.getStatusCode().value());
     }
     @Test void rejectsUntrustedCheckoutHost() {
         responses.put("/preapproval", recurrence("pending", "https://www.mercadopago.com.br.evil.example/subscriptions/checkout"));

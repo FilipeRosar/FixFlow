@@ -145,6 +145,13 @@ public class ApiExceptionHandler {
         return response.body(ProblemDetail.forStatusAndDetail(HttpStatus.METHOD_NOT_ALLOWED, "Método não permitido para este recurso."));
     }
 
+    @ExceptionHandler(br.com.fixflow.modules.subscriptions.application.SubscriptionGateway.CreationRejected.class)
+    public ResponseEntity<ProblemDetail> handleSubscriptionCreationRejected(
+            br.com.fixflow.modules.subscriptions.application.SubscriptionGateway.CreationRejected exception) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, exception.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnexpected(
             Exception exception,

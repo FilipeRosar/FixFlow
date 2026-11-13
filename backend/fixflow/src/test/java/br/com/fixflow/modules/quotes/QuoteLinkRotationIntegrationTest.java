@@ -116,10 +116,13 @@ class QuoteLinkRotationIntegrationTest extends PublicQuoteT10IntegrationTest {
     }
     @Test void smtpFailureRetriesOnlyTheNewLinkWhileTheOldOneStaysRevoked() throws Exception {
         Link link = link(); manage(link, 6, "resend-link", UUID.randomUUID().toString()).andExpect(status().isOk());
-        doThrow(new org.springframework.mail.MailSendException("temporary failure")).doNothing().when(mail).send(any(SimpleMailMessage.class));
+        String fresh = newestToken(link);
+        doThrow(new org.springframework.mail.MailSendException("temporary failure")).doNothing().when(mail)
+            .send(argThat((SimpleMailMessage message) -> message.getText() != null && message.getText().contains(fresh)));
         publisher.publishPending(); view(link.token()).andExpect(status().isNotFound()); view(newestToken(link)).andExpect(status().isOk());
         inTenant(fixture.tenantA, () -> admin.update("UPDATE outbox_event SET next_attempt_at = clock_timestamp() WHERE aggregate_id = ? AND event_type = 'QuoteLinkResent'", link.order()));
-        publisher.publishPending(); verify(mail, times(2)).send(any(SimpleMailMessage.class));
+        publisher.publishPending(); verify(mail, times(2))
+            .send(argThat((SimpleMailMessage message) -> message.getText() != null && message.getText().contains(fresh)));
     }
     @Test void resendCannotExtendAnExpiredProposal() throws Exception {
         UUID order = order(true), quote = quote(save(order, null, body(4)).andExpect(status().isCreated()));

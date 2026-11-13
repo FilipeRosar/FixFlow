@@ -14,6 +14,26 @@ import static org.mockito.Mockito.*;
 
 class ApiExceptionHandlerTest {
 
+    @org.springframework.web.bind.annotation.RestController
+    @org.springframework.boot.test.context.TestComponent
+    static class RejectedSubscription {
+        @org.springframework.web.bind.annotation.PostMapping("/api/test/subscription")
+        public void create() {
+            throw new br.com.fixflow.modules.subscriptions.application.SubscriptionGateway.CreationRejected(
+                    "O Mercado Pago exige comprador e recebedor no mesmo ambiente.");
+        }
+    }
+
+    @Test
+    void creationRejectionPreservesHttpStatusAndHelpfulDetail() throws Exception {
+        var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders
+                .standaloneSetup(new RejectedSubscription()).setControllerAdvice(handler).build();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/test/subscription"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadGateway())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.detail")
+                        .value("O Mercado Pago exige comprador e recebedor no mesmo ambiente."));
+    }
+
     private ApiExceptionHandler handler;
     private HttpServletRequest request;
 

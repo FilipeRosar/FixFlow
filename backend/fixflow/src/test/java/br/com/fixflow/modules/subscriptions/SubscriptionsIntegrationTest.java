@@ -145,15 +145,25 @@ class SubscriptionsIntegrationTest {
             .content("{\"type\":\"subscription_authorized_payment\",\"data\":{\"id\":\"456\"}}"))
             .andExpect(status().isBadRequest());
     }
-    @Test void changesTrialPlanWithoutStartingBillingOrExtendingTrial() throws Exception {
+    @Test void keepsStarterTrialWithoutStartingBillingOrExtendingTrial() throws Exception {
         final Instant[] end={null};
         tenant(fixture.tenantA,()->end[0]=admin.queryForObject("SELECT trial_ends_at FROM tenants WHERE id=?",java.sql.Timestamp.class,fixture.tenantA).toInstant());
         mvc.perform(post("/api/v1/subscription/plan").header("Authorization","Bearer "+token).contentType("application/json")
-            .content("{\"plan\":\"PROFESSIONAL\"}"))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.currentPlan").value("PROFESSIONAL"))
+            .content("{\"plan\":\"STARTER\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.currentPlan").value("STARTER"))
             .andExpect(jsonPath("$.access.status").value("TRIALING"));
         assertEquals(0,gateway.creates);
         tenant(fixture.tenantA,()->assertEquals(end[0],admin.queryForObject("SELECT trial_ends_at FROM tenants WHERE id=?",java.sql.Timestamp.class,fixture.tenantA).toInstant()));
+    }
+    @Test void rejectsPaidPlanUpgradeWithoutPaymentDuringTrial() throws Exception {
+        for (String plan : List.of("PROFESSIONAL", "BUSINESS")) {
+            mvc.perform(post("/api/v1/subscription/plan").header("Authorization","Bearer "+token).contentType("application/json")
+                .content("{\"plan\":\""+plan+"\"}"))
+                .andExpect(status().isConflict());
+        }
+        mvc.perform(get("/api/v1/subscription").header("Authorization","Bearer "+token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.currentPlan").value("STARTER"));
+        assertEquals(0,gateway.creates);
     }
     @Test void rejectsFreePlanChangeAfterTrialExpires() throws Exception {
         tenant(fixture.tenantA,()->admin.update("UPDATE tenants SET trial_ends_at=clock_timestamp()-interval '1 second' WHERE id=?",fixture.tenantA));

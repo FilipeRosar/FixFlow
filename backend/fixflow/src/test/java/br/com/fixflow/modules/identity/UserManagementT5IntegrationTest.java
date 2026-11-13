@@ -89,7 +89,8 @@ class UserManagementT5IntegrationTest {
         var jdbc = new JdbcTemplate(ds);
         new TransactionTemplate(new DataSourceTransactionManager(ds)).executeWithoutResult(tx -> {
             jdbc.queryForObject("SELECT set_config('app.tenant_id', ?, true)", String.class, fixture.tenantA.toString());
-            jdbc.update("UPDATE tenants SET plan = ? WHERE id = ?", value, fixture.tenantA);
+            // Quota scenarios model a paid upgrade; selecting Professional alone does not grant access.
+            jdbc.update("UPDATE tenants SET plan = ?, subscription_paid_until = clock_timestamp() + interval '30 days' WHERE id = ?", value, fixture.tenantA);
         });
     }
     @Test void orderQuotaRollsBackFailuresAndAllowsUpgrade() throws Exception {

@@ -9,12 +9,12 @@ import java.util.UUID;
 
 public interface SubscriptionGateway {
     /** A definitive provider rejection: no remote subscription was created. */
-    class CreationRejected extends org.springframework.web.server.ResponseStatusException {
+    class CreationRejected extends RuntimeException {
         public CreationRejected() {
             this("O Mercado Pago recusou a criação da assinatura. Verifique a configuração e tente novamente.");
         }
         public CreationRejected(String detail) {
-            super(org.springframework.http.HttpStatus.BAD_GATEWAY, detail);
+            super(detail);
         }
     }
     record Customer(String id, String reference, String document) { }

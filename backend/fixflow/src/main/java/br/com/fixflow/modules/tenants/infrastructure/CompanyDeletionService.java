@@ -13,7 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 
 @Service
-public class CompanyDeletionService {
+public class CompanyDeletionService implements br.com.fixflow.modules.tenants.application.CompanyDeletion {
     private final AuthorizedTenantOperations tenants;
     private final CurrentAuthenticatedIdentity identity;
     private final SessionStore sessions;
@@ -24,7 +24,7 @@ public class CompanyDeletionService {
             SessionStore sessions,PasswordEncoder encoder,Subscriptions subscriptions,JdbcTemplate jdbc) {
         this.tenants=tenants;this.identity=identity;this.sessions=sessions;this.encoder=encoder;this.subscriptions=subscriptions;this.jdbc=jdbc;
     }
-    public void delete(String password) {
+    @Override public void delete(String password) {
         var actor=identity.require();
         if(actor.tenantId()==null) throw new AccessDeniedException("Selecione a empresa.");
         tenants.execute(actor.tenantId(),m->{
